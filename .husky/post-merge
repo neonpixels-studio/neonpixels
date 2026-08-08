@@ -1,0 +1,4 @@
+if git diff --name-only ORIG_HEAD HEAD 2>/dev/null | grep -qE '^(package\.json|package-lock\.json)$'; then
+  echo "📦 package.json or lockfile changed — running npm install..."
+  npm install
+fi

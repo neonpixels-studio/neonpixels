@@ -1,0 +1,17 @@
+# Neon Pixels
+
+> A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Every project started as a personal annoyance and escaped into production.
+
+Neon Pixels is a one-person studio working alongside Grimicorn, an automated coding agent. Each project solves a problem the maker personally had, and doubles as an experiment in how far agent-driven development can go.
+
+## Projects
+
+- [grimicorn.dev](https://grimicorn.dev): A chaotic AI coding sidekick and agent workflow that builds, breaks and ships the other projects.
+- [wanderist.io](https://wanderist.io): A travel blog and trip tracker in one — log where you've been, plot it, write about it.
+- [basin.fm](https://basin.fm): Everything you consume in one stream — RSS, podcasts, YouTube and Bluesky today, more later.
+- [markpost.io](https://markpost.io): Send a webhook or email, get a Markdown file on your own filesystem. Built for Obsidian.
+
+## Links
+
+- [Home](https://neonpixels.io/): Landing page
+- [Sitemap](https://neonpixels.io/sitemap.xml): XML sitemap

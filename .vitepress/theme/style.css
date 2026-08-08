@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #08080a;
+  --color-panel: #0b0b0e;
+  --color-fg: #e8e8ea;
+  --color-fg-muted: #a8a8b3;
+  --color-fg-subtle: #8a8a95;
+  --color-fg-dim: #6d6d78;
+  --color-fg-faint: #55555f;
+  --color-border: #1c1c22;
+  --color-lime: #b8ff2e;
+  --color-cyan: #22e0ff;
+  --color-pink: #ff2ea6;
+  --color-amber: #ffc21f;
+  --color-purple: #a06bff;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "Archivo", ui-sans-serif, system-ui, sans-serif;
+}
+
+@keyframes np-flicker {
+  0%,
+  18%,
+  22%,
+  25%,
+  53%,
+  57%,
+  100% {
+    opacity: 1;
+  }
+  20%,
+  24%,
+  55% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes np-sweep {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes np-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+}
+
+@keyframes np-drift {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 80px 80px;
+  }
+}
+
+@keyframes np-aurora {
+  0% {
+    transform: translate3d(-6%, -4%, 0) scale(1.1);
+  }
+  33% {
+    transform: translate3d(8%, 6%, 0) scale(1.25);
+  }
+  66% {
+    transform: translate3d(-4%, 10%, 0) scale(1.15);
+  }
+  100% {
+    transform: translate3d(-6%, -4%, 0) scale(1.1);
+  }
+}
+
+@keyframes np-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #08080a;
+}
+
+/* VitePress resets: the custom theme owns the whole page, so hide the default
+   nav/sidebar/footer chrome that the framework injects. */
+.VPNav,
+.VPLocalNav,
+.VPSidebar,
+.VPFooter {
+  display: none !important;
+}
+
+.animate-drift {
+  animation: np-drift 24s linear infinite;
+}
+
+.animate-sweep {
+  background-size: 200% 100%;
+  animation: np-sweep var(--np-sweep-dur, 6s) linear infinite;
+}
+
+.animate-flicker {
+  animation: np-flicker 7s linear infinite;
+}
+
+.animate-pulse-dot {
+  animation: np-pulse 2s ease-in-out infinite;
+}
+
+.animate-blink {
+  animation: np-blink 1.1s step-end infinite;
+}
+
+.animate-aurora {
+  animation: np-aurora var(--np-aurora-dur, 26s) ease-in-out infinite;
+}
+
+.animate-aurora-reverse {
+  animation: np-aurora var(--np-aurora-dur, 26s) ease-in-out infinite reverse;
+}
+
+/* Accessibility guard: freeze the always-on ambient animations (grid drift,
+   aurora blobs, wordmark sweep, terminal cursor) at a static, non-distracting
+   state for visitors who have asked their OS for reduced motion, instead of
+   leaving them looping indefinitely. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-drift,
+  .animate-sweep,
+  .animate-flicker,
+  .animate-pulse-dot,
+  .animate-blink,
+  .animate-aurora,
+  .animate-aurora-reverse {
+    animation: none;
+  }
+
+  .animate-blink {
+    opacity: 1;
+  }
+}

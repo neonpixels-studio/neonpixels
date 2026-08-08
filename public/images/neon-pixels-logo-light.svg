@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 210" width="620" height="210" role="img" aria-label="Neon Pixels">
+  <title>Neon Pixels</title>
+  <defs>
+    <linearGradient id="np-l" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#78B800"></stop>
+      <stop offset="34%" stop-color="#0BB8D8"></stop>
+      <stop offset="68%" stop-color="#FF2EA6"></stop>
+      <stop offset="100%" stop-color="#E0A000"></stop>
+    </linearGradient>
+    
+  </defs>
+  <rect width="620" height="210" fill="#F4F4F6"></rect>
+  <g transform="translate(20 58)">
+    <rect x="0" y="60" width="27" height="27" fill="#0BB8D8"></rect>
+    <rect x="33" y="30" width="27" height="27" fill="#78B800"></rect>
+    <rect x="66" y="0" width="27" height="27" fill="#FF2EA6"></rect>
+  </g>
+  <text class="np-wm" x="140" y="94" fill="#08080A">NEON</text>
+  <text class="np-wm" x="140" y="188" fill="url(#np-l)">PIXELS</text>
+</svg>

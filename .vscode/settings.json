@@ -1,0 +1,18 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[vue]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[css]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[md]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "js/ts.tsdk.path": "node_modules/typescript/lib"
+}

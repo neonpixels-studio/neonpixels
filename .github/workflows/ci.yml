@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Read .nvmrc
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.nvmrc.outputs.version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test:ci
+
+      - name: Build
+        run: npm run build

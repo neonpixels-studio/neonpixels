@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "jsx": "preserve",
+    "lib": ["ESNext", "DOM"],
+    "noEmit": true,
+    // Skip type-checking bundled .d.ts files: vitepress ships a self-referential
+    // `Token` type and @vueuse/core references Web Bluetooth globals, neither of
+    // which we can fix and neither of which lives in our code.
+    "skipLibCheck": true,
+    // Mirror the resolve.alias entries in vitest.config.ts so vue-tsc resolves
+    // the @components/@theme imports used by the test files.
+    "paths": {
+      "@components/*": ["./.vitepress/theme/components/*"],
+      "@theme/*": ["./.vitepress/theme/*"]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.vue",
+    ".vitepress/**/*.ts",
+    ".vitepress/**/*.vue"
+  ],
+  "exclude": ["node_modules", ".vitepress/cache", ".vitepress/dist"]
+}
