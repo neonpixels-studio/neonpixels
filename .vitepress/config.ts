@@ -1,4 +1,4 @@
-import { defineConfig } from "vitepress";
+import { defineConfig, type Plugin } from "vitepress";
 import tailwindcss from "@tailwindcss/vite";
 
 const SITE_URL = "https://neonpixels.io";
@@ -98,6 +98,10 @@ export default defineConfig({
     ["link", { rel: "manifest", href: "/images/site.webmanifest?v=20260808" }],
   ],
   vite: {
-    plugins: [tailwindcss()],
+    // tailwindcss() is typed against the top-level Vite 8 (required by Vitest),
+    // while VitePress bundles its own Vite 5. The Plugin shapes are compatible
+    // at runtime but nominally distinct across the major gap, so cast to
+    // VitePress's re-exported (Vite 5) Plugin type at the seam.
+    plugins: [tailwindcss() as unknown as Plugin[]],
   },
 });
