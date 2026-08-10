@@ -7,6 +7,21 @@ import type { HeadConfig } from "vitepress";
 
 const PUBLIC_DIR = resolve(process.cwd(), "public");
 const THEME_STYLE_PATH = resolve(process.cwd(), ".vitepress/theme/style.css");
+const THEME_ENTRY_PATH = resolve(process.cwd(), ".vitepress/theme/index.ts");
+
+// The self-hosted @fontsource weights the theme entry must import — the Archivo and
+// JetBrains Mono weights the site formerly pulled from Google Fonts. Kept here so the
+// presence check below fails loudly if an import is dropped and fonts silently fall
+// back to system defaults.
+const SELF_HOSTED_FONT_IMPORTS = [
+  "@fontsource/archivo/400.css",
+  "@fontsource/archivo/600.css",
+  "@fontsource/archivo/800.css",
+  "@fontsource/archivo/900.css",
+  "@fontsource/jetbrains-mono/400.css",
+  "@fontsource/jetbrains-mono/500.css",
+  "@fontsource/jetbrains-mono/700.css",
+];
 
 const PNG_SIGNATURE = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -52,6 +67,8 @@ const RESOURCE_FETCHING_RELS = new Set([
   "dns-prefetch",
   "prefetch",
   "preload",
+  "modulepreload",
+  "icon",
 ]);
 
 const MIN_IMAGE_ALT_LENGTH = 20;
@@ -224,10 +241,19 @@ describe("No render-blocking third-party font requests", () => {
     expect(remoteHrefs).toEqual([]);
   });
 
-  it("imports no remote stylesheet in the theme CSS", () => {
+  it("references no remote URL in the theme CSS", () => {
     const themeCss = readFileSync(THEME_STYLE_PATH, "utf8");
-    const remoteImports =
-      themeCss.match(/@import\s+(?:url\()?\s*["']?https?:\/\/[^"')]+/gi) ?? [];
-    expect(remoteImports).toEqual([]);
+    // Any @import or url() pointing off-origin (including scheme-relative //) is a
+    // third-party fetch — the surface a self-hosted Google Fonts regression uses.
+    const remoteReferences =
+      themeCss.match(/(?:@import\s*|url\(\s*)["']?(?:https?:)?\/\//gi) ?? [];
+    expect(remoteReferences).toEqual([]);
   });
+
+  it.each(SELF_HOSTED_FONT_IMPORTS)(
+    "imports %s in the theme entry so fonts stay self-hosted",
+    (specifier) => {
+      expect(readFileSync(THEME_ENTRY_PATH, "utf8")).toContain(specifier);
+    },
+  );
 });
