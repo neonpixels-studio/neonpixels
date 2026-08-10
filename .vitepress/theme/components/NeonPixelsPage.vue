@@ -1,51 +1,14 @@
 <script setup lang="ts">
+import { PROJECTS } from "../data/projects";
+import ProjectSection from "./ProjectSection.vue";
+
+// Zero-padded project total for the "NN / NN" counter, so the header tracks the
+// data instead of a hand-typed number. PROJECTS is a static import, so a plain
+// constant is enough — no reactivity to track.
+const paddedProjectCount = String(PROJECTS.length).padStart(2, "0");
+
 const WORDMARK_GRADIENT =
   "linear-gradient(90deg,#b8ff2e,#22e0ff,#ff2ea6,#ffc21f,#b8ff2e)";
-
-// Each project drives the hero pills, the section accents and the footer links,
-// so its accent color and dark pill tints live in one place.
-const PROJECTS = [
-  {
-    id: "grimicorn",
-    name: "grimicorn",
-    tld: ".dev",
-    url: "https://grimicorn.dev",
-    color: "#b8ff2e",
-    pillBg: "#12180a",
-    pillBgHover: "#1a2410",
-    pillBorder: "#2b3a14",
-  },
-  {
-    id: "wanderist",
-    name: "wanderist",
-    tld: ".io",
-    url: "https://wanderist.io",
-    color: "#22e0ff",
-    pillBg: "#08161b",
-    pillBgHover: "#0c2028",
-    pillBorder: "#123340",
-  },
-  {
-    id: "basin",
-    name: "basin",
-    tld: ".fm",
-    url: "https://basin.fm",
-    color: "#ffc21f",
-    pillBg: "#1a1305",
-    pillBgHover: "#241a07",
-    pillBorder: "#3d2f0c",
-  },
-  {
-    id: "markpost",
-    name: "markpost",
-    tld: ".io",
-    url: "https://markpost.io",
-    color: "#ff2ea6",
-    pillBg: "#1b0713",
-    pillBgHover: "#250a1a",
-    pillBorder: "#3d1029",
-  },
-];
 
 // Trip-log heatmap for the Wanderist card: each cell is one of four brightness
 // states so the grid reads as visited / partly / faint / empty.
@@ -146,7 +109,7 @@ const GRIMICORN_TERMINAL = [
           <span
             class="bg-lime animate-pulse-dot h-[7px] w-[7px] rounded-full"
             style="box-shadow: 0 0 8px #b8ff2e"
-          />4 projects
+          />{{ PROJECTS.length }} projects
         </span>
       </nav>
     </header>
@@ -298,7 +261,7 @@ const GRIMICORN_TERMINAL = [
             <div class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]">
               <span
                 class="font-display text-lime text-[30px] leading-none font-black"
-                >4</span
+                >{{ PROJECTS.length }}</span
               >
               <span
                 class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase"
@@ -354,72 +317,23 @@ const GRIMICORN_TERMINAL = [
           <span class="h-px w-[22px] bg-[#7a7a85]" />
           the projects
         </div>
-        <span class="text-fg-faint text-[11px] tracking-[0.1em]">04 / 04</span>
+        <span class="text-fg-faint text-[11px] tracking-[0.1em]"
+          >{{ paddedProjectCount }} / {{ paddedProjectCount }}</span
+        >
       </div>
     </div>
 
-    <!-- grimicorn -->
-    <section
-      id="grimicorn"
-      class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]"
-      style="background: linear-gradient(100deg, #0d1206 0%, #08080a 58%)"
+    <!-- projects: one data-driven section per PROJECTS entry; each keeps its
+         bespoke visual in the #visual slot. reverse alternates the layout. -->
+    <ProjectSection
+      v-for="(project, projectIndex) in PROJECTS"
+      :key="project.id"
+      :project="project"
+      :reverse="projectIndex % 2 === 1"
     >
-      <div
-        class="absolute top-0 right-0 left-0 h-px"
-        style="background: linear-gradient(90deg, #b8ff2e, transparent 65%)"
-      />
-      <div
-        class="animate-aurora pointer-events-none absolute top-[-30%] left-[-6%] h-[520px] w-[520px] rounded-full blur-[46px]"
-        style="
-          --np-aurora-dur: 28s;
-          background: radial-gradient(
-            circle,
-            rgba(184, 255, 46, 0.18),
-            transparent 62%
-          );
-        "
-      />
-      <div
-        class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]"
-      >
-        <div class="flex flex-col gap-5">
-          <div class="flex items-center gap-3">
-            <span
-              class="font-display bg-lime px-2 py-[3px] text-[12px] font-black tracking-[0.08em] text-[#08080a]"
-              >LIVE</span
-            >
-            <span class="text-fg-dim text-[11px] tracking-[0.2em] uppercase"
-              >01 — agent workflow</span
-            >
-          </div>
-          <h3
-            class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]"
-            style="font-size: clamp(38px, 5vw, 66px); line-height: 0.92"
-          >
-            grimicorn<span
-              class="text-lime animate-flicker"
-              style="text-shadow: 0 0 18px rgba(184, 255, 46, 0.6)"
-              >.dev</span
-            >
-          </h3>
-          <p
-            class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]"
-            style="text-wrap: pretty"
-          >
-            The chaotic coding sidekick behind everything else on this page. An
-            automated agent workflow that builds, breaks, and ships the other
-            Neon Pixels projects while I'm asleep.
-          </p>
-          <a
-            href="https://grimicorn.dev"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="cta-fill bg-lime self-start px-5 py-3 text-[13px] font-bold text-[#08080a]"
-            style="box-shadow: 0 0 26px rgba(184, 255, 46, 0.35)"
-            >visit grimicorn.dev →</a
-          >
-        </div>
+      <template #visual>
         <div
+          v-if="project.id === 'grimicorn'"
           class="border border-[#23301a] bg-[#0a0d06]"
           style="box-shadow: 0 0 60px rgba(184, 255, 46, 0.1)"
         >
@@ -453,34 +367,9 @@ const GRIMICORN_TERMINAL = [
             </div>
           </div>
         </div>
-      </div>
-    </section>
 
-    <!-- wanderist -->
-    <section
-      id="wanderist"
-      class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]"
-      style="background: linear-gradient(260deg, #04141a 0%, #08080a 58%)"
-    >
-      <div
-        class="absolute top-0 right-0 left-0 h-px"
-        style="background: linear-gradient(270deg, #22e0ff, transparent 65%)"
-      />
-      <div
-        class="animate-aurora-reverse pointer-events-none absolute top-[-26%] right-[-6%] h-[520px] w-[520px] rounded-full blur-[46px]"
-        style="
-          --np-aurora-dur: 34s;
-          background: radial-gradient(
-            circle,
-            rgba(34, 224, 255, 0.16),
-            transparent 62%
-          );
-        "
-      />
-      <div
-        class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]"
-      >
         <div
+          v-else-if="project.id === 'wanderist'"
           class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]"
           style="box-shadow: 0 0 60px rgba(34, 224, 255, 0.1)"
         >
@@ -491,8 +380,8 @@ const GRIMICORN_TERMINAL = [
           </div>
           <div class="grid grid-cols-[repeat(16,minmax(0,1fr))] gap-1">
             <div
-              v-for="(state, index) in TRIP_CELLS"
-              :key="index"
+              v-for="(state, cellIndex) in TRIP_CELLS"
+              :key="cellIndex"
               :style="{
                 aspectRatio: '1',
                 background: TRIP_CELL_COLORS[state],
@@ -505,107 +394,9 @@ const GRIMICORN_TERMINAL = [
             ><span>3 countries</span>
           </div>
         </div>
-        <div class="flex flex-col gap-5">
-          <div class="flex items-center gap-3">
-            <span
-              class="font-display text-cyan border-cyan border px-2 py-[2px] text-[12px] font-black tracking-[0.08em]"
-              >IN PROGRESS</span
-            >
-            <span class="text-fg-dim text-[11px] tracking-[0.2em] uppercase"
-              >02 — travel</span
-            >
-          </div>
-          <h3
-            class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]"
-            style="font-size: clamp(38px, 5vw, 66px); line-height: 0.92"
-          >
-            wanderist<span
-              class="text-cyan"
-              style="text-shadow: 0 0 18px rgba(34, 224, 255, 0.6)"
-              >.io</span
-            >
-          </h3>
-          <p
-            class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]"
-            style="text-wrap: pretty"
-          >
-            A travel blog and tracker in one. Log where you've been, plot it,
-            write about it — without gluing together four apps and a spreadsheet
-            to do it.
-          </p>
-          <a
-            href="https://wanderist.io"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="cta-outline text-cyan border-cyan self-start border px-5 py-3 text-[13px] font-bold"
-            style="--accent: #22e0ff"
-            >visit wanderist.io →</a
-          >
-        </div>
-      </div>
-    </section>
 
-    <!-- basin -->
-    <section
-      id="basin"
-      class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]"
-      style="background: linear-gradient(100deg, #170f02 0%, #08080a 58%)"
-    >
-      <div
-        class="absolute top-0 right-0 left-0 h-px"
-        style="background: linear-gradient(90deg, #ffc21f, transparent 65%)"
-      />
-      <div
-        class="animate-aurora pointer-events-none absolute bottom-[-34%] left-[2%] h-[520px] w-[520px] rounded-full blur-[46px]"
-        style="
-          --np-aurora-dur: 30s;
-          background: radial-gradient(
-            circle,
-            rgba(255, 194, 31, 0.15),
-            transparent 62%
-          );
-        "
-      />
-      <div
-        class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]"
-      >
-        <div class="flex flex-col gap-5">
-          <div class="flex items-center gap-3">
-            <span
-              class="font-display text-amber border-amber border px-2 py-[2px] text-[12px] font-black tracking-[0.08em]"
-              >IN PROGRESS</span
-            >
-            <span class="text-fg-dim text-[11px] tracking-[0.2em] uppercase"
-              >03 — syndication</span
-            >
-          </div>
-          <h3
-            class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]"
-            style="font-size: clamp(38px, 5vw, 66px); line-height: 0.92"
-          >
-            basin<span
-              class="text-amber"
-              style="text-shadow: 0 0 18px rgba(255, 194, 31, 0.6)"
-              >.fm</span
-            >
-          </h3>
-          <p
-            class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]"
-            style="text-wrap: pretty"
-          >
-            Everything you consume, in one stream. RSS, podcasts, YouTube and
-            Bluesky today — Twitter, Instagram and whatever else annoys me next.
-          </p>
-          <a
-            href="https://basin.fm"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="cta-outline text-amber border-amber self-start border px-5 py-3 text-[13px] font-bold"
-            style="--accent: #ffc21f"
-            >visit basin.fm →</a
-          >
-        </div>
         <div
+          v-else-if="project.id === 'basin'"
           class="flex flex-col gap-px border border-[#2e2410] bg-[#2e2410]"
           style="box-shadow: 0 0 60px rgba(255, 194, 31, 0.09)"
         >
@@ -636,34 +427,11 @@ const GRIMICORN_TERMINAL = [
             ><span class="ml-auto">maybe someday</span>
           </div>
         </div>
-      </div>
-    </section>
 
-    <!-- markpost -->
-    <section
-      id="markpost"
-      class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]"
-      style="background: linear-gradient(260deg, #180618 0%, #08080a 58%)"
-    >
-      <div
-        class="absolute top-0 right-0 left-0 h-px"
-        style="background: linear-gradient(270deg, #ff2ea6, transparent 65%)"
-      />
-      <div
-        class="animate-aurora-reverse pointer-events-none absolute top-[-20%] right-0 h-[540px] w-[540px] rounded-full blur-[46px]"
-        style="
-          --np-aurora-dur: 36s;
-          background: radial-gradient(
-            circle,
-            rgba(255, 46, 166, 0.16),
-            transparent 62%
-          );
-        "
-      />
-      <div
-        class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]"
-      >
-        <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-[18px]">
+        <div
+          v-else-if="project.id === 'markpost'"
+          class="grid grid-cols-[1fr_auto_1fr] items-center gap-[18px]"
+        >
           <div
             class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"
           >
@@ -701,45 +469,8 @@ const GRIMICORN_TERMINAL = [
             >
           </div>
         </div>
-        <div class="flex flex-col gap-5">
-          <div class="flex items-center gap-3">
-            <span
-              class="font-display text-pink border-pink border px-2 py-[2px] text-[12px] font-black tracking-[0.08em]"
-              >IN PROGRESS</span
-            >
-            <span class="text-fg-dim text-[11px] tracking-[0.2em] uppercase"
-              >04 — capture</span
-            >
-          </div>
-          <h3
-            class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]"
-            style="font-size: clamp(38px, 5vw, 66px); line-height: 0.92"
-          >
-            markpost<span
-              class="text-pink"
-              style="text-shadow: 0 0 18px rgba(255, 46, 166, 0.6)"
-              >.io</span
-            >
-          </h3>
-          <p
-            class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]"
-            style="text-wrap: pretty"
-          >
-            Send a webhook or an email, get a Markdown file on your own
-            filesystem. Built for Obsidian, works with anything that reads
-            Markdown.
-          </p>
-          <a
-            href="https://markpost.io"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="cta-outline text-pink border-pink self-start border px-5 py-3 text-[13px] font-bold"
-            style="--accent: #ff2ea6"
-            >visit markpost.io →</a
-          >
-        </div>
-      </div>
-    </section>
+      </template>
+    </ProjectSection>
 
     <!-- footer -->
     <footer
@@ -807,22 +538,5 @@ const GRIMICORN_TERMINAL = [
 }
 .footer-link:hover {
   color: var(--accent);
-}
-
-.cta-fill {
-  transition: box-shadow 0.2s ease;
-}
-.cta-fill:hover {
-  box-shadow: 0 0 42px rgba(184, 255, 46, 0.6);
-}
-
-.cta-outline {
-  transition:
-    background 0.2s ease,
-    color 0.2s ease;
-}
-.cta-outline:hover {
-  background: var(--accent);
-  color: #08080a;
 }
 </style>
