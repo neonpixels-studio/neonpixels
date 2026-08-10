@@ -1,0 +1,17 @@
+// Single source of truth for brand values consumed in JS/TS — inline `:style`
+// bindings and component data. The CSS-facing equivalents live as custom
+// properties in `style.css` (`--color-lime`, `--color-cyan`, …); Tailwind's
+// `@theme` block can't import from TS, so those two surfaces are kept in sync
+// by hand. Any accent hex change must land in both places.
+
+export const BRAND_ACCENTS = {
+  lime: "#b8ff2e",
+  cyan: "#22e0ff",
+  pink: "#ff2ea6",
+  amber: "#ffc21f",
+} as const;
+
+// The animated wordmark gradient sweeps through the four brand accents and
+// loops back to lime for a seamless repeat. Composed from BRAND_ACCENTS so the
+// gradient can never drift from the accents it's built on.
+export const WORDMARK_GRADIENT = `linear-gradient(90deg,${BRAND_ACCENTS.lime},${BRAND_ACCENTS.cyan},${BRAND_ACCENTS.pink},${BRAND_ACCENTS.amber},${BRAND_ACCENTS.lime})`;

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-const WORDMARK_GRADIENT =
-  "linear-gradient(90deg,#b8ff2e,#22e0ff,#ff2ea6,#ffc21f,#b8ff2e)";
+import { BRAND_ACCENTS, WORDMARK_GRADIENT } from "../brand";
 
 // Each project drives the hero pills, the section accents and the footer links,
 // so its accent color and dark pill tints live in one place.
@@ -10,7 +9,7 @@ const PROJECTS = [
     name: "grimicorn",
     tld: ".dev",
     url: "https://grimicorn.dev",
-    color: "#b8ff2e",
+    color: BRAND_ACCENTS.lime,
     pillBg: "#12180a",
     pillBgHover: "#1a2410",
     pillBorder: "#2b3a14",
@@ -20,7 +19,7 @@ const PROJECTS = [
     name: "wanderist",
     tld: ".io",
     url: "https://wanderist.io",
-    color: "#22e0ff",
+    color: BRAND_ACCENTS.cyan,
     pillBg: "#08161b",
     pillBgHover: "#0c2028",
     pillBorder: "#123340",
@@ -30,7 +29,7 @@ const PROJECTS = [
     name: "basin",
     tld: ".fm",
     url: "https://basin.fm",
-    color: "#ffc21f",
+    color: BRAND_ACCENTS.amber,
     pillBg: "#1a1305",
     pillBgHover: "#241a07",
     pillBorder: "#3d2f0c",
@@ -40,7 +39,7 @@ const PROJECTS = [
     name: "markpost",
     tld: ".io",
     url: "https://markpost.io",
-    color: "#ff2ea6",
+    color: BRAND_ACCENTS.pink,
     pillBg: "#1b0713",
     pillBgHover: "#250a1a",
     pillBorder: "#3d1029",
@@ -48,11 +47,13 @@ const PROJECTS = [
 ];
 
 // Trip-log heatmap for the Wanderist card: each cell is one of four brightness
-// states so the grid reads as visited / partly / faint / empty.
+// states so the grid reads as visited / partly / faint / empty. The lit states
+// are the cyan accent at descending alpha; the alpha suffixes (88/55 hex) fade
+// it toward the empty tint.
 const TRIP_CELL_COLORS = {
-  on: "#22e0ff",
-  mid: "#22e0ff88",
-  low: "#22e0ff55",
+  on: BRAND_ACCENTS.cyan,
+  mid: `${BRAND_ACCENTS.cyan}88`,
+  low: `${BRAND_ACCENTS.cyan}55`,
   off: "#0e2831",
 };
 
@@ -61,30 +62,31 @@ const TRIP_CELLS =
     " ",
   ) as (keyof typeof TRIP_CELL_COLORS)[];
 
-// Basin aggregates a mixed feed; opacity of the leading dot fades with recency.
+// Basin aggregates a mixed feed; opacity of the leading dot fades with recency
+// via descending alpha suffixes on the amber accent (88/55/33 hex).
 const BASIN_FEED = [
   {
     title: "Syntax — 900: The One About Agents",
     kind: "podcast",
-    dot: "#ffc21f",
+    dot: BRAND_ACCENTS.amber,
     titleColor: "#e8e8ea",
   },
   {
     title: "CSS-Tricks — Anchor positioning, finally",
     kind: "rss",
-    dot: "#ffc21f88",
+    dot: `${BRAND_ACCENTS.amber}88`,
     titleColor: "#c4c4cd",
   },
   {
     title: "@dan.bsky.social — shipped something at 3am",
     kind: "bluesky",
-    dot: "#ffc21f55",
+    dot: `${BRAND_ACCENTS.amber}55`,
     titleColor: "#c4c4cd",
   },
   {
     title: "Fireship — 100 seconds of something new",
     kind: "youtube",
-    dot: "#ffc21f33",
+    dot: `${BRAND_ACCENTS.amber}33`,
     titleColor: "#c4c4cd",
   },
 ];
@@ -496,7 +498,8 @@ const GRIMICORN_TERMINAL = [
               :style="{
                 aspectRatio: '1',
                 background: TRIP_CELL_COLORS[state],
-                boxShadow: state === 'on' ? '0 0 8px #22e0ff' : 'none',
+                boxShadow:
+                  state === 'on' ? `0 0 8px ${BRAND_ACCENTS.cyan}` : 'none',
               }"
             />
           </div>
@@ -618,7 +621,10 @@ const GRIMICORN_TERMINAL = [
               class="h-2 w-2 flex-none"
               :style="{
                 background: item.dot,
-                boxShadow: item.dot === '#ffc21f' ? '0 0 8px #ffc21f' : 'none',
+                boxShadow:
+                  item.dot === BRAND_ACCENTS.amber
+                    ? `0 0 8px ${BRAND_ACCENTS.amber}`
+                    : 'none',
               }"
             />
             <span
