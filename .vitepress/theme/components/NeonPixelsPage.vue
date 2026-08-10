@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BRAND_ACCENTS, WORDMARK_GRADIENT } from "../brand";
+import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "../brand";
 
 // Each project drives the hero pills, the section accents and the footer links,
 // so its accent color and dark pill tints live in one place.
@@ -52,8 +52,8 @@ const PROJECTS = [
 // it toward the empty tint.
 const TRIP_CELL_COLORS = {
   on: BRAND_ACCENTS.cyan,
-  mid: `${BRAND_ACCENTS.cyan}88`,
-  low: `${BRAND_ACCENTS.cyan}55`,
+  mid: withAlpha(BRAND_ACCENTS.cyan, "88"),
+  low: withAlpha(BRAND_ACCENTS.cyan, "55"),
   off: "#0e2831",
 };
 
@@ -74,19 +74,19 @@ const BASIN_FEED = [
   {
     title: "CSS-Tricks — Anchor positioning, finally",
     kind: "rss",
-    dot: `${BRAND_ACCENTS.amber}88`,
+    dot: withAlpha(BRAND_ACCENTS.amber, "88"),
     titleColor: "#c4c4cd",
   },
   {
     title: "@dan.bsky.social — shipped something at 3am",
     kind: "bluesky",
-    dot: `${BRAND_ACCENTS.amber}55`,
+    dot: withAlpha(BRAND_ACCENTS.amber, "55"),
     titleColor: "#c4c4cd",
   },
   {
     title: "Fireship — 100 seconds of something new",
     kind: "youtube",
-    dot: `${BRAND_ACCENTS.amber}33`,
+    dot: withAlpha(BRAND_ACCENTS.amber, "33"),
     titleColor: "#c4c4cd",
   },
 ];

@@ -15,3 +15,16 @@ export const BRAND_ACCENTS = {
 // loops back to lime for a seamless repeat. Composed from BRAND_ACCENTS so the
 // gradient can never drift from the accents it's built on.
 export const WORDMARK_GRADIENT = `linear-gradient(90deg,${BRAND_ACCENTS.lime},${BRAND_ACCENTS.cyan},${BRAND_ACCENTS.pink},${BRAND_ACCENTS.amber},${BRAND_ACCENTS.lime})`;
+
+const OPAQUE_HEX_PATTERN = /^#[0-9a-f]{6}$/i;
+
+// Appends a two-character hex alpha channel to an opaque brand accent, e.g.
+// withAlpha(BRAND_ACCENTS.cyan, "88") -> "#22e0ff88". Throws on a non-6-digit
+// hex accent so a malformed value fails loudly here instead of silently
+// producing an invalid CSS color the browser drops at paint time.
+export function withAlpha(hex: string, alphaHex: string) {
+  if (!OPAQUE_HEX_PATTERN.test(hex)) {
+    throw new Error(`withAlpha expected a 6-digit hex accent, got "${hex}"`);
+  }
+  return `${hex}${alphaHex}`;
+}
