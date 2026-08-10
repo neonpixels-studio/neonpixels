@@ -63,30 +63,36 @@ const TRIP_CELLS =
   ) as (keyof typeof TRIP_CELL_COLORS)[];
 
 // Basin aggregates a mixed feed; opacity of the leading dot fades with recency
-// via descending alpha suffixes on the amber accent (88/55/33 hex).
+// via descending alpha suffixes on the amber accent (88/55/33 hex). Only the
+// freshest item glows — `glow` states that intent on the data rather than
+// inferring it from the dot's color.
 const BASIN_FEED = [
   {
     title: "Syntax — 900: The One About Agents",
     kind: "podcast",
     dot: BRAND_ACCENTS.amber,
+    glow: true,
     titleColor: "#e8e8ea",
   },
   {
     title: "CSS-Tricks — Anchor positioning, finally",
     kind: "rss",
     dot: withAlpha(BRAND_ACCENTS.amber, "88"),
+    glow: false,
     titleColor: "#c4c4cd",
   },
   {
     title: "@dan.bsky.social — shipped something at 3am",
     kind: "bluesky",
     dot: withAlpha(BRAND_ACCENTS.amber, "55"),
+    glow: false,
     titleColor: "#c4c4cd",
   },
   {
     title: "Fireship — 100 seconds of something new",
     kind: "youtube",
     dot: withAlpha(BRAND_ACCENTS.amber, "33"),
+    glow: false,
     titleColor: "#c4c4cd",
   },
 ];
@@ -621,10 +627,9 @@ const GRIMICORN_TERMINAL = [
               class="h-2 w-2 flex-none"
               :style="{
                 background: item.dot,
-                boxShadow:
-                  item.dot === BRAND_ACCENTS.amber
-                    ? `0 0 8px ${BRAND_ACCENTS.amber}`
-                    : 'none',
+                boxShadow: item.glow
+                  ? `0 0 8px ${BRAND_ACCENTS.amber}`
+                  : 'none',
               }"
             />
             <span

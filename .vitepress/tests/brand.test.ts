@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "@theme/brand";
+import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "../theme/brand";
 
 // Anchored to this test file, not process.cwd(), so the read still resolves if
 // vitest is invoked from a subdirectory or given a custom root.
@@ -34,9 +34,17 @@ describe("brand", () => {
   // same accent hexes by hand. This is the one drift the two-source design can't
   // prevent structurally, so assert the CSS custom properties still match.
   it.each(Object.entries(BRAND_ACCENTS))(
-    "keeps --color-%s in style.css in sync with BRAND_ACCENTS",
+    "keeps every --color-%s declaration in style.css in sync with BRAND_ACCENTS",
     (name, hex) => {
-      expect(STYLE_CSS).toMatch(new RegExp(`--color-${name}:\\s*${hex};`, "i"));
+      const declaredHexes = [
+        ...STYLE_CSS.matchAll(
+          new RegExp(`--color-${name}:\\s*(#[0-9a-f]{3,8})`, "gi"),
+        ),
+      ].map((match) => match[1].toLowerCase());
+      // Assert on every declaration, not just the first: a second, drifted
+      // declaration later in the file is the one that would win at paint time.
+      expect(declaredHexes.length).toBeGreaterThan(0);
+      expect(new Set(declaredHexes)).toEqual(new Set([hex.toLowerCase()]));
     },
   );
 
@@ -47,6 +55,10 @@ describe("brand", () => {
 
     it("throws on a value that isn't a 6-digit hex accent", () => {
       expect(() => withAlpha("rgb(34, 224, 255)", "88")).toThrow();
+    });
+
+    it("throws on an alpha that isn't a 2-digit hex channel", () => {
+      expect(() => withAlpha(BRAND_ACCENTS.cyan, "0.5")).toThrow();
     });
   });
 });
