@@ -38,12 +38,15 @@ describe("brand", () => {
     (name, hex) => {
       const declaredHexes = [
         ...STYLE_CSS.matchAll(
-          new RegExp(`--color-${name}:\\s*(#[0-9a-f]{3,8})`, "gi"),
+          new RegExp(`(?:^|[;{\\s])--color-${name}:\\s*(#[0-9a-f]{3,8})`, "gi"),
         ),
       ].map((match) => match[1].toLowerCase());
       // Assert on every declaration, not just the first: a second, drifted
       // declaration later in the file is the one that would win at paint time.
-      expect(declaredHexes.length).toBeGreaterThan(0);
+      expect(
+        declaredHexes,
+        `no hex --color-${name} declaration found in style.css`,
+      ).not.toHaveLength(0);
       expect(new Set(declaredHexes)).toEqual(new Set([hex.toLowerCase()]));
     },
   );

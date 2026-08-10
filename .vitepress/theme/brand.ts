@@ -5,9 +5,11 @@
 // from TS, so those two surfaces are kept in sync by hand (guarded by a test in
 // brand.test.ts). Any accent hex change must land in both places.
 //
-// Scope: this module owns the four accents and the gradient only. Per-component
-// derived tints (pill backgrounds, the empty heatmap cell, muted title greys)
-// stay local to the component that uses them — they aren't shared brand values.
+// Scope: this module owns the four per-project accents and the gradient only.
+// Per-component derived tints (pill backgrounds, the empty heatmap cell, muted
+// title greys) stay local to the component that uses them. The supplementary
+// `--color-purple` in style.css is consumed only through a Tailwind class, never
+// as a JS literal, so it has nothing to de-duplicate here and stays CSS-only.
 
 export const BRAND_ACCENTS = {
   lime: "#b8ff2e",
