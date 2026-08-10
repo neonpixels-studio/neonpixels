@@ -50,7 +50,84 @@ function parseHstsMaxAge(headerValue: string) {
   return Number(match[1]);
 }
 
+// The exact source set each directive is allowed to carry. Asserted as an
+// exact match (not a subset), so appending a rogue origin to any directive
+// fails the suite, not just widening to a bare wildcard. Grounded in what the
+// built site actually loads: self, Google Fonts (stylesheet from
+// fonts.googleapis.com, font files from fonts.gstatic.com), and the
+// 'unsafe-inline' that VitePress's inline bootstrap scripts and the
+// components' inline style attributes require.
+const EXPECTED_CSP_SOURCES: Record<string, string[]> = {
+  "default-src": ["'self'"],
+  "base-uri": ["'self'"],
+  "object-src": ["'none'"],
+  "frame-ancestors": ["'none'"],
+  "img-src": ["'self'"],
+  "font-src": ["'self'", "https://fonts.gstatic.com"],
+  "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+  "script-src": ["'self'", "'unsafe-inline'"],
+  "connect-src": ["'self'"],
+  "form-action": ["'self'"],
+};
+
+// Scheme-only allow-alls and eval that would silently defeat the policy. Any
+// source containing "*" is caught separately as a wildcard. None are
+// legitimate for this static site.
+const OVERLY_BROAD_SOURCES = new Set([
+  "http:",
+  "https:",
+  "data:",
+  "blob:",
+  "ws:",
+  "wss:",
+  "'unsafe-eval'",
+]);
+
+// Hashes and nonces are base64 and case-sensitive; every other CSP token
+// (keywords, schemes, hosts) is case-insensitive to the browser. Lowercasing a
+// hash would let a hash no browser matches pass the suite, so preserve its case.
+const CASE_SENSITIVE_SOURCE = /^'(?:sha(?:256|384|512)|nonce)-/i;
+
+function normalizeSource(source: string) {
+  if (CASE_SENSITIVE_SOURCE.test(source)) {
+    return source;
+  }
+  return source.toLowerCase();
+}
+
+// A browser enforces the FIRST occurrence of a duplicated directive and ignores
+// the rest, so a duplicate makes the header document a policy it does not have.
+// Parse first-wins to match the browser, but surface duplicates so the suite
+// fails loud instead of silently trusting a misconfigured file.
+function parseCsp(headerValue: string) {
+  const directives = new Map<string, string[]>();
+  const duplicates: string[] = [];
+  for (const directive of headerValue.split(";")) {
+    const tokens = directive.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) {
+      continue;
+    }
+    const name = tokens[0].toLowerCase();
+    if (directives.has(name)) {
+      duplicates.push(name);
+      continue;
+    }
+    directives.set(name, tokens.slice(1).map(normalizeSource));
+  }
+  return { directives, duplicates };
+}
+
+function isOverlyBroadSource(source: string) {
+  if (source.includes("*")) {
+    return true;
+  }
+  return OVERLY_BROAD_SOURCES.has(source);
+}
+
 const headers = parseHeaders();
+const { directives: cspDirectives, duplicates: cspDuplicates } = parseCsp(
+  readHeader(headers, "Content-Security-Policy"),
+);
 
 describe("netlify security headers", () => {
   it.each(Object.entries(STATIC_HEADERS))(
@@ -72,5 +149,38 @@ describe("netlify security headers", () => {
       readHeader(headers, "Strict-Transport-Security"),
     );
     expect(directives).toContain("includesubdomains");
+  });
+});
+
+describe("Content-Security-Policy", () => {
+  it("declares no duplicate directives", () => {
+    expect(cspDuplicates).toEqual([]);
+  });
+
+  it("declares exactly the expected directives", () => {
+    expect([...cspDirectives.keys()].sort()).toEqual(
+      Object.keys(EXPECTED_CSP_SOURCES).sort(),
+    );
+  });
+
+  it.each(Object.entries(EXPECTED_CSP_SOURCES))(
+    "scopes %s to exactly its expected sources",
+    (directive, expectedSources) => {
+      const sources = cspDirectives.get(directive) ?? [];
+      expect([...sources].sort()).toEqual([...expectedSources].sort());
+    },
+  );
+
+  // Guards the expectation table itself: exact-match already pins the live
+  // header to this table, so an overly broad source can only slip in by someone
+  // relaxing the table. This is the check that catches that.
+  it("keeps the expected source table free of overly broad sources", () => {
+    const broad = Object.entries(EXPECTED_CSP_SOURCES).flatMap(
+      ([directive, sources]) =>
+        sources
+          .filter(isOverlyBroadSource)
+          .map((source) => `${directive}: ${source}`),
+    );
+    expect(broad).toEqual([]);
   });
 });
