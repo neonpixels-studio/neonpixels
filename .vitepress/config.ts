@@ -29,9 +29,7 @@ export default defineConfig({
     hostname: SITE_URL,
   },
   head: [
-    // Fonts are self-hosted and bundled by Vite (see .vitepress/theme/index.ts),
-    // so no fonts.googleapis.com / fonts.gstatic.com preconnect or stylesheet link
-    // is needed here — that render-blocking third-party request is gone.
+    // Fonts are self-hosted — see .vitepress/theme/index.ts
     // Canonical + theme color
     ["link", { rel: "canonical", href: SITE_URL }],
     ["meta", { name: "theme-color", content: "#08080a" }],

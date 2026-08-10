@@ -177,3 +177,27 @@ describe("Local head asset hrefs", () => {
     expect(isRealFileWithExactCase(publicPathForUrl(href)), href).toBe(true);
   });
 });
+
+// Fonts are self-hosted and bundled by Vite (.vitepress/theme/index.ts). Guard
+// against a regression that re-introduces a render-blocking third-party font
+// request (preconnect or stylesheet link) to a remote origin such as Google Fonts.
+describe("No render-blocking third-party font requests", () => {
+  const head = config.head ?? [];
+  const remoteFetchingLinks = head.filter(([tag, attributes]) => {
+    if (tag !== "link") {
+      return false;
+    }
+    const relTokens = (attributes?.rel ?? "").toLowerCase().split(/\s+/);
+    const fetchesResource =
+      relTokens.includes("stylesheet") || relTokens.includes("preconnect");
+    if (!fetchesResource) {
+      return false;
+    }
+    const href = attributes?.href;
+    return typeof href === "string" && !isLocalHref(href);
+  });
+
+  it("declares no preconnect or stylesheet link to a remote origin", () => {
+    expect(remoteFetchingLinks).toEqual([]);
+  });
+});
