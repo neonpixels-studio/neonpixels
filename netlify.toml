@@ -13,3 +13,12 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
     Strict-Transport-Security = "max-age=63072000; includeSubDomains"
+    # Scoped to what the built site actually loads: self plus Google Fonts
+    # (stylesheet from fonts.googleapis.com, font files from fonts.gstatic.com).
+    # script-src/style-src keep 'unsafe-inline' because VitePress emits inline
+    # bootstrap scripts and the components render inline style attributes; this
+    # does weaken script-src, so it is a deliberate trade-off, not fully locked.
+    # @todo Drop script-src 'unsafe-inline' by hashing VitePress's inline
+    # scripts (sha256) in a post-build header step; style attributes still need
+    # 'unsafe-inline' on style-src regardless.
+    Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self'; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; form-action 'self'"
