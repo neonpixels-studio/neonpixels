@@ -29,23 +29,9 @@ export default defineConfig({
     hostname: SITE_URL,
   },
   head: [
-    // Fonts
-    ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
-    [
-      "link",
-      {
-        rel: "preconnect",
-        href: "https://fonts.gstatic.com",
-        crossorigin: "",
-      },
-    ],
-    [
-      "link",
-      {
-        href: "https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap",
-        rel: "stylesheet",
-      },
-    ],
+    // Fonts are self-hosted and bundled by Vite (see .vitepress/theme/index.ts),
+    // so no fonts.googleapis.com / fonts.gstatic.com preconnect or stylesheet link
+    // is needed here — that render-blocking third-party request is gone.
     // Canonical + theme color
     ["link", { rel: "canonical", href: SITE_URL }],
     ["meta", { name: "theme-color", content: "#08080a" }],
