@@ -1,8 +1,13 @@
-// Single source of truth for brand values consumed in JS/TS — inline `:style`
-// bindings and component data. The CSS-facing equivalents live as custom
-// properties in `style.css` (`--color-lime`, `--color-cyan`, …); Tailwind's
-// `@theme` block can't import from TS, so those two surfaces are kept in sync
-// by hand. Any accent hex change must land in both places.
+// Single source of truth for the brand accents and the wordmark gradient where
+// they're consumed in JS/TS — inline `:style` bindings and component data. The
+// CSS-facing equivalents live as custom properties in `style.css`
+// (`--color-lime`, `--color-cyan`, …); Tailwind's `@theme` block can't import
+// from TS, so those two surfaces are kept in sync by hand (guarded by a test in
+// brand.test.ts). Any accent hex change must land in both places.
+//
+// Scope: this module owns the four accents and the gradient only. Per-component
+// derived tints (pill backgrounds, the empty heatmap cell, muted title greys)
+// stay local to the component that uses them — they aren't shared brand values.
 
 export const BRAND_ACCENTS = {
   lime: "#b8ff2e",

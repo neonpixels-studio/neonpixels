@@ -1,17 +1,33 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "@theme/brand";
 
-const STYLE_CSS_PATH = resolve(process.cwd(), ".vitepress/theme/style.css");
+// Anchored to this test file, not process.cwd(), so the read still resolves if
+// vitest is invoked from a subdirectory or given a custom root.
+const STYLE_CSS = readFileSync(
+  path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../theme/style.css",
+  ),
+  "utf8",
+);
 
 describe("brand", () => {
-  // Pins the composed gradient to the exact literal it replaced, so a future
-  // accent edit can't silently reshape the wordmark's rendered output.
+  // Asserts the gradient's structure — the five accent stops in order, looping
+  // back to lime, behind the 90deg prefix — rather than a pinned literal, so an
+  // intentional accent change flows through without a false failure here while
+  // a dropped/reordered stop still fails.
   it("composes the wordmark gradient from the accents, looping back to lime", () => {
-    expect(WORDMARK_GRADIENT).toBe(
-      "linear-gradient(90deg,#b8ff2e,#22e0ff,#ff2ea6,#ffc21f,#b8ff2e)",
-    );
+    expect(WORDMARK_GRADIENT).toMatch(/^linear-gradient\(90deg,/);
+    expect(WORDMARK_GRADIENT.match(/#[0-9a-f]{6}/gi)).toEqual([
+      BRAND_ACCENTS.lime,
+      BRAND_ACCENTS.cyan,
+      BRAND_ACCENTS.pink,
+      BRAND_ACCENTS.amber,
+      BRAND_ACCENTS.lime,
+    ]);
   });
 
   // brand.ts (JS-consumed) and style.css @theme tokens (CSS-consumed) mirror the
@@ -20,8 +36,7 @@ describe("brand", () => {
   it.each(Object.entries(BRAND_ACCENTS))(
     "keeps --color-%s in style.css in sync with BRAND_ACCENTS",
     (name, hex) => {
-      const styleCss = readFileSync(STYLE_CSS_PATH, "utf8");
-      expect(styleCss).toMatch(new RegExp(`--color-${name}:\\s*${hex};`));
+      expect(STYLE_CSS).toMatch(new RegExp(`--color-${name}:\\s*${hex};`, "i"));
     },
   );
 
