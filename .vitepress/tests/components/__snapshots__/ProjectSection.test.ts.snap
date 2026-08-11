@@ -1,0 +1,16 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ProjectSection > renders correctly 1`] = `
+"<section id="grimicorn" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(100deg, #0d1206 0%, #08080a 58%);">
+  <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(90deg, #b8ff2e, transparent 65%);"></div>
+  <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora top-[-30%] left-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 28s; background: radial-gradient(circle, rgba(184, 255, 46, 0.18), transparent 62%);"></div>
+  <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
+    <div data-v-6057c22f="" class="flex flex-col gap-5">
+      <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[3px] text-bg bg-lime">LIVE</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">01 — agent workflow</span></div>
+      <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">grimicorn<span data-v-6057c22f="" class="text-lime animate-flicker" style="text-shadow: 0 0 18px rgba(184, 255, 46, 0.6);">.dev</span></h3>
+      <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]">The chaotic coding sidekick behind everything else on this page. An automated agent workflow that builds, breaks, and ships the other Neon Pixels projects while I'm asleep.</p><a data-v-6057c22f="" href="https://grimicorn.dev" target="_blank" rel="noopener noreferrer" class="cta-fill text-bg self-start px-5 py-3 text-[13px] font-bold bg-lime" style="box-shadow: 0 0 26px rgba(184, 255, 46, 0.35); --accent-glow: rgba(184, 255, 46, 0.6);">visit grimicorn.dev →</a>
+    </div>
+    <div class="visual-marker">visual</div>
+  </div>
+</section>"
+`;
