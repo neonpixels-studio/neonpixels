@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
+import { WORDMARK_GRADIENT } from "../brand";
 
 const MISSING_LINES = [
   "no such page, only pixels",
@@ -8,9 +9,6 @@ const MISSING_LINES = [
   "the app you wanted is still an idea",
   "page last seen escaping into production",
 ];
-
-const WORDMARK_GRADIENT =
-  "linear-gradient(90deg,#b8ff2e,#22e0ff,#ff2ea6,#ffc21f,#b8ff2e)";
 
 const requestedPath = ref("");
 const lineIndex = ref(0);

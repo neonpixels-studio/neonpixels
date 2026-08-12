@@ -1,6 +1,10 @@
+import { BRAND_ACCENTS } from "../brand";
+
 // One record per project drives everything that repeats across the page: the
 // hero pills, the footer links, and the four project sections. Adding or
-// editing a project is a data change here, never a markup copy.
+// editing a project is a data change here, never a markup copy. Each project's
+// accent `color` references the centralized BRAND_ACCENTS so it can't drift from
+// the wordmark gradient and CSS tokens built on the same hexes.
 
 // "fill" projects (a shipped one) get a solid badge + CTA; "outline" projects
 // (still in progress) get a bordered badge + CTA.
@@ -53,7 +57,7 @@ export const PROJECTS: Project[] = [
     name: "grimicorn",
     tld: ".dev",
     url: "https://grimicorn.dev",
-    color: "#b8ff2e",
+    color: BRAND_ACCENTS.lime,
     pillBg: "#12180a",
     pillBgHover: "#1a2410",
     pillBorder: "#2b3a14",
@@ -82,7 +86,7 @@ export const PROJECTS: Project[] = [
     name: "wanderist",
     tld: ".io",
     url: "https://wanderist.io",
-    color: "#22e0ff",
+    color: BRAND_ACCENTS.cyan,
     pillBg: "#08161b",
     pillBgHover: "#0c2028",
     pillBorder: "#123340",
@@ -111,7 +115,7 @@ export const PROJECTS: Project[] = [
     name: "basin",
     tld: ".fm",
     url: "https://basin.fm",
-    color: "#ffc21f",
+    color: BRAND_ACCENTS.amber,
     pillBg: "#1a1305",
     pillBgHover: "#241a07",
     pillBorder: "#3d2f0c",
@@ -140,7 +144,7 @@ export const PROJECTS: Project[] = [
     name: "markpost",
     tld: ".io",
     url: "https://markpost.io",
-    color: "#ff2ea6",
+    color: BRAND_ACCENTS.pink,
     pillBg: "#1b0713",
     pillBgHover: "#250a1a",
     pillBorder: "#3d1029",

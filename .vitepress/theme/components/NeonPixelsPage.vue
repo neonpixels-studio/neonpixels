@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "../brand";
 import { PROJECTS } from "../data/projects";
 import ProjectSection from "./ProjectSection.vue";
 
@@ -7,15 +8,14 @@ import ProjectSection from "./ProjectSection.vue";
 // constant is enough — no reactivity to track.
 const paddedProjectCount = String(PROJECTS.length).padStart(2, "0");
 
-const WORDMARK_GRADIENT =
-  "linear-gradient(90deg,#b8ff2e,#22e0ff,#ff2ea6,#ffc21f,#b8ff2e)";
-
 // Trip-log heatmap for the Wanderist card: each cell is one of four brightness
-// states so the grid reads as visited / partly / faint / empty.
+// states so the grid reads as visited / partly / faint / empty. The lit states
+// are the cyan accent at descending alpha; the alpha suffixes (88/55 hex) fade
+// it toward the empty tint.
 const TRIP_CELL_COLORS = {
-  on: "#22e0ff",
-  mid: "#22e0ff88",
-  low: "#22e0ff55",
+  on: BRAND_ACCENTS.cyan,
+  mid: withAlpha(BRAND_ACCENTS.cyan, "88"),
+  low: withAlpha(BRAND_ACCENTS.cyan, "55"),
   off: "#0e2831",
 };
 
@@ -24,30 +24,37 @@ const TRIP_CELLS =
     " ",
   ) as (keyof typeof TRIP_CELL_COLORS)[];
 
-// Basin aggregates a mixed feed; opacity of the leading dot fades with recency.
+// Basin aggregates a mixed feed; opacity of the leading dot fades with recency
+// via descending alpha suffixes on the amber accent (88/55/33 hex). Only the
+// freshest item glows — `glow` states that intent on the data rather than
+// inferring it from the dot's color.
 const BASIN_FEED = [
   {
     title: "Syntax — 900: The One About Agents",
     kind: "podcast",
-    dot: "#ffc21f",
+    dot: BRAND_ACCENTS.amber,
+    glow: true,
     titleColor: "#e8e8ea",
   },
   {
     title: "CSS-Tricks — Anchor positioning, finally",
     kind: "rss",
-    dot: "#ffc21f88",
+    dot: withAlpha(BRAND_ACCENTS.amber, "88"),
+    glow: false,
     titleColor: "#c4c4cd",
   },
   {
     title: "@dan.bsky.social — shipped something at 3am",
     kind: "bluesky",
-    dot: "#ffc21f55",
+    dot: withAlpha(BRAND_ACCENTS.amber, "55"),
+    glow: false,
     titleColor: "#c4c4cd",
   },
   {
     title: "Fireship — 100 seconds of something new",
     kind: "youtube",
-    dot: "#ffc21f33",
+    dot: withAlpha(BRAND_ACCENTS.amber, "33"),
+    glow: false,
     titleColor: "#c4c4cd",
   },
 ];
@@ -385,7 +392,8 @@ const GRIMICORN_TERMINAL = [
               :style="{
                 aspectRatio: '1',
                 background: TRIP_CELL_COLORS[state],
-                boxShadow: state === 'on' ? '0 0 8px #22e0ff' : 'none',
+                boxShadow:
+                  state === 'on' ? `0 0 8px ${BRAND_ACCENTS.cyan}` : 'none',
               }"
             />
           </div>
@@ -409,7 +417,9 @@ const GRIMICORN_TERMINAL = [
               class="h-2 w-2 flex-none"
               :style="{
                 background: item.dot,
-                boxShadow: item.dot === '#ffc21f' ? '0 0 8px #ffc21f' : 'none',
+                boxShadow: item.glow
+                  ? `0 0 8px ${BRAND_ACCENTS.amber}`
+                  : 'none',
               }"
             />
             <span
