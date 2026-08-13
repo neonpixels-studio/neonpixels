@@ -13,44 +13,47 @@ const STYLE_CSS = readFileSync(
   "utf8",
 );
 
-// Strip block comments before scanning for outline suppression so prose in a
-// comment can never trip (or mask) the whole-file assertion below.
+// Comments stripped first so prose can neither satisfy nor mask a match below.
 const STYLE_CSS_WITHOUT_COMMENTS = STYLE_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
 
-// happy-dom evaluates neither `:focus-visible` nor computed CSS, so the keyboard
-// focus guarantee (WCAG 2.4.7) is asserted against the stylesheet source: the
-// custom dark theme owns the whole page, so a single global rule is what gives
-// every link/button a visible focus ring.
-const FOCUS_RULE_PATTERN = /([^{}]*):focus-visible\s*\{([^}]*)\}/;
-// The exact regression this guards: an accidental `outline: none`/`outline: 0`
-// that silently strips the ring keyboard users rely on. Global so it catches a
-// suppression added anywhere in the sheet, not just the first :focus-visible.
-const SUPPRESSED_OUTLINE_PATTERN = /outline:\s*(none|0)\s*(;|\})/g;
+// happy-dom evaluates neither :focus-visible nor computed CSS, so the WCAG 2.4.7
+// keyboard-focus guarantee is asserted against the stylesheet source. This
+// guards style.css only: a component <style> setting `outline: none` would
+// defeat the global rule and is out of scope here.
+const FOCUS_RULE_PATTERN = /:where\(([^)]*)\)\s*:focus-visible\s*\{([^}]*)\}/;
+const REQUIRED_FOCUS_TARGETS = ["a", "button", "[tabindex]"];
+// A real ring needs a non-zero width + solid style and a non-zero offset; a
+// `0`/`none` ring renders nothing, so pin the values, not just the properties.
+const VISIBLE_OUTLINE_PATTERN = /outline:\s*[1-9]\d*px\s+solid/;
+const OUTLINE_OFFSET_PATTERN = /outline-offset:\s*[1-9]\d*px/;
+// The ways an outline gets silently killed: none / 0 / transparent, on the
+// shorthand or a longhand, with or without !important.
+const SUPPRESSED_OUTLINE_PATTERN =
+  /outline(-style|-width|-color)?:\s*(none|0(px)?|transparent)\s*(!important)?\s*[;}]/;
+
+function focusRuleMatch() {
+  return STYLE_CSS_WITHOUT_COMMENTS.match(FOCUS_RULE_PATTERN);
+}
 
 describe("style.css keyboard focus", () => {
-  it("defines a global :focus-visible rule", () => {
-    expect(STYLE_CSS).toMatch(FOCUS_RULE_PATTERN);
+  it("defines a global :where(...):focus-visible rule", () => {
+    expect(focusRuleMatch()).not.toBeNull();
   });
 
-  it("targets links, buttons and other focusable controls, not one class", () => {
-    const selector = STYLE_CSS.match(FOCUS_RULE_PATTERN)?.[1] ?? "";
-    expect(selector).toContain("a");
-    expect(selector).toContain("button");
-    expect(selector).toContain("tabindex");
+  it("targets links, buttons and other focusable controls", () => {
+    const targets = (focusRuleMatch()?.[1] ?? "")
+      .split(",")
+      .map((target) => target.trim());
+    expect(targets).toEqual(expect.arrayContaining(REQUIRED_FOCUS_TARGETS));
   });
 
-  it("gives the ring a real outline lifted off the control", () => {
-    const declarations = STYLE_CSS.match(FOCUS_RULE_PATTERN)?.[2] ?? "";
-    // A visible ring needs a solid outline plus an offset lifting it onto the
-    // dark page; assert the value, not just the property, so an offset-less or
-    // style-less ring can't pass this green.
-    expect(declarations).toMatch(/outline:\s*\S+\s+solid/);
-    expect(declarations).toMatch(/outline-offset:/);
+  it("gives the ring a real, non-zero outline lifted off the control", () => {
+    const declarations = focusRuleMatch()?.[2] ?? "";
+    expect(declarations).toMatch(VISIBLE_OUTLINE_PATTERN);
+    expect(declarations).toMatch(OUTLINE_OFFSET_PATTERN);
   });
 
   it("never suppresses an outline anywhere in the stylesheet", () => {
-    // Scans the whole sheet (not just the global rule) so a later
-    // `.pill:focus { outline: none }` regression elsewhere still fails here.
     expect(STYLE_CSS_WITHOUT_COMMENTS).not.toMatch(SUPPRESSED_OUTLINE_PATTERN);
   });
 });

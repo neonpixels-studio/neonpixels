@@ -2,9 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mount } from "@vue/test-utils";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 
-// The three interactive control classes the hero/nav/footer render; each must
-// still appear in the markup so the global :focus-visible ring (asserted in
-// style.test.ts) actually has something to land on.
+// Interactive control classes the global :focus-visible ring lands on.
 const INTERACTIVE_FOCUS_CLASSES = ["pill", "nav-link", "footer-link"];
 
 // Matches any absolute URL (has a scheme) or a protocol-relative URL. In-page
@@ -113,14 +111,17 @@ describe("NeonPixelsPage", () => {
   });
 
   it.each(INTERACTIVE_FOCUS_CLASSES)(
-    "renders .%s as a focusable anchor the global focus ring targets",
+    "renders every .%s as a focusable anchor with an href",
     (className) => {
       const wrapper = mount(NeonPixelsPage);
-      // The global :focus-visible rule selects a[href] (etc.), so assert the
-      // element type it actually matches — not just the class. A refactor that
-      // dropped the href (removing the control from tab order) would then fail
-      // here instead of passing a class-only check.
-      expect(wrapper.find(`a.${className}[href]`).exists()).toBe(true);
+      // Assert every control of this class is an anchor that keeps its href
+      // (stays in tab order), not just that one exists — a refactor dropping
+      // the href on some would then fail here instead of passing silently.
+      const controls = wrapper.findAll(`a.${className}`);
+      expect(controls.length).toBeGreaterThan(0);
+      expect(wrapper.findAll(`a.${className}[href]`).length).toBe(
+        controls.length,
+      );
       wrapper.unmount();
     },
   );

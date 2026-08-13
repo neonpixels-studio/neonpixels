@@ -37,17 +37,17 @@ const ctaClass = computed(() => {
 });
 
 const ctaStyle = computed(() => {
-  if (isFilled.value) {
-    return {
-      boxShadow: `0 0 26px ${hexToRgba(props.project.color, CTA_FILL_SHADOW_ALPHA)}`,
-      "--accent-glow": hexToRgba(props.project.color, CTA_FILL_HOVER_ALPHA),
-      // --accent isn't read by the fill hover (that uses --accent-glow), but the
-      // global :focus-visible ring reads it, so expose it here too and the fill
-      // CTA's focus ring tracks its project color instead of the lime fallback.
-      "--accent": props.project.color,
-    };
+  // Every CTA exposes --accent so the global :focus-visible ring tracks the
+  // project color; the fill variant layers its glow shadow on top.
+  const accentStyle = { "--accent": props.project.color };
+  if (!isFilled.value) {
+    return accentStyle;
   }
-  return { "--accent": props.project.color };
+  return {
+    ...accentStyle,
+    boxShadow: `0 0 26px ${hexToRgba(props.project.color, CTA_FILL_SHADOW_ALPHA)}`,
+    "--accent-glow": hexToRgba(props.project.color, CTA_FILL_HOVER_ALPHA),
+  };
 });
 
 const tldClass = computed(() => {
