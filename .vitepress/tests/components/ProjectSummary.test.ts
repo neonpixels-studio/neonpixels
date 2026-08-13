@@ -1,26 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import { mount } from "@vue/test-utils";
 import { createSSRApp, h } from "vue";
 import { renderToString } from "@vue/server-renderer";
 import ProjectSummary from "@components/ProjectSummary.vue";
 import { PROJECTS, type Project } from "@theme/data/projects";
-
-// The CTA links share the dark theme's hover-only styling, so they need an
-// explicit focus-visible ring too (WCAG 2.4.7). happy-dom can't evaluate
-// `:focus-visible` or compute scoped CSS, so assert it against the source. Read
-// via path.resolve, not `new URL(relative, import.meta.url)` — Vite rewrites the
-// latter into a non-file asset URL that fileURLToPath then rejects.
-const CTA_FOCUS_CLASSES = ["cta-fill", "cta-outline"];
-
-const PROJECT_SUMMARY_PATH = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../theme/components/ProjectSummary.vue",
-);
-
-const PROJECT_SUMMARY_SOURCE = readFileSync(PROJECT_SUMMARY_PATH, "utf8");
 
 // Build fixtures off a real project so the shape stays honest, but pin the
 // variant/flicker flags here rather than mining PROJECTS by variant — that way
@@ -136,16 +119,16 @@ describe("ProjectSummary", () => {
     wrapper.unmount();
   });
 
-  it.each(CTA_FOCUS_CLASSES)(
-    "defines a visible focus-visible outline for .%s",
-    (className) => {
-      // Require a solid, coloured (var()) outline so `outline: none` can't pass.
-      const focusRulePattern = new RegExp(
-        `\\.${className}:focus-visible[^{]*\\{[^}]*outline:\\s*\\S+\\s+solid\\s+var\\(`,
-      );
-      expect(PROJECT_SUMMARY_SOURCE).toMatch(focusRulePattern);
-    },
-  );
+  it("exposes the project color to the fill CTA via --accent for the focus ring", () => {
+    const wrapper = mount(ProjectSummary, {
+      props: { project: filledProject },
+    });
+    // The global :focus-visible ring reads --accent; the fill CTA must expose it
+    // so its focus ring tracks the project color instead of the lime fallback.
+    const style = wrapper.find("a").attributes("style") ?? "";
+    expect(style).toContain(`--accent: ${filledProject.color}`);
+    wrapper.unmount();
+  });
 
   it("flickers the tld only when the project asks for it", () => {
     const flickerWrapper = mount(ProjectSummary, {

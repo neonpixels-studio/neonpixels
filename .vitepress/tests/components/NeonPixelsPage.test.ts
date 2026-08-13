@@ -1,25 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import { mount } from "@vue/test-utils";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 
-// The custom dark theme can't rely on the browser default focus ring being
-// visible, so every interactive control must define an explicit focus-visible
-// outline. happy-dom doesn't evaluate `:focus-visible` or compute scoped CSS,
-// so the guarantee is asserted against the component's own <style> source.
+// The three interactive control classes the hero/nav/footer render; each must
+// still appear in the markup so the global :focus-visible ring (asserted in
+// style.test.ts) actually has something to land on.
 const INTERACTIVE_FOCUS_CLASSES = ["pill", "nav-link", "footer-link"];
-
-// path.resolve off the test file's own dir, not `new URL(relative, import.meta.url)`:
-// Vite rewrites the latter into an asset URL (non-file scheme) that fileURLToPath
-// then rejects, so the string-based resolve is what keeps this readable at runtime.
-const NEON_PIXELS_PAGE_PATH = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../theme/components/NeonPixelsPage.vue",
-);
-
-const NEON_PIXELS_PAGE_SOURCE = readFileSync(NEON_PIXELS_PAGE_PATH, "utf8");
 
 // Matches any absolute URL (has a scheme) or a protocol-relative URL. In-page
 // hash links (#top, #projects) are internal and must NOT open a new tab.
@@ -126,26 +112,14 @@ describe("NeonPixelsPage", () => {
     wrapper.unmount();
   });
 
-  it("renders every interactive control that gets a focus-visible ring", () => {
-    const wrapper = mount(NeonPixelsPage);
-    // A renamed/removed class would leave its focus rule targeting nothing, so
-    // pin that each focus-styled class is actually present in the markup.
-    INTERACTIVE_FOCUS_CLASSES.forEach((className) => {
-      expect(wrapper.find(`.${className}`).exists()).toBe(true);
-    });
-    wrapper.unmount();
-  });
-
   it.each(INTERACTIVE_FOCUS_CLASSES)(
-    "defines a visible focus-visible outline for .%s",
+    "renders the .%s control the global focus ring targets",
     (className) => {
-      // Require a solid, coloured (var()) outline, not just any `outline:`
-      // declaration — otherwise `outline: none` (the classic accidental focus
-      // suppression this guards against) would keep the test green.
-      const focusRulePattern = new RegExp(
-        `\\.${className}:focus-visible[^{]*\\{[^}]*outline:\\s*\\S+\\s+solid\\s+var\\(`,
-      );
-      expect(NEON_PIXELS_PAGE_SOURCE).toMatch(focusRulePattern);
+      const wrapper = mount(NeonPixelsPage);
+      // The global :focus-visible ring lands on links; a renamed/removed control
+      // class would leave it with nothing here, so pin each is still rendered.
+      expect(wrapper.find(`.${className}`).exists()).toBe(true);
+      wrapper.unmount();
     },
   );
 });

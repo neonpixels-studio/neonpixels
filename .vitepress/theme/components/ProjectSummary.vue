@@ -41,6 +41,10 @@ const ctaStyle = computed(() => {
     return {
       boxShadow: `0 0 26px ${hexToRgba(props.project.color, CTA_FILL_SHADOW_ALPHA)}`,
       "--accent-glow": hexToRgba(props.project.color, CTA_FILL_HOVER_ALPHA),
+      // --accent isn't read by the fill hover (that uses --accent-glow), but the
+      // global :focus-visible ring reads it, so expose it here too and the fill
+      // CTA's focus ring tracks its project color instead of the lime fallback.
+      "--accent": props.project.color,
     };
   }
   return { "--accent": props.project.color };
@@ -111,17 +115,5 @@ const headingGlowStyle = computed(() => ({
 .cta-outline:hover {
   background: var(--accent);
   color: var(--color-bg);
-}
-
-/* Keyboard focus for the project CTAs: same WCAG 2.4.7 concern as the hero
-   pills and footer links, but scoped here since the CTA markup lives in this
-   component. The outline-offset lifts the ring onto the dark page so it reads
-   even on a fill CTA whose background is the accent color. The outline variant
-   already exposes --accent; the fill variant does not, so both fall back to the
-   lime brand token. */
-.cta-fill:focus-visible,
-.cta-outline:focus-visible {
-  outline: 2px solid var(--accent, var(--color-lime));
-  outline-offset: 2px;
 }
 </style>
