@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { mount } from "@vue/test-utils";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 
+// Interactive control classes the global :focus-visible ring lands on.
+const INTERACTIVE_FOCUS_CLASSES = ["pill", "nav-link", "footer-link"];
+
 // Matches any absolute URL (has a scheme) or a protocol-relative URL. In-page
 // hash links (#top, #projects) are internal and must NOT open a new tab.
 const EXTERNAL_HREF_PATTERN = /^([a-z][a-z0-9+.-]*:|\/\/)/i;
@@ -106,4 +109,20 @@ describe("NeonPixelsPage", () => {
     });
     wrapper.unmount();
   });
+
+  it.each(INTERACTIVE_FOCUS_CLASSES)(
+    "renders every .%s as a focusable anchor with an href",
+    (className) => {
+      const wrapper = mount(NeonPixelsPage);
+      // Assert every control of this class is an anchor that keeps its href
+      // (stays in tab order), not just that one exists — a refactor dropping
+      // the href on some would then fail here instead of passing silently.
+      const controls = wrapper.findAll(`a.${className}`);
+      expect(controls.length).toBeGreaterThan(0);
+      expect(wrapper.findAll(`a.${className}[href]`).length).toBe(
+        controls.length,
+      );
+      wrapper.unmount();
+    },
+  );
 });

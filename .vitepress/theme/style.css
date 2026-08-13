@@ -161,3 +161,23 @@ body {
     opacity: 1;
   }
 }
+
+/* Keyboard focus ring for every interactive control (WCAG 2.4.7), in one place
+   so it also covers the wordmark links and 404 CTAs. `:where()` holds the
+   selector at (0,1,0) specificity so a component rule can still override it.
+   Each control reuses its own inline --accent (pills, footer links, CTAs),
+   falling back to lime; the offset lifts the ring onto the dark page so it
+   stays visible even against a matching fill or border. */
+:where(
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  [contenteditable],
+  [tabindex]
+):focus-visible {
+  outline: 2px solid var(--accent, var(--color-lime));
+  outline-offset: 2px;
+}

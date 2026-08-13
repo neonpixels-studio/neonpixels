@@ -119,6 +119,17 @@ describe("ProjectSummary", () => {
     wrapper.unmount();
   });
 
+  it("exposes the project color to the fill CTA via --accent for the focus ring", () => {
+    const wrapper = mount(ProjectSummary, {
+      props: { project: filledProject },
+    });
+    // The global :focus-visible ring reads --accent; the fill CTA must expose it
+    // so its focus ring tracks the project color instead of the lime fallback.
+    const style = wrapper.find("a").attributes("style") ?? "";
+    expect(style).toContain(`--accent: ${filledProject.color}`);
+    wrapper.unmount();
+  });
+
   it("flickers the tld only when the project asks for it", () => {
     const flickerWrapper = mount(ProjectSummary, {
       props: { project: filledProject },

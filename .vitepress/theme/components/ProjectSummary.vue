@@ -37,13 +37,17 @@ const ctaClass = computed(() => {
 });
 
 const ctaStyle = computed(() => {
-  if (isFilled.value) {
-    return {
-      boxShadow: `0 0 26px ${hexToRgba(props.project.color, CTA_FILL_SHADOW_ALPHA)}`,
-      "--accent-glow": hexToRgba(props.project.color, CTA_FILL_HOVER_ALPHA),
-    };
+  // Every CTA exposes --accent so the global :focus-visible ring tracks the
+  // project color; the fill variant layers its glow shadow on top.
+  const accentStyle = { "--accent": props.project.color };
+  if (!isFilled.value) {
+    return accentStyle;
   }
-  return { "--accent": props.project.color };
+  return {
+    ...accentStyle,
+    boxShadow: `0 0 26px ${hexToRgba(props.project.color, CTA_FILL_SHADOW_ALPHA)}`,
+    "--accent-glow": hexToRgba(props.project.color, CTA_FILL_HOVER_ALPHA),
+  };
 });
 
 const tldClass = computed(() => {
