@@ -549,4 +549,19 @@ const GRIMICORN_TERMINAL = [
 .footer-link:hover {
   color: var(--accent);
 }
+
+/* Keyboard focus: the bespoke dark theme can't lean on the browser default
+   outline being legible against it, so every interactive control gets an
+   explicit focus-visible ring (WCAG 2.4.7). Each control reuses its own
+   accent (--accent) where it has one and falls back to the lime brand token
+   (defined in style.css @theme) for the nav links, which carry no accent. */
+.pill:focus-visible,
+.nav-link:focus-visible,
+.footer-link:focus-visible {
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: var(--accent, var(--color-lime));
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
 </style>

@@ -1,6 +1,25 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { mount } from "@vue/test-utils";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
+
+// The custom dark theme can't rely on the browser default focus ring being
+// visible, so every interactive control must define an explicit focus-visible
+// outline. happy-dom doesn't evaluate `:focus-visible` or compute scoped CSS,
+// so the guarantee is asserted against the component's own <style> source.
+const INTERACTIVE_FOCUS_CLASSES = ["pill", "nav-link", "footer-link"];
+
+// path.resolve off the test file's own dir, not `new URL(relative, import.meta.url)`:
+// Vite rewrites the latter into an asset URL (non-file scheme) that fileURLToPath
+// then rejects, so the string-based resolve is what keeps this readable at runtime.
+const NEON_PIXELS_PAGE_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../theme/components/NeonPixelsPage.vue",
+);
+
+const NEON_PIXELS_PAGE_SOURCE = readFileSync(NEON_PIXELS_PAGE_PATH, "utf8");
 
 // Matches any absolute URL (has a scheme) or a protocol-relative URL. In-page
 // hash links (#top, #projects) are internal and must NOT open a new tab.
@@ -106,4 +125,24 @@ describe("NeonPixelsPage", () => {
     });
     wrapper.unmount();
   });
+
+  it("renders every interactive control that gets a focus-visible ring", () => {
+    const wrapper = mount(NeonPixelsPage);
+    // A renamed/removed class would leave its focus rule targeting nothing, so
+    // pin that each focus-styled class is actually present in the markup.
+    INTERACTIVE_FOCUS_CLASSES.forEach((className) => {
+      expect(wrapper.find(`.${className}`).exists()).toBe(true);
+    });
+    wrapper.unmount();
+  });
+
+  it.each(INTERACTIVE_FOCUS_CLASSES)(
+    "defines a focus-visible outline for .%s",
+    (className) => {
+      const focusRulePattern = new RegExp(
+        `\\.${className}:focus-visible[^{]*\\{[^}]*outline:`,
+      );
+      expect(NEON_PIXELS_PAGE_SOURCE).toMatch(focusRulePattern);
+    },
+  );
 });
