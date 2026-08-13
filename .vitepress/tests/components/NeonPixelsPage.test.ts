@@ -113,12 +113,14 @@ describe("NeonPixelsPage", () => {
   });
 
   it.each(INTERACTIVE_FOCUS_CLASSES)(
-    "renders the .%s control the global focus ring targets",
+    "renders .%s as a focusable anchor the global focus ring targets",
     (className) => {
       const wrapper = mount(NeonPixelsPage);
-      // The global :focus-visible ring lands on links; a renamed/removed control
-      // class would leave it with nothing here, so pin each is still rendered.
-      expect(wrapper.find(`.${className}`).exists()).toBe(true);
+      // The global :focus-visible rule selects a[href] (etc.), so assert the
+      // element type it actually matches — not just the class. A refactor that
+      // dropped the href (removing the control from tab order) would then fail
+      // here instead of passing a class-only check.
+      expect(wrapper.find(`a.${className}[href]`).exists()).toBe(true);
       wrapper.unmount();
     },
   );

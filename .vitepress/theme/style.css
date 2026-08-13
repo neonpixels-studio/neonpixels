@@ -166,8 +166,9 @@ body {
    outline being legible against it, so give every interactive control an
    explicit focus-visible ring (WCAG 2.4.7) in one place rather than per
    component — this also covers the header/footer wordmark links and the 404
-   CTAs, which carry no bespoke focus class. `:where()` keeps specificity at 0
-   so any control can still override it. Each control reuses its own --accent
+   CTAs, which carry no bespoke focus class. `:where()` keeps the selector at a
+   single pseudo-class of specificity (0,1,0), so a component rule can still
+   override it in the cascade. Each control reuses its own --accent
    where it sets one inline (hero pills, footer links, project CTAs) and falls
    back to the lime brand token otherwise. The offset lifts the ring onto the
    dark page so it stays visible even when its color matches the control's own
