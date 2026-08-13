@@ -1,27 +1,79 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, extname, resolve } from "node:path";
 
 import config from "../config";
 import type { HeadConfig } from "vitepress";
 
 const PUBLIC_DIR = resolve(process.cwd(), "public");
 const THEME_STYLE_PATH = resolve(process.cwd(), ".vitepress/theme/style.css");
-const THEME_ENTRY_PATH = resolve(process.cwd(), ".vitepress/theme/index.ts");
+const THEME_DIR = resolve(process.cwd(), ".vitepress/theme");
 
-// The self-hosted @fontsource weights the theme entry must import — the Archivo and
-// JetBrains Mono weights the site formerly pulled from Google Fonts. Kept here so the
-// presence check below fails loudly if an import is dropped and fonts silently fall
-// back to system defaults.
-const SELF_HOSTED_FONT_IMPORTS = [
-  "@fontsource/archivo/400.css",
-  "@fontsource/archivo/600.css",
-  "@fontsource/archivo/800.css",
-  "@fontsource/archivo/900.css",
-  "@fontsource/jetbrains-mono/400.css",
-  "@fontsource/jetbrains-mono/500.css",
-  "@fontsource/jetbrains-mono/700.css",
+// The exact self-hosted @fontsource imports the theme must load — one per font weight the
+// UI actually renders, latin subset only (the site is lang=en-US):
+//   Archivo 900              — every .font-display element is font-black (weight 900)
+//   JetBrains Mono 400/500/700 — the body/mono face at default, font-medium, font-bold
+// Pinned as an exact set (not merely "present") so BOTH regressions fail loudly: dropping
+// a weight the UI uses, or re-introducing an unused weight/subset that bloats the bundle
+// (the whole point of trimming — see .vitepress/theme/index.ts).
+const EXPECTED_FONT_IMPORTS = [
+  "@fontsource/archivo/latin-900.css",
+  "@fontsource/jetbrains-mono/latin-400.css",
+  "@fontsource/jetbrains-mono/latin-500.css",
+  "@fontsource/jetbrains-mono/latin-700.css",
 ];
+
+// Matches a @fontsource stylesheet reference, from either a JS side-effect import
+// (`import "@fontsource/…"`) or a CSS `@import "…"` / `@import url("…")`, capturing the
+// specifier. Comments are stripped before matching (below) so a disabled import isn't
+// counted as loaded — which would leave the exact-set assertion green while the weight
+// is actually gone.
+const FONTSOURCE_REFERENCE_PATTERN =
+  /(?:import\s+|@import\s+(?:url\(\s*)?)["'](@fontsource\/[^"']+)["']/g;
+
+function stripComments(source: string) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
+function collectFontsourceReferences(source: string) {
+  return [...stripComments(source).matchAll(FONTSOURCE_REFERENCE_PATTERN)].map(
+    (match) => match[1],
+  );
+}
+
+// Theme source files that could pull in a font (JS/TS imports, Vue SFCs, CSS @imports).
+const THEME_SOURCE_EXTENSIONS = new Set([".ts", ".vue", ".css"]);
+
+function collectThemeSourceFiles() {
+  return readdirSync(THEME_DIR, { recursive: true })
+    .map((entry) => String(entry))
+    .filter((entry) => THEME_SOURCE_EXTENSIONS.has(extname(entry)))
+    .map((entry) => resolve(THEME_DIR, entry));
+}
+
+function readThemeVueSources() {
+  return collectThemeSourceFiles()
+    .filter((filePath) => extname(filePath) === ".vue")
+    .map((filePath) => readFileSync(filePath, "utf8"));
+}
+
+// Tailwind font-weight utilities the trimmed bundle can render as a real @font-face:
+// Archivo ships only 900 (font-black); JetBrains Mono ships 400 (default, no class),
+// 500 (font-medium) and 700 (font-bold). Any other weight utility would render a faux
+// weight from a face we no longer bundle — silently, with no fallback or warning.
+const SUPPORTED_WEIGHT_UTILITIES = new Set([
+  "font-medium",
+  "font-bold",
+  "font-black",
+]);
+const WEIGHT_UTILITY_PATTERN =
+  /\bfont-(?:thin|extralight|light|normal|medium|semibold|bold|extrabold|black)\b/g;
+
+// Quoted class lists in a Vue SFC: `class="…"`/`:class="…"` attributes and the script-side
+// string constants (e.g. BADGE_BASE) that feed them. Non-global so `.test()` stays stateless.
+const QUOTED_CLASS_LIST_PATTERN = /"[^"]*"|'[^']*'|`[^`]*`/g;
+const DISPLAY_UTILITY_PATTERN = /\bfont-display\b/;
+const BLACK_UTILITY_PATTERN = /\bfont-black\b/;
 
 const PNG_SIGNATURE = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -249,11 +301,43 @@ describe("No render-blocking third-party font requests", () => {
       themeCss.match(/(?:@import\s*|url\(\s*)["']?(?:https?:)?\/\//gi) ?? [];
     expect(remoteReferences).toEqual([]);
   });
+});
 
-  it.each(SELF_HOSTED_FONT_IMPORTS)(
-    "imports %s in the theme entry so fonts stay self-hosted",
-    (specifier) => {
-      expect(readFileSync(THEME_ENTRY_PATH, "utf8")).toContain(specifier);
-    },
+// The fonts were trimmed to only the weights/subsets the UI renders (issue #17). These
+// tests pin the invariant from both directions: the loaded @fontsource set is exactly the
+// used weights (latin subset only), and the markup never asks for a weight that set can't
+// render. Together they fail loudly if either side drifts — an unused import creeps back,
+// or an element adopts a weight with no bundled @font-face.
+describe("Self-hosted fonts are trimmed to the weights actually used", () => {
+  const loadedFontReferences = collectThemeSourceFiles().flatMap((filePath) =>
+    collectFontsourceReferences(readFileSync(filePath, "utf8")),
   );
+
+  it("loads exactly the used weights across the theme, latin subset only", () => {
+    expect([...new Set(loadedFontReferences)].sort()).toEqual(
+      [...EXPECTED_FONT_IMPORTS].sort(),
+    );
+  });
+
+  it("uses no font-weight utility the trimmed bundle can't render", () => {
+    const usedWeightUtilities = new Set(
+      readThemeVueSources().join("\n").match(WEIGHT_UTILITY_PATTERN) ?? [],
+    );
+    const unsupported = [...usedWeightUtilities].filter(
+      (utility) => !SUPPORTED_WEIGHT_UTILITIES.has(utility),
+    );
+    expect(unsupported).toEqual([]);
+  });
+
+  // Archivo (font-display) is bundled only at weight 900, so every class list opting into
+  // the display face must also be font-black; any other pairing renders a faux Archivo
+  // weight. Checked per quoted class list (template class attrs and script class constants
+  // alike), not per source line, so it holds when Prettier wraps a long class attribute.
+  it("pairs every font-display class list with font-black", () => {
+    const unpairedDisplayClassLists = readThemeVueSources()
+      .flatMap((source) => source.match(QUOTED_CLASS_LIST_PATTERN) ?? [])
+      .filter((classList) => DISPLAY_UTILITY_PATTERN.test(classList))
+      .filter((classList) => !BLACK_UTILITY_PATTERN.test(classList));
+    expect(unpairedDisplayClassLists).toEqual([]);
+  });
 });
