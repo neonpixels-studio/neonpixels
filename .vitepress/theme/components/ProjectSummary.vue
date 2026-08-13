@@ -112,4 +112,16 @@ const headingGlowStyle = computed(() => ({
   background: var(--accent);
   color: var(--color-bg);
 }
+
+/* Keyboard focus for the project CTAs: same WCAG 2.4.7 concern as the hero
+   pills and footer links, but scoped here since the CTA markup lives in this
+   component. The outline-offset lifts the ring onto the dark page so it reads
+   even on a fill CTA whose background is the accent color. The outline variant
+   already exposes --accent; the fill variant does not, so both fall back to the
+   lime brand token. */
+.cta-fill:focus-visible,
+.cta-outline:focus-visible {
+  outline: 2px solid var(--accent, var(--color-lime));
+  outline-offset: 2px;
+}
 </style>

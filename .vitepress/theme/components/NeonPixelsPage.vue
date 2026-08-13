@@ -554,14 +554,13 @@ const GRIMICORN_TERMINAL = [
    outline being legible against it, so every interactive control gets an
    explicit focus-visible ring (WCAG 2.4.7). Each control reuses its own
    accent (--accent) where it has one and falls back to the lime brand token
-   (defined in style.css @theme) for the nav links, which carry no accent. */
+   (defined in style.css @theme) for the nav links, which carry no accent. The
+   offset lifts the ring off the control onto the dark page so it stays visible
+   even when its color matches the control's own border. */
 .pill:focus-visible,
 .nav-link:focus-visible,
 .footer-link:focus-visible {
-  --focus-ring-width: 2px;
-  --focus-ring-offset: 2px;
-  --focus-ring-color: var(--accent, var(--color-lime));
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
+  outline: 2px solid var(--accent, var(--color-lime));
+  outline-offset: 2px;
 }
 </style>

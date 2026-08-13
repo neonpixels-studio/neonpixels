@@ -137,10 +137,13 @@ describe("NeonPixelsPage", () => {
   });
 
   it.each(INTERACTIVE_FOCUS_CLASSES)(
-    "defines a focus-visible outline for .%s",
+    "defines a visible focus-visible outline for .%s",
     (className) => {
+      // Require a solid, coloured (var()) outline, not just any `outline:`
+      // declaration — otherwise `outline: none` (the classic accidental focus
+      // suppression this guards against) would keep the test green.
       const focusRulePattern = new RegExp(
-        `\\.${className}:focus-visible[^{]*\\{[^}]*outline:`,
+        `\\.${className}:focus-visible[^{]*\\{[^}]*outline:\\s*\\S+\\s+solid\\s+var\\(`,
       );
       expect(NEON_PIXELS_PAGE_SOURCE).toMatch(focusRulePattern);
     },
