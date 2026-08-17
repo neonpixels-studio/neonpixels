@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { SUPPRESSED_OUTLINE_PATTERN } from "./utils/outlineGuard";
 
 // Anchored to this test file, not process.cwd(), so the read still resolves if
 // vitest is invoked from a subdirectory or given a custom root.
@@ -26,10 +27,9 @@ const REQUIRED_FOCUS_TARGETS = ["a", "button", "[tabindex]"];
 // `0`/`none` ring renders nothing, so pin the values, not just the properties.
 const VISIBLE_OUTLINE_PATTERN = /outline:\s*[1-9]\d*px\s+solid/;
 const OUTLINE_OFFSET_PATTERN = /outline-offset:\s*[1-9]\d*px/;
-// The ways an outline gets silently killed: none / 0 / transparent, on the
-// shorthand or a longhand, with or without !important.
-const SUPPRESSED_OUTLINE_PATTERN =
-  /outline(-style|-width|-color)?:\s*(none|0(px)?|transparent)\s*(!important)?\s*[;}]/;
+// SUPPRESSED_OUTLINE_PATTERN (none / 0 / transparent, shorthand or longhand,
+// with or without !important) is shared with the component-file guard via
+// ./utils/outlineGuard so the global and component checks never drift apart.
 
 function focusRuleMatch() {
   return STYLE_CSS_WITHOUT_COMMENTS.match(FOCUS_RULE_PATTERN);
