@@ -93,16 +93,6 @@ const CSP_ORIGIN_DIRECTIVES = [
   "worker-src",
 ];
 
-// The CSP still grants these Google Fonts origins from before the site self-hosted its
-// fonts (.vitepress/theme/index.ts); no head entry references them any longer. Listed so
-// the reverse cross-check passes while they linger — a *new* unreferenced CSP origin still
-// fails. A dedicated test asserts each is still present, so this list retires itself the
-// moment the CSP drops them. Removing them from the CSP is a follow-up, not this change.
-const CSP_ORIGINS_WITHOUT_HEAD_ENTRY = new Set([
-  "https://fonts.gstatic.com",
-  "https://fonts.googleapis.com",
-]);
-
 // The tuple variants of HeadConfig (it is also allowed to be a bare string).
 type HeadEntry = Extract<HeadConfig, unknown[]>;
 type HeadOrigin = { source: string; origin: string; directive: string | null };
@@ -332,8 +322,8 @@ function uncoveredHeadOrigins(
     );
 }
 
-// The reverse check: external origins the CSP grants that no head entry references (minus
-// the documented baseline of origins retained for reasons outside config.head).
+// The reverse check: external origins the CSP grants that no head entry references. The
+// site self-hosts everything, so any granted external origin is unbacked and fails here.
 function unbackedCspOrigins(
   head: readonly HeadConfig[],
   directives: CspDirectives,
@@ -342,13 +332,11 @@ function unbackedCspOrigins(
     externalHeadOrigins(head).map((entry) => entry.origin),
   );
   return cspExternalOrigins(directives).filter(
-    (origin) =>
-      !loadedOrigins.has(origin) && !CSP_ORIGINS_WITHOUT_HEAD_ENTRY.has(origin),
+    (origin) => !loadedOrigins.has(origin),
   );
 }
 
 const cspDirectives = parseCsp(readCspHeader());
-const cspOrigins = cspExternalOrigins(cspDirectives);
 
 describe("external head origin extraction", () => {
   const sample: HeadConfig[] = [
@@ -529,13 +517,5 @@ describe("CSP and config head origin cross-check", () => {
 
   it("references every external CSP origin from a head entry", () => {
     expect(unbackedCspOrigins(config.head ?? [], cspDirectives)).toEqual([]);
-  });
-
-  it("still grants each documented exempt origin, so the allowlist retires itself", () => {
-    const grantedOrigins = new Set(cspOrigins);
-    for (const exempt of CSP_ORIGINS_WITHOUT_HEAD_ENTRY) {
-      const message = `${exempt} is no longer granted by the CSP — remove it from CSP_ORIGINS_WITHOUT_HEAD_ENTRY`;
-      expect(grantedOrigins.has(exempt), message).toBe(true);
-    }
   });
 });
