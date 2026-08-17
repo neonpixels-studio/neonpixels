@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { hexToRgba } from "@theme/utils/color";
+import {
+  hexToRgba,
+  relativeLuminance,
+  contrastRatio,
+} from "@theme/utils/color";
 
 describe("hexToRgba", () => {
   it("converts a six-digit hex to an rgba() string at the given alpha", () => {
@@ -25,5 +29,45 @@ describe("hexToRgba", () => {
   it("throws when alpha is out of the 0–1 range or NaN", () => {
     expect(() => hexToRgba("#b8ff2e", Number.NaN)).toThrow(/alpha/);
     expect(() => hexToRgba("#b8ff2e", 1.5)).toThrow(/alpha/);
+  });
+
+  it("reports a bad hex before a bad alpha when both are wrong", () => {
+    expect(() => hexToRgba("nope", 1.5)).toThrow(/six-digit hex/);
+  });
+});
+
+describe("relativeLuminance", () => {
+  it("returns 0 for black and 1 for white", () => {
+    expect(relativeLuminance("#000000")).toBeCloseTo(0, 5);
+    expect(relativeLuminance("#ffffff")).toBeCloseTo(1, 5);
+  });
+
+  it("weights green more heavily than red or blue", () => {
+    const green = relativeLuminance("#00ff00");
+    const red = relativeLuminance("#ff0000");
+    const blue = relativeLuminance("#0000ff");
+    expect(green).toBeGreaterThan(red);
+    expect(red).toBeGreaterThan(blue);
+  });
+
+  it("throws on a malformed hex rather than returning NaN", () => {
+    expect(() => relativeLuminance("#fff")).toThrow(/six-digit hex/);
+  });
+});
+
+describe("contrastRatio", () => {
+  it("returns the maximal 21:1 for black against white", () => {
+    expect(contrastRatio("#000000", "#ffffff")).toBeCloseTo(21, 4);
+  });
+
+  it("returns 1:1 for a color against itself", () => {
+    expect(contrastRatio("#7d7d88", "#7d7d88")).toBeCloseTo(1, 5);
+  });
+
+  it("is order-independent between foreground and background", () => {
+    expect(contrastRatio("#787882", "#08080a")).toBeCloseTo(
+      contrastRatio("#08080a", "#787882"),
+      5,
+    );
   });
 });
