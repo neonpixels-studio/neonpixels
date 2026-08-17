@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "../brand";
+// Two accent-alpha helpers, two output formats: `withAlpha` appends a 2-digit
+// hex alpha to an accent (an 8-digit hex) for solid swatch fills (heatmap/feed
+// dots); `hexToRgba` yields an `rgba(r, g, b, a)` string for the
+// box-shadow/gradient glows below, matching how ProjectSection/ProjectSummary
+// already derive their glows.
+import { hexToRgba } from "../utils/color";
 import { PROJECTS } from "../data/projects";
 import ProjectSection from "./ProjectSection.vue";
 
@@ -64,6 +70,40 @@ const GRIMICORN_TERMINAL = [
   { text: "[03:16] shipped wanderist map tiles" },
   { text: "[03:19] broke staging. on purpose." },
 ];
+
+// Accent-lit chrome that lives outside the project data above: the nav status
+// dot, the hero section rule, the drifting hero auroras, and each card's
+// ambient glow. Solid fills come straight from BRAND_ACCENTS; translucent
+// glows go through hexToRgba, so a palette change recolors every one of the
+// four accents in lockstep. Per-component surface tints (dark card
+// backgrounds/borders and muted greys) stay literal by design — brand.ts owns
+// only the four accents and the wordmark gradient.
+const NAV_DOT_GLOW = `0 0 8px ${BRAND_ACCENTS.lime}`;
+const HERO_RULE_GLOW = `0 0 6px ${BRAND_ACCENTS.lime}`;
+
+// Three hero auroras share one radial-wash shape at different accents, so it's
+// composed once from the palette rather than three hand-written gradients.
+function auroraGlow(accent: string, alpha: number) {
+  return `radial-gradient(circle, ${hexToRgba(accent, alpha)}, transparent 62%)`;
+}
+const HERO_AURORAS = {
+  lime: auroraGlow(BRAND_ACCENTS.lime, 0.16),
+  pink: auroraGlow(BRAND_ACCENTS.pink, 0.15),
+  cyan: auroraGlow(BRAND_ACCENTS.cyan, 0.13),
+};
+
+// Bespoke project-visual glows. The three cards share one 60px ambient-glow
+// shape at their accent, so it's composed once (like auroraGlow) rather than
+// re-concatenated per card; markpost's tighter arrow flare and wider out-panel
+// glow are their own shapes and stay literal.
+function cardGlow(accent: string, alpha: number) {
+  return `0 0 60px ${hexToRgba(accent, alpha)}`;
+}
+const GRIMICORN_GLOW = cardGlow(BRAND_ACCENTS.lime, 0.1);
+const WANDERIST_GLOW = cardGlow(BRAND_ACCENTS.cyan, 0.1);
+const BASIN_GLOW = cardGlow(BRAND_ACCENTS.amber, 0.09);
+const MARKPOST_ARROW_GLOW = `0 0 14px ${hexToRgba(BRAND_ACCENTS.pink, 0.8)}`;
+const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
 </script>
 
 <template>
@@ -92,9 +132,27 @@ const GRIMICORN_TERMINAL = [
           class="block flex-none"
           aria-hidden="true"
         >
-          <rect x="0" y="22" width="10" height="10" fill="#22e0ff" />
-          <rect x="12" y="11" width="10" height="10" fill="#b8ff2e" />
-          <rect x="24" y="0" width="10" height="10" fill="#ff2ea6" />
+          <rect
+            x="0"
+            y="22"
+            width="10"
+            height="10"
+            :fill="BRAND_ACCENTS.cyan"
+          />
+          <rect
+            x="12"
+            y="11"
+            width="10"
+            height="10"
+            :fill="BRAND_ACCENTS.lime"
+          />
+          <rect
+            x="24"
+            y="0"
+            width="10"
+            height="10"
+            :fill="BRAND_ACCENTS.pink"
+          />
         </svg>
         <span
           class="font-display text-[15px] font-black tracking-[-0.01em] text-[#f2f2f4]"
@@ -115,7 +173,7 @@ const GRIMICORN_TERMINAL = [
         <span class="text-lime flex items-center gap-[7px]">
           <span
             class="bg-lime animate-pulse-dot h-[7px] w-[7px] rounded-full"
-            style="box-shadow: 0 0 8px #b8ff2e"
+            :style="{ boxShadow: NAV_DOT_GLOW }"
           />{{ PROJECTS.length }} projects
         </span>
       </nav>
@@ -125,35 +183,15 @@ const GRIMICORN_TERMINAL = [
     <section id="top" class="relative z-[2] overflow-hidden px-10 pt-28 pb-24">
       <div
         class="animate-aurora pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]"
-        style="
-          background: radial-gradient(
-            circle,
-            rgba(184, 255, 46, 0.16),
-            transparent 62%
-          );
-        "
+        :style="{ background: HERO_AURORAS.lime }"
       />
       <div
         class="animate-aurora-reverse pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px]"
-        style="
-          --np-aurora-dur: 32s;
-          background: radial-gradient(
-            circle,
-            rgba(255, 46, 166, 0.15),
-            transparent 62%
-          );
-        "
+        :style="{ '--np-aurora-dur': '32s', background: HERO_AURORAS.pink }"
       />
       <div
         class="animate-aurora pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px]"
-        style="
-          --np-aurora-dur: 38s;
-          background: radial-gradient(
-            circle,
-            rgba(34, 224, 255, 0.13),
-            transparent 62%
-          );
-        "
+        :style="{ '--np-aurora-dur': '38s', background: HERO_AURORAS.cyan }"
       />
 
       <div class="relative mx-auto flex max-w-[1180px] flex-col gap-[34px]">
@@ -162,7 +200,7 @@ const GRIMICORN_TERMINAL = [
         >
           <span
             class="bg-lime h-px w-[26px]"
-            style="box-shadow: 0 0 6px #b8ff2e"
+            :style="{ boxShadow: HERO_RULE_GLOW }"
           />
           a very small studio · a lot of side projects
         </div>
@@ -342,14 +380,14 @@ const GRIMICORN_TERMINAL = [
         <div
           v-if="project.id === 'grimicorn'"
           class="border border-[#23301a] bg-[#0a0d06]"
-          style="box-shadow: 0 0 60px rgba(184, 255, 46, 0.1)"
+          :style="{ boxShadow: GRIMICORN_GLOW }"
         >
           <div
             class="flex items-center gap-2 border-b border-[#23301a] px-[14px] py-[11px]"
           >
-            <span class="h-[9px] w-[9px] rounded-full bg-[#ff2ea6]" />
-            <span class="h-[9px] w-[9px] rounded-full bg-[#ffc21f]" />
-            <span class="h-[9px] w-[9px] rounded-full bg-[#b8ff2e]" />
+            <span class="bg-pink h-[9px] w-[9px] rounded-full" />
+            <span class="bg-amber h-[9px] w-[9px] rounded-full" />
+            <span class="bg-lime h-[9px] w-[9px] rounded-full" />
             <span class="text-fg-dim ml-2 text-[11px]"
               >grimicorn-agent — zsh</span
             >
@@ -378,7 +416,7 @@ const GRIMICORN_TERMINAL = [
         <div
           v-else-if="project.id === 'wanderist'"
           class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]"
-          style="box-shadow: 0 0 60px rgba(34, 224, 255, 0.1)"
+          :style="{ boxShadow: WANDERIST_GLOW }"
         >
           <div
             class="flex justify-between text-[11px] tracking-[0.16em] text-[#5a6d75] uppercase"
@@ -406,7 +444,7 @@ const GRIMICORN_TERMINAL = [
         <div
           v-else-if="project.id === 'basin'"
           class="flex flex-col gap-px border border-[#2e2410] bg-[#2e2410]"
-          style="box-shadow: 0 0 60px rgba(255, 194, 31, 0.09)"
+          :style="{ boxShadow: BASIN_GLOW }"
         >
           <div
             v-for="item in BASIN_FEED"
@@ -459,14 +497,14 @@ const GRIMICORN_TERMINAL = [
           </div>
           <div
             class="text-pink animate-flicker flex items-center justify-center text-[22px]"
-            style="text-shadow: 0 0 14px rgba(255, 46, 166, 0.8)"
+            :style="{ textShadow: MARKPOST_ARROW_GLOW }"
             aria-hidden="true"
           >
             →
           </div>
           <div
             class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"
-            style="box-shadow: 0 0 50px rgba(255, 46, 166, 0.12)"
+            :style="{ boxShadow: MARKPOST_OUT_GLOW }"
           >
             <span
               class="text-[10.5px] tracking-[0.16em] text-[#7a5566] uppercase"
@@ -497,9 +535,27 @@ const GRIMICORN_TERMINAL = [
             class="block"
             aria-hidden="true"
           >
-            <rect x="0" y="22" width="10" height="10" fill="#22e0ff" />
-            <rect x="12" y="11" width="10" height="10" fill="#b8ff2e" />
-            <rect x="24" y="0" width="10" height="10" fill="#ff2ea6" />
+            <rect
+              x="0"
+              y="22"
+              width="10"
+              height="10"
+              :fill="BRAND_ACCENTS.cyan"
+            />
+            <rect
+              x="12"
+              y="11"
+              width="10"
+              height="10"
+              :fill="BRAND_ACCENTS.lime"
+            />
+            <rect
+              x="24"
+              y="0"
+              width="10"
+              height="10"
+              :fill="BRAND_ACCENTS.pink"
+            />
           </svg>
           <span class="font-display text-[13px] font-black text-[#f2f2f4]"
             >NEON<span class="text-lime">PIXELS</span></span
