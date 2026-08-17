@@ -2,8 +2,10 @@
   command = "npm run test:ci && npm run build"
   publish = ".vitepress/dist"
 
-[build.environment]
-  NODE_VERSION = "24"
+# No NODE_VERSION pin here on purpose: Netlify auto-reads .nvmrc, keeping the
+# Node version a single source of truth shared with CI and local `nvm use`.
+# (A NODE_VERSION set in the Netlify UI would still override .nvmrc; keep it
+# unset there so this file's guarantee holds.)
 
 [[headers]]
   for = "/*"

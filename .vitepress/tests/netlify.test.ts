@@ -1,8 +1,51 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const NETLIFY_CONFIG_PATH = resolve(process.cwd(), "netlify.toml");
+const NVMRC_PATH = resolve(process.cwd(), ".nvmrc");
+// Netlify also honours .node-version and .tool-versions (mise/asdf), and reads
+// either in preference to .nvmrc, so their presence would silently split the
+// single source of truth this test exists to protect.
+const NODE_VERSION_FILE_PATH = resolve(process.cwd(), ".node-version");
+const TOOL_VERSIONS_PATH = resolve(process.cwd(), ".tool-versions");
+const TOOL_VERSIONS_NODE = /^(?:nodejs|node)\s/m;
+
+// Read once at module scope, matching this file's existing convention.
+const NETLIFY_CONFIG = readFileSync(NETLIFY_CONFIG_PATH, "utf8");
+
+// The Node version lives in .nvmrc only (read by CI and Netlify alike). This
+// test is the sole in-repo record of which major we build on, so it pins the
+// major and the exact-patch shape; a drift to another major (or a floating
+// value) fails here. An optional leading `v` is accepted — nvm, setup-node,
+// and Netlify all take it.
+const EXPECTED_NODE_MAJOR = 24;
+const EXACT_NODE_VERSION = /^v?\d+\.\d+\.\d+$/;
+
+// Matches a NODE_VERSION assignment in any form Netlify parses: a section key,
+// a quoted key, a dotted key (`build.environment.NODE_VERSION = ...`), or an
+// inline-table entry (`{ NODE_VERSION = ... }`).
+const NODE_VERSION_PIN = /(?:^|[\s{,.])"?NODE_VERSION"?\s*=/;
+
+// True only when the pin survives comment stripping, so a live pin on a line
+// whose earlier value contains `#` still counts while a comment-only mention
+// ("# NODE_VERSION ...") does not.
+function lineHasLivePin(line: string) {
+  return (
+    NODE_VERSION_PIN.test(line) && NODE_VERSION_PIN.test(line.split("#", 1)[0])
+  );
+}
+
+// Returns the 1-based line number of the pin, or undefined if none, so a
+// failure points at where to look rather than at a comment-stripped fragment.
+function findNodeVersionPinLine() {
+  const index = NETLIFY_CONFIG.split("\n").findIndex(lineHasLivePin);
+  return index === -1 ? undefined : index + 1;
+}
+
+function readNodeMajor(version: string) {
+  return Number(version.replace(/^v/, "").split(".")[0]);
+}
 
 // One year is the recommended HSTS floor for an HTTPS-only site; we serve two.
 const HSTS_MIN_MAX_AGE_SECONDS = 31536000;
@@ -17,9 +60,8 @@ const STATIC_HEADERS = {
 const HEADER_LINE = /^\s*([\w-]+)\s*=\s*"([^"]*)"/;
 
 function parseHeaders() {
-  const config = readFileSync(NETLIFY_CONFIG_PATH, "utf8");
   const headers = new Map<string, string>();
-  for (const line of config.split("\n")) {
+  for (const line of NETLIFY_CONFIG.split("\n")) {
     const match = line.match(HEADER_LINE);
     if (match) {
       headers.set(match[1], match[2]);
@@ -149,6 +191,31 @@ describe("netlify security headers", () => {
       readHeader(headers, "Strict-Transport-Security"),
     );
     expect(directives).toContain("includesubdomains");
+  });
+});
+
+describe("Node version source of truth", () => {
+  it("does not hardcode NODE_VERSION in netlify.toml", () => {
+    const pinLine = findNodeVersionPinLine();
+    expect(
+      pinLine,
+      `netlify.toml:${pinLine} pins NODE_VERSION; delete it and let Netlify read .nvmrc`,
+    ).toBeUndefined();
+  });
+
+  it("pins the expected exact Node version in .nvmrc for Netlify to auto-read", () => {
+    expect(existsSync(NVMRC_PATH)).toBe(true);
+    const nvmrc = readFileSync(NVMRC_PATH, "utf8").trim();
+    expect(nvmrc).toMatch(EXACT_NODE_VERSION);
+    expect(readNodeMajor(nvmrc)).toBe(EXPECTED_NODE_MAJOR);
+  });
+
+  it("keeps .nvmrc the only Node version file", () => {
+    expect(existsSync(NODE_VERSION_FILE_PATH)).toBe(false);
+    const toolVersions = existsSync(TOOL_VERSIONS_PATH)
+      ? readFileSync(TOOL_VERSIONS_PATH, "utf8")
+      : "";
+    expect(TOOL_VERSIONS_NODE.test(toolVersions)).toBe(false);
   });
 });
 
