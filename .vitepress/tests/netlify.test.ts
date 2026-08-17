@@ -95,22 +95,26 @@ function parseHstsMaxAge(headerValue: string) {
 // The exact source set each directive is allowed to carry. Asserted as an
 // exact match (not a subset), so appending a rogue origin to any directive
 // fails the suite, not just widening to a bare wildcard. Grounded in what the
-// built site actually loads: self, Google Fonts (stylesheet from
-// fonts.googleapis.com, font files from fonts.gstatic.com), and the
-// 'unsafe-inline' that VitePress's inline bootstrap scripts and the
-// components' inline style attributes require.
+// built site actually loads: self only (fonts are self-hosted via @fontsource,
+// so no Google Fonts origins) plus the 'unsafe-inline' that VitePress's inline
+// bootstrap scripts and the components' inline style attributes require.
 const EXPECTED_CSP_SOURCES: Record<string, string[]> = {
   "default-src": ["'self'"],
   "base-uri": ["'self'"],
   "object-src": ["'none'"],
   "frame-ancestors": ["'none'"],
   "img-src": ["'self'"],
-  "font-src": ["'self'", "https://fonts.gstatic.com"],
-  "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+  "font-src": ["'self'"],
+  "style-src": ["'self'", "'unsafe-inline'"],
   "script-src": ["'self'", "'unsafe-inline'"],
   "connect-src": ["'self'"],
   "form-action": ["'self'"],
 };
+
+// Fonts are self-hosted, so any Google Fonts origin is a dead allowlist entry.
+// Matched by bare domain (not exact host) so a re-add via a subdomain, port, or
+// wildcard variant also trips this guard (see issue #28).
+const DROPPED_GOOGLE_FONTS_DOMAINS = ["gstatic.com", "googleapis.com"];
 
 // Scheme-only allow-alls and eval that would silently defeat the policy. Any
 // source containing "*" is caught separately as a wildcard. None are
@@ -167,9 +171,9 @@ function isOverlyBroadSource(source: string) {
 }
 
 const headers = parseHeaders();
-const { directives: cspDirectives, duplicates: cspDuplicates } = parseCsp(
-  readHeader(headers, "Content-Security-Policy"),
-);
+const cspHeaderValue = readHeader(headers, "Content-Security-Policy");
+const { directives: cspDirectives, duplicates: cspDuplicates } =
+  parseCsp(cspHeaderValue);
 
 describe("netlify security headers", () => {
   it.each(Object.entries(STATIC_HEADERS))(
@@ -223,6 +227,13 @@ describe("Content-Security-Policy", () => {
   it("declares no duplicate directives", () => {
     expect(cspDuplicates).toEqual([]);
   });
+
+  it.each(DROPPED_GOOGLE_FONTS_DOMAINS)(
+    "no longer allowlists any %s origin now that fonts are self-hosted",
+    (domain) => {
+      expect(cspHeaderValue).not.toContain(domain);
+    },
+  );
 
   it("declares exactly the expected directives", () => {
     expect([...cspDirectives.keys()].sort()).toEqual(
