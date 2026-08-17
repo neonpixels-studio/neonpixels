@@ -57,7 +57,7 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
         <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]">The chaotic coding sidekick behind everything else on this page. An automated agent workflow that builds, breaks, and ships the other Neon Pixels projects while I'm asleep.</p><a data-v-6057c22f="" href="https://grimicorn.dev" target="_blank" rel="noopener noreferrer" class="cta-fill text-bg self-start px-5 py-3 text-[13px] font-bold bg-lime" style="--accent: #b8ff2e; box-shadow: 0 0 26px rgba(184, 255, 46, 0.35); --accent-glow: rgba(184, 255, 46, 0.6);">visit grimicorn.dev →</a>
       </div>
       <div data-v-aa442b0f="" class="border border-[#23301a] bg-[#0a0d06]" style="box-shadow: 0 0 60px rgba(184, 255, 46, 0.1);">
-        <div data-v-aa442b0f="" class="flex items-center gap-2 border-b border-[#23301a] px-[14px] py-[11px]"><span data-v-aa442b0f="" class="h-[9px] w-[9px] rounded-full bg-[#ff2ea6]"></span><span data-v-aa442b0f="" class="h-[9px] w-[9px] rounded-full bg-[#ffc21f]"></span><span data-v-aa442b0f="" class="h-[9px] w-[9px] rounded-full bg-[#b8ff2e]"></span><span data-v-aa442b0f="" class="text-fg-dim ml-2 text-[11px]">grimicorn-agent — zsh</span></div>
+        <div data-v-aa442b0f="" class="flex items-center gap-2 border-b border-[#23301a] px-[14px] py-[11px]"><span data-v-aa442b0f="" class="bg-pink h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="bg-amber h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="bg-lime h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="text-fg-dim ml-2 text-[11px]">grimicorn-agent — zsh</span></div>
         <div data-v-aa442b0f="" class="text-fg-subtle px-[18px] py-[18px] text-[12.5px] leading-[2.05]">
           <div data-v-aa442b0f=""><span data-v-aa442b0f="" class="text-lime">grimicorn@dev</span> ~ % status</div>
           <div data-v-aa442b0f="" class="text-fg font-bold">UNLEASHED</div>
@@ -170,11 +170,11 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
   </section><!-- footer -->
   <footer data-v-aa442b0f="" class="border-border bg-panel relative z-[2] border-t px-10 pt-[52px] pb-10">
     <div data-v-aa442b0f="" class="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-7">
-      <div class="flex items-center gap-[11px]" data-v-aa442b0f=""><svg width="18" height="18" viewBox="0 0 34 34" class="block" aria-hidden="true" data-v-aa442b0f="">
-          <rect x="0" y="22" width="10" height="10" fill="#22e0ff" data-v-aa442b0f=""></rect>
-          <rect x="12" y="11" width="10" height="10" fill="#b8ff2e" data-v-aa442b0f=""></rect>
-          <rect x="24" y="0" width="10" height="10" fill="#ff2ea6" data-v-aa442b0f=""></rect>
-        </svg><span class="font-display text-[13px] font-black text-[#f2f2f4]" data-v-aa442b0f="">NEON<span class="text-lime" data-v-aa442b0f="">PIXELS</span></span></div>
+      <div data-v-aa442b0f="" class="flex items-center gap-[11px]"><svg data-v-aa442b0f="" width="18" height="18" viewBox="0 0 34 34" class="block" aria-hidden="true">
+          <rect data-v-aa442b0f="" x="0" y="22" width="10" height="10" fill="#22e0ff"></rect>
+          <rect data-v-aa442b0f="" x="12" y="11" width="10" height="10" fill="#b8ff2e"></rect>
+          <rect data-v-aa442b0f="" x="24" y="0" width="10" height="10" fill="#ff2ea6"></rect>
+        </svg><span data-v-aa442b0f="" class="font-display text-[13px] font-black text-[#f2f2f4]">NEON<span data-v-aa442b0f="" class="text-lime">PIXELS</span></span></div>
       <div data-v-aa442b0f="" class="text-fg-dim flex flex-wrap gap-[22px] text-[12px]"><a data-v-aa442b0f="" href="https://grimicorn.dev" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim" style="--accent: #b8ff2e;">grimicorn.dev</a><a data-v-aa442b0f="" href="https://wanderist.io" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim" style="--accent: #22e0ff;">wanderist.io</a><a data-v-aa442b0f="" href="https://basin.fm" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim" style="--accent: #ffc21f;">basin.fm</a><a data-v-aa442b0f="" href="https://markpost.io" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim" style="--accent: #ff2ea6;">markpost.io</a></div><span data-v-aa442b0f="" class="text-fg-dim text-[11.5px]">© 2026 · built dark · shipped colorful</span>
     </div>
   </footer>
