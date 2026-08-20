@@ -2,7 +2,13 @@
 // The build runs a real server-side render; happy-dom's stubbed network layer
 // otherwise logs ECONNREFUSED noise during it, so this file uses Node.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
@@ -23,6 +29,7 @@ const BUILD_TIMEOUT_MS = 120_000;
 
 const HEAD_CLOSE_TAG = "</head>";
 const INDEX_HTML_FILE = "index.html";
+const HTML_EXTENSION = ".html";
 const HEADERS_FILE = "_headers";
 const NETLIFY_CONFIG_FILE = "netlify.toml";
 const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
@@ -76,24 +83,36 @@ let buildOutDir = "";
 let builtHead = "";
 let generatedHeaders = "";
 
-// The exact textContent of every executable inline script the build emitted:
-// scripts with a src or a non-JS type (application/ld+json) are excluded, so
-// this is the set the Report-Only script-src hashes must cover.
+// Independent oracle: the exact textContent of every executable inline script the
+// build emitted (scripts with a src or an application/ld+json type are excluded),
+// so it is the set the Report-Only script-src hashes must cover. Quote-aware and
+// whitespace-tolerant on the end tag so it is not strictly weaker than the code
+// under test — a script the production extractor mishandles must still surface
+// here rather than being skipped identically by both.
 function executableInlineScriptBodies(html: string) {
   const bodies: string[] = [];
   for (const match of html.matchAll(
-    /<script\b([^>]*)>([\s\S]*?)<\/script>/gi,
+    /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi,
   )) {
     const attributes = match[1];
-    if (/\bsrc\s*=/i.test(attributes)) {
+    if (/(?:^|\s)src\s*=/i.test(attributes)) {
       continue;
     }
-    if (/\btype\s*=\s*["']?application\/ld\+json/i.test(attributes)) {
+    if (/(?:^|\s)type\s*=\s*["']?application\/ld\+json/i.test(attributes)) {
+      continue;
+    }
+    if (match[2].trim() === "") {
       continue;
     }
     bodies.push(match[2]);
   }
   return bodies;
+}
+
+function readAllBuiltHtml(outDir: string) {
+  return readdirSync(outDir, { recursive: true })
+    .filter((name) => typeof name === "string" && name.endsWith(HTML_EXTENSION))
+    .map((name) => readFileSync(resolve(outDir, name as string), "utf8"));
 }
 
 function reportOnlyHeaderValue(headersFile: string) {
@@ -267,13 +286,11 @@ describe("generated CSP Report-Only header", () => {
     expect(scriptSrc).not.toContain("'unsafe-inline'");
   });
 
-  it("hashes every executable inline script in the built index page", () => {
+  it("hashes every executable inline script across all built pages", () => {
     const value = reportOnlyHeaderValue(generatedHeaders)!;
-    const indexHtml = readFileSync(
-      resolve(buildOutDir, INDEX_HTML_FILE),
-      "utf8",
+    const bodies = readAllBuiltHtml(buildOutDir).flatMap(
+      executableInlineScriptBodies,
     );
-    const bodies = executableInlineScriptBodies(indexHtml);
     expect(bodies.length).toBeGreaterThan(0);
     for (const body of bodies) {
       const digest = createHash("sha256").update(body, "utf8").digest("base64");

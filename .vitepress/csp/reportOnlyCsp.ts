@@ -83,6 +83,9 @@ export function extractInlineScriptBodies(html: string) {
     if (!isExecutableInlineScript(match[1])) {
       continue;
     }
+    if (match[2].trim() === "") {
+      continue;
+    }
     bodies.push(match[2]);
   }
   return bodies;
@@ -100,13 +103,10 @@ export function sha256Source(scriptBody: string) {
 // Every distinct inline-script hash across the given HTML documents, sorted for a
 // stable, diffable header. Deduped so shared bootstrap scripts count once.
 export function collectInlineScriptHashes(htmlDocuments: string[]) {
-  const hashes = new Set<string>();
-  for (const html of htmlDocuments) {
-    for (const body of extractInlineScriptBodies(html)) {
-      hashes.add(sha256Source(body));
-    }
-  }
-  return [...hashes].sort();
+  const hashes = htmlDocuments
+    .flatMap(extractInlineScriptBodies)
+    .map(sha256Source);
+  return [...new Set(hashes)].sort();
 }
 
 function parseDirectives(csp: string): Directive[] {

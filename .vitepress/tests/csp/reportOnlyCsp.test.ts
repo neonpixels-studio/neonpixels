@@ -38,6 +38,19 @@ describe("extractInlineScriptBodies", () => {
     expect(extractInlineScriptBodies(html)).toEqual([]);
   });
 
+  it("skips the other inert data types (json, template, html)", () => {
+    const html =
+      `<script type="application/json">{}</script>` +
+      `<script type="text/template"><div></div></script>` +
+      `<script type="text/html"><span></span></script>`;
+    expect(extractInlineScriptBodies(html)).toEqual([]);
+  });
+
+  it("skips an empty or whitespace-only inline script", () => {
+    const html = `<script></script><script>  </script>`;
+    expect(extractInlineScriptBodies(html)).toEqual([]);
+  });
+
   it("returns each executable inline script in document order", () => {
     const html =
       `<script id="a">a()</script>` +
