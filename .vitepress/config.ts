@@ -1,6 +1,8 @@
 import { defineConfig, type Plugin } from "vitepress";
 import tailwindcss from "@tailwindcss/vite";
 
+import { writeReportOnlyHeaders } from "./csp/writeReportOnlyHeaders";
+
 const SITE_URL = "https://neonpixels.io";
 const DESCRIPTION =
   "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, Wanderist, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
@@ -87,5 +89,13 @@ export default defineConfig({
     // at runtime but nominally distinct across the major gap, so cast to
     // VitePress's re-exported (Vite 5) Plugin type at the seam.
     plugins: [tailwindcss() as unknown as Plugin[]],
+  },
+  // Hash the inline bootstrap scripts VitePress emits and publish them in a
+  // Content-Security-Policy-Report-Only header (Netlify `_headers`). Derived from
+  // the real build output so the hashes can never drift silently. The enforcing
+  // CSP in netlify.toml keeps 'unsafe-inline' until this Report-Only rollout
+  // confirms no violations — see the @todo there.
+  async buildEnd(siteConfig) {
+    await writeReportOnlyHeaders(siteConfig.outDir);
   },
 });
