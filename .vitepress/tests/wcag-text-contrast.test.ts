@@ -1,7 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, onTestFinished } from "vitest";
+import { mount } from "@vue/test-utils";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 import { contrastRatio } from "@theme/utils/color";
 
 // Anchored to this test file, not process.cwd(), so the read still resolves if
@@ -71,6 +73,85 @@ describe("muted text tokens meet WCAG AA", () => {
         readTokenValues(token),
         readTokenValues(TOKEN_BACKGROUND),
       );
+      expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
+    },
+  );
+});
+
+// Per-project stat-block micro-labels (issue #38 lifted the two hardcoded
+// `text-[#hex]` values that failed AA on their tinted panels). These sit on the
+// project panels, not --color-bg, so the guard mounts the page and reads each
+// label's *rendered* panel background rather than a hardcoded pairing — moving a
+// label off its panel, or retinting the panel under it, fails loud instead of
+// asserting against a stale hex.
+const LABELS_ON_PANELS = [
+  { token: "--color-wanderist-label", className: "text-wanderist-label" },
+  { token: "--color-markpost-label", className: "text-markpost-label" },
+];
+
+// A label's contrast surface is the nearest ancestor that paints a background.
+// Read the two opaque-hex idioms this component uses — an unprefixed
+// `bg-[#rrggbb]` Tailwind class and an inline `background`/`background-color`
+// style — with the inline style winning per the cascade. The class match is
+// tail-anchored so an opacity modifier (`bg-[#150610]/60`) isn't mistaken for an
+// opaque fill, and unprefixed so a responsive `md:bg-[...]` (which only applies
+// above a breakpoint) isn't asserted as unconditional. getAttribute (not
+// `.className`) keeps SVG ancestors, whose className is an SVGAnimatedString,
+// from throwing.
+const PANEL_BACKGROUND_CLASS = /(?:^|\s)bg-\[(#[0-9a-fA-F]{6})\](?=\s|$)/;
+const PANEL_BACKGROUND_STYLE = /background(?:-color)?:\s*(#[0-9a-fA-F]{6})/;
+
+// An ancestor that paints *a* background (any bg-* utility or background style)
+// but not in a form the extractors above understand — a token class, rgb()/
+// alpha/shorthand hex, a variant prefix. Climbing past it would silently assert
+// the label against a surface it doesn't render on, so fail loud instead.
+const PAINTS_BACKGROUND_CLASS = /(?:^|\s)(?:[a-z-]+:)?bg-\S/;
+const PAINTS_BACKGROUND_STYLE = /background(?:-color)?:/;
+
+function readPanelBackground(element: Element): string | null {
+  const classes = element.getAttribute("class") ?? "";
+  const style = element.getAttribute("style") ?? "";
+  const hex =
+    style.match(PANEL_BACKGROUND_STYLE) ??
+    classes.match(PANEL_BACKGROUND_CLASS);
+  if (hex) {
+    return hex[1];
+  }
+  const paints =
+    PAINTS_BACKGROUND_STYLE.test(style) ||
+    PAINTS_BACKGROUND_CLASS.test(classes);
+  if (paints) {
+    throw new Error(
+      "wcag-text-contrast: panel paints a background this resolver can't read (token/alpha/rgb/variant) — teach readPanelBackground the new form",
+    );
+  }
+  return null;
+}
+
+function panelBackgroundOf(element: Element): string {
+  let ancestor: Element | null = element;
+  while (ancestor) {
+    const background = readPanelBackground(ancestor);
+    if (background) {
+      return background;
+    }
+    ancestor = ancestor.parentElement;
+  }
+  throw new Error("wcag-text-contrast: label has no tinted panel ancestor");
+}
+
+describe("stat-block micro-labels meet WCAG AA", () => {
+  it.each(LABELS_ON_PANELS)(
+    `$token clears ${WCAG_AA_NORMAL_TEXT}:1 on every panel it renders on`,
+    ({ token, className }) => {
+      const wrapper = mount(NeonPixelsPage);
+      onTestFinished(() => wrapper.unmount());
+      const labels = wrapper.findAll(`.${className}`);
+      expect(labels.length).toBeGreaterThan(0);
+      const backgrounds = labels.map((label) =>
+        panelBackgroundOf(label.element),
+      );
+      const ratio = lowestContrast(readTokenValues(token), backgrounds);
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     },
   );
