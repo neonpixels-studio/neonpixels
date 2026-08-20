@@ -381,6 +381,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
           v-if="project.id === 'grimicorn'"
           class="border border-[#23301a] bg-[#0a0d06]"
           :style="{ boxShadow: GRIMICORN_GLOW }"
+          aria-hidden="true"
         >
           <div
             class="flex items-center gap-2 border-b border-[#23301a] px-[14px] py-[11px]"
@@ -417,6 +418,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
           v-else-if="project.id === 'wanderist'"
           class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]"
           :style="{ boxShadow: WANDERIST_GLOW }"
+          aria-hidden="true"
         >
           <div
             class="flex justify-between text-[11px] tracking-[0.16em] text-[#5a6d75] uppercase"
@@ -445,6 +447,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
           v-else-if="project.id === 'basin'"
           class="flex flex-col gap-px border border-[#2e2410] bg-[#2e2410]"
           :style="{ boxShadow: BASIN_GLOW }"
+          aria-hidden="true"
         >
           <div
             v-for="item in BASIN_FEED"
@@ -479,6 +482,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
         <div
           v-else-if="project.id === 'markpost'"
           class="grid grid-cols-[1fr_auto_1fr] items-center gap-[18px]"
+          aria-hidden="true"
         >
           <div
             class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"

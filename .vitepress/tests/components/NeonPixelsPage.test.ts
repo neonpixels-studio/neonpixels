@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { mount } from "@vue/test-utils";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
+import { PROJECTS } from "@theme/data/projects";
 
 // Interactive control classes the global :focus-visible ring lands on.
 const INTERACTIVE_FOCUS_CLASSES = ["pill", "nav-link", "footer-link"];
@@ -21,7 +22,10 @@ const PROJECT_URLS = [
   "https://markpost.io",
 ];
 
-const PROJECT_SECTION_IDS = ["grimicorn", "wanderist", "basin", "markpost"];
+// Derive the section ids from the data so a project added later is covered by
+// every id-driven assertion below (notably the aria-hidden guard) instead of
+// slipping past a hardcoded list.
+const PROJECT_SECTION_IDS = PROJECTS.map((project) => project.id);
 
 describe("NeonPixelsPage", () => {
   it("renders correctly", () => {
@@ -54,6 +58,39 @@ describe("NeonPixelsPage", () => {
     PROJECT_SECTION_IDS.forEach((id) => {
       const grid = wrapper.get(`section#${id} .grid`);
       expect(grid.element.children).toHaveLength(2);
+    });
+    wrapper.unmount();
+  });
+
+  it("hides each decorative project visual from assistive technology", () => {
+    const wrapper = mount(NeonPixelsPage);
+    // Each section grid holds a summary column and a bespoke visual column.
+    // The visuals are fabricated product mockups (a terminal, a heatmap, a
+    // feed, in/out panels) whose text is illustrative chrome, not information
+    // the page commits to — so the visual container must carry aria-hidden
+    // while the summary (the real prose and CTA) must not. The summary is the
+    // column carrying the external CTA link; identify it by content so this
+    // survives the per-section layout flip without re-deriving the parity.
+    PROJECT_SECTION_IDS.forEach((id) => {
+      const grid = wrapper.get(`section#${id} > .grid`);
+      const columns = Array.from(grid.element.children);
+      expect(columns).toHaveLength(2);
+      const summaryColumn = columns.find((column) =>
+        column.querySelector("a[href]"),
+      );
+      const visualColumn = columns.find((column) => column !== summaryColumn);
+      expect(visualColumn?.getAttribute("aria-hidden")).toBe("true");
+      expect(summaryColumn?.getAttribute("aria-hidden")).toBeNull();
+      // aria-hidden on a container with a focusable descendant is itself an
+      // ARIA violation (the control stays tabbable but has no accessible
+      // name), so a future mockup must not introduce one. This also keeps the
+      // summary-detection heuristic above honest — it relies on the visuals
+      // carrying no anchors.
+      expect(
+        visualColumn?.querySelector(
+          'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).toBeNull();
     });
     wrapper.unmount();
   });
