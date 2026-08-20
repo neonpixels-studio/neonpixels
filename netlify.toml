@@ -1,5 +1,9 @@
 [build]
-  command = "npm run test:ci && npm run build"
+  # Build the site once into the publish dir, then run the suite. The build-html
+  # smoke test would otherwise compile a second throwaway copy; SMOKE_BUILD_REUSE_DIR
+  # points it at the dist we just built so a deploy compiles the site only once.
+  # A failing test still fails the command (via `&&`) and blocks the deploy.
+  command = "npm run build && SMOKE_BUILD_REUSE_DIR=.vitepress/dist npm run test:ci"
   publish = ".vitepress/dist"
 
 # No NODE_VERSION pin here on purpose: Netlify auto-reads .nvmrc, keeping the
