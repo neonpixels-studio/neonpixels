@@ -250,7 +250,9 @@ describe("built index.html head", () => {
 
 describe("generated CSP Report-Only header", () => {
   it("emits a Content-Security-Policy-Report-Only header scoped to /*", () => {
-    expect(generatedHeaders.split("\n")[0]).toBe("/*");
+    expect(generatedHeaders).toMatch(
+      new RegExp(`^/\\*\\n\\s+${REPORT_ONLY_HEADER_NAME}:`, "m"),
+    );
     expect(reportOnlyHeaderValue(generatedHeaders)).not.toBeNull();
   });
 

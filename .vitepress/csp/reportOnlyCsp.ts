@@ -4,14 +4,19 @@ import { createHash } from "node:crypto";
 // filesystem, so the extraction and header-building logic is unit-testable in
 // isolation; the build-time FS work lives in writeReportOnlyHeaders.ts.
 
-// Attribute segment is quote-aware so a stray `>` inside an attribute value
-// can't truncate the tag and split the hashed body across the wrong bytes.
+// Quote-aware attribute segment (the fallback class excludes the quote chars so
+// the alternation has one unambiguous parse and can't catastrophically backtrack)
+// and a whitespace-tolerant end tag (`</script >` is legal HTML) so a stray `>`
+// inside an attribute value can never truncate the tag and split the hashed body.
 const SCRIPT_TAG_PATTERN =
-  /<script\b((?:"[^"]*"|'[^']*'|[^>])*)>([\s\S]*?)<\/script>/gi;
-// Anchored on start-or-whitespace so `data-src` / `data-type` don't satisfy a
-// bare `\b` boundary and misclassify an inline script as external or inert.
-const SRC_ATTRIBUTE_PATTERN = /(?:^|\s)src\s*=/i;
-const TYPE_ATTRIBUTE_PATTERN = /(?:^|\s)type\s*=\s*["']?([^"'\s>]+)/i;
+  /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
+// One name="value" / name='value' / bare-name / name=value attribute. Reading
+// name and value as a unit is what stops a `src=`/`type=` substring living inside
+// another attribute's value (e.g. data-config="… src=x") from misclassifying the
+// script — the risky, page-breaking direction (a missed hash).
+const ATTRIBUTE_PATTERN = /([^\s=/]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s>]+))?/g;
+const SRC_ATTRIBUTE = "src";
+const TYPE_ATTRIBUTE = "type";
 
 // script-src governs every <script> the browser executes as JavaScript, which is
 // almost all of them: classic, module, importmap, MIME aliases. Only a few types
@@ -30,29 +35,43 @@ const SHA256_SOURCE_PREFIX = "sha256-";
 const SCRIPT_SRC_DIRECTIVE = "script-src";
 const DEFAULT_SRC_DIRECTIVE = "default-src";
 const SELF_SOURCE = "'self'";
+const NONE_SOURCE = "'none'";
 const UNSAFE_INLINE_SOURCE = "'unsafe-inline'";
 const DIRECTIVE_SEPARATOR = "; ";
 const MIME_PARAMETER_SEPARATOR = ";";
 
+// 'none' and 'unsafe-inline' are both discarded once a hash is present: a hash
+// makes 'unsafe-inline' a no-op, and a source list is either exactly 'none' or a
+// list of sources — never both, so keeping 'none' alongside a hash is invalid.
+const HASH_INCOMPATIBLE_SOURCES = new Set([NONE_SOURCE, UNSAFE_INLINE_SOURCE]);
+
 type Directive = { name: string; sources: string[] };
+
+function parseAttributes(attributes: string) {
+  const parsed = new Map<string, string>();
+  for (const match of attributes.matchAll(ATTRIBUTE_PATTERN)) {
+    const name = match[1].toLowerCase();
+    const rawValue = match[2] ?? "";
+    parsed.set(name, rawValue.replace(/^["']|["']$/g, ""));
+  }
+  return parsed;
+}
 
 // The bare MIME type, lowercased, with any parameters (e.g. `;charset=utf-8`)
 // stripped so `text/javascript;charset=utf-8` classifies as `text/javascript`.
-function scriptType(attributes: string) {
-  const match = attributes.match(TYPE_ATTRIBUTE_PATTERN);
-  if (!match) {
-    return "";
-  }
-  return match[1].split(MIME_PARAMETER_SEPARATOR)[0].trim().toLowerCase();
+function scriptType(attributes: Map<string, string>) {
+  const rawType = attributes.get(TYPE_ATTRIBUTE) ?? "";
+  return rawType.split(MIME_PARAMETER_SEPARATOR)[0].trim().toLowerCase();
 }
 
 // An inline script the browser executes: it has no src (external fetch, covered
 // by host sources rather than a hash) and is not an inert data type.
 function isExecutableInlineScript(attributes: string) {
-  if (SRC_ATTRIBUTE_PATTERN.test(attributes)) {
+  const parsed = parseAttributes(attributes);
+  if (parsed.has(SRC_ATTRIBUTE)) {
     return false;
   }
-  return !INERT_SCRIPT_TYPES.has(scriptType(attributes));
+  return !INERT_SCRIPT_TYPES.has(scriptType(parsed));
 }
 
 // The exact textContent of every executable inline <script> in the HTML. The
@@ -105,13 +124,15 @@ function formatDirective({ name, sources }: Directive) {
   return [name, ...sources].join(" ");
 }
 
-// Drop 'unsafe-inline' (a hash and 'unsafe-inline' are mutually exclusive per
-// CSP: once a hash is present the browser ignores 'unsafe-inline') and add the
-// build's inline-script hashes, preserving any other existing sources.
+// Add the build's inline-script hashes, dropping sources a hash makes invalid or
+// redundant ('none', 'unsafe-inline') while preserving every other source. With
+// no hashes to add, only 'unsafe-inline' is dropped so a bare 'self'/'none' base
+// survives unchanged.
 function lockDownScriptSrc(sources: string[], scriptHashes: string[]) {
-  const kept = sources.filter(
-    (source) => source.toLowerCase() !== UNSAFE_INLINE_SOURCE,
-  );
+  const discarded = scriptHashes.length
+    ? HASH_INCOMPATIBLE_SOURCES
+    : new Set([UNSAFE_INLINE_SOURCE]);
+  const kept = sources.filter((source) => !discarded.has(source.toLowerCase()));
   return [...kept, ...scriptHashes];
 }
 
@@ -124,15 +145,15 @@ function isDefaultSrc({ name }: Directive) {
 }
 
 // When the enforcing policy declares no script-src it inherits default-src, so a
-// synthesized script-src must start from those same sources (minus
-// 'unsafe-inline') rather than fabricating a more permissive 'self'. Falls back
-// to 'self' only when neither directive exists.
-function scriptSrcFallbackSources(directives: Directive[]) {
+// synthesized script-src starts from those same sources rather than fabricating a
+// more permissive 'self'. Falls back to 'self' only when neither directive
+// exists. lockDownScriptSrc then drops the hash-incompatible sources.
+function scriptSrcBaseSources(directives: Directive[]) {
   const defaultSrc = directives.find(isDefaultSrc);
   if (!defaultSrc) {
     return [SELF_SOURCE];
   }
-  return lockDownScriptSrc(defaultSrc.sources, []);
+  return defaultSrc.sources;
 }
 
 // The Report-Only policy: the enforcing CSP verbatim, except script-src trades
@@ -156,7 +177,10 @@ export function buildReportOnlyCsp(
     rebuilt.push(
       formatDirective({
         name: SCRIPT_SRC_DIRECTIVE,
-        sources: [...scriptSrcFallbackSources(directives), ...scriptHashes],
+        sources: lockDownScriptSrc(
+          scriptSrcBaseSources(directives),
+          scriptHashes,
+        ),
       }),
     );
   }

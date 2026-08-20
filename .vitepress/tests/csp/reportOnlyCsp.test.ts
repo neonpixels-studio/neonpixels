@@ -70,6 +70,21 @@ describe("extractInlineScriptBodies", () => {
     const html = `<script data-label="a>b">boot()</script>`;
     expect(extractInlineScriptBodies(html)).toEqual(["boot()"]);
   });
+
+  it("does not treat a src=/type= substring inside another value as the attribute", () => {
+    const html =
+      `<script data-config="mode=a src=b">withSrcInValue()</script>` +
+      `<script data-note="type=application/ld+json">withTypeInValue()</script>`;
+    expect(extractInlineScriptBodies(html)).toEqual([
+      "withSrcInValue()",
+      "withTypeInValue()",
+    ]);
+  });
+
+  it("handles a whitespace-tolerant </script > end tag without merging scripts", () => {
+    const html = `<script>a()</script ><script>b()</script>`;
+    expect(extractInlineScriptBodies(html)).toEqual(["a()", "b()"]);
+  });
 });
 
 describe("sha256Source", () => {
@@ -127,10 +142,20 @@ describe("buildReportOnlyCsp", () => {
     );
   });
 
-  it("inherits a restrictive default-src rather than fabricating 'self'", () => {
+  it("inherits a restrictive default-src, dropping 'none' beside the hashes", () => {
     const reportOnly = buildReportOnlyCsp("default-src 'none'", hashes);
     expect(reportOnly).toBe(
-      `default-src 'none'; script-src 'none' 'sha256-AAA=' 'sha256-BBB='`,
+      `default-src 'none'; script-src 'sha256-AAA=' 'sha256-BBB='`,
+    );
+  });
+
+  it("drops 'none' from an explicit script-src when adding hashes", () => {
+    const reportOnly = buildReportOnlyCsp(
+      "default-src 'self'; script-src 'none'",
+      hashes,
+    );
+    expect(reportOnly).toBe(
+      `default-src 'self'; script-src 'sha256-AAA=' 'sha256-BBB='`,
     );
   });
 
