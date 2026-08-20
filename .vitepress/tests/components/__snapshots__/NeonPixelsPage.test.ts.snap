@@ -2,7 +2,7 @@
 
 exports[`NeonPixelsPage > renders correctly 1`] = `
 "<div data-v-aa442b0f="" class="bg-bg text-fg relative font-mono">
-  <!-- drifting grid backdrop -->
+  <!-- skip link: first focusable element, visually hidden until focused --><a data-v-aa442b0f="" href="#main-content" class="skip-link"> Skip to content </a><!-- drifting grid backdrop -->
   <div data-v-aa442b0f="" class="animate-drift pointer-events-none fixed inset-0 z-0" style="background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 80px 80px;"></div><!-- header -->
   <header data-v-aa442b0f="" class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b px-10 py-[22px] backdrop-blur-md" style="background: #08080ae6;"><a data-v-aa442b0f="" href="#top" class="flex items-center gap-[11px]"><svg data-v-aa442b0f="" width="20" height="20" viewBox="0 0 34 34" class="block flex-none" aria-hidden="true">
         <rect data-v-aa442b0f="" x="0" y="22" width="10" height="10" fill="#22e0ff"></rect>
@@ -10,164 +10,170 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
         <rect data-v-aa442b0f="" x="24" y="0" width="10" height="10" fill="#ff2ea6"></rect>
       </svg><span data-v-aa442b0f="" class="font-display text-[15px] font-black tracking-[-0.01em] text-[#f2f2f4]"> NEON<span data-v-aa442b0f="" class="animate-sweep bg-clip-text text-transparent" style="background-image: linear-gradient(90deg, #b8ff2e, #22e0ff, #ff2ea6, #ffc21f, #b8ff2e); --np-sweep-dur: 7s;">PIXELS</span></span></a>
     <nav data-v-aa442b0f="" class="text-fg-subtle flex items-center gap-[26px] text-[12.5px]"><a data-v-aa442b0f="" href="#projects" class="nav-link text-fg-subtle">projects</a><a data-v-aa442b0f="" href="#about" class="nav-link text-fg-subtle">about</a><span data-v-aa442b0f="" class="text-lime flex items-center gap-[7px]"><span data-v-aa442b0f="" class="bg-lime animate-pulse-dot h-[7px] w-[7px] rounded-full" style="box-shadow: 0 0 8px #b8ff2e;"></span>4 projects </span></nav>
-  </header><!-- hero -->
-  <section data-v-aa442b0f="" id="top" class="relative z-[2] overflow-hidden px-10 pt-28 pb-24">
-    <div data-v-aa442b0f="" class="animate-aurora pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]" style="background: radial-gradient(circle, rgba(184, 255, 46, 0.16), transparent 62%);"></div>
-    <div data-v-aa442b0f="" class="animate-aurora-reverse pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px]" style="--np-aurora-dur: 32s; background: radial-gradient(circle, rgba(255, 46, 166, 0.15), transparent 62%);"></div>
-    <div data-v-aa442b0f="" class="animate-aurora pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px]" style="--np-aurora-dur: 38s; background: radial-gradient(circle, rgba(34, 224, 255, 0.13), transparent 62%);"></div>
-    <div data-v-aa442b0f="" class="relative mx-auto flex max-w-[1180px] flex-col gap-[34px]">
-      <div data-v-aa442b0f="" class="flex items-center gap-[14px] text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"><span data-v-aa442b0f="" class="bg-lime h-px w-[26px]" style="box-shadow: 0 0 6px #b8ff2e;"></span> a very small studio · a lot of side projects </div>
-      <h1 data-v-aa442b0f="" class="font-display m-0 font-black tracking-[-0.035em] text-[#f4f4f6]" style="line-height: 0.86;"> WE BUILD THE<br data-v-aa442b0f=""><span data-v-aa442b0f="" class="animate-sweep bg-clip-text text-transparent" style="background-image: linear-gradient(90deg, #b8ff2e, #22e0ff, #ff2ea6, #ffc21f, #b8ff2e);">MISSING APPS</span></h1>
-      <p data-v-aa442b0f="" class="m-0 max-w-[640px] text-[15.5px] leading-[1.75] text-[#a8a8b3]"> Neon Pixels is one human and one very caffeinated agent, shipping the tools we kept wishing existed. Every project here started as a personal annoyance and escaped into production. <span data-v-aa442b0f="" class="text-fg">You're welcome to use them.</span></p>
-      <div data-v-aa442b0f="" class="flex flex-wrap gap-[10px]"><a data-v-aa442b0f="" href="#grimicorn" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #b8ff2e; border-color: #2b3a14; background: #12180a; --pill-bg-hover: #1a2410; --accent: #b8ff2e;"><span data-v-aa442b0f="" class="h-[6px] w-[6px]" style="background: #b8ff2e; box-shadow: 0 0 7px #b8ff2e;"></span>grimicorn.dev</a><a data-v-aa442b0f="" href="#wanderist" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #22e0ff; border-color: #123340; background: #08161b; --pill-bg-hover: #0c2028; --accent: #22e0ff;"><span data-v-aa442b0f="" class="h-[6px] w-[6px]" style="background: #22e0ff; box-shadow: 0 0 7px #22e0ff;"></span>wanderist.io</a><a data-v-aa442b0f="" href="#basin" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #ffc21f; border-color: #3d2f0c; background: #1a1305; --pill-bg-hover: #241a07; --accent: #ffc21f;"><span data-v-aa442b0f="" class="h-[6px] w-[6px]" style="background: #ffc21f; box-shadow: 0 0 7px #ffc21f;"></span>basin.fm</a><a data-v-aa442b0f="" href="#markpost" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #ff2ea6; border-color: #3d1029; background: #1b0713; --pill-bg-hover: #250a1a; --accent: #ff2ea6;"><span data-v-aa442b0f="" class="h-[6px] w-[6px]" style="background: #ff2ea6; box-shadow: 0 0 7px #ff2ea6;"></span>markpost.io</a></div>
-    </div>
-  </section><!-- about -->
-  <section data-v-aa442b0f="" id="about" class="border-border bg-panel relative z-[2] border-t border-b px-10 py-20">
-    <div data-v-aa442b0f="" class="mx-auto grid max-w-[1180px] items-start gap-16 md:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
-      <div data-v-aa442b0f="" class="flex flex-col gap-[18px]">
-        <div data-v-aa442b0f="" class="flex items-center gap-3 text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"><span data-v-aa442b0f="" class="h-px w-[22px] bg-[#7a7a85]"></span> about </div>
-        <h2 data-v-aa442b0f="" class="font-display m-0 font-black tracking-[-0.025em] text-[#f2f2f4]" style="line-height: 1.02;"> A studio of<br data-v-aa442b0f="">two, sort of. </h2>
+  </header>
+  <!-- tabindex="-1" keeps <main> out of the Tab order while letting the skip
+         link move focus here on browsers that don't set the focus navigation
+         starting point from fragment nav (Safari) -->
+  <main data-v-aa442b0f="" id="main-content" tabindex="-1">
+    <!-- hero -->
+    <section data-v-aa442b0f="" id="top" class="relative z-[2] overflow-hidden px-10 pt-28 pb-24">
+      <div data-v-aa442b0f="" class="animate-aurora pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]" style="background: radial-gradient(circle, rgba(184, 255, 46, 0.16), transparent 62%);"></div>
+      <div data-v-aa442b0f="" class="animate-aurora-reverse pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px]" style="--np-aurora-dur: 32s; background: radial-gradient(circle, rgba(255, 46, 166, 0.15), transparent 62%);"></div>
+      <div data-v-aa442b0f="" class="animate-aurora pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px]" style="--np-aurora-dur: 38s; background: radial-gradient(circle, rgba(34, 224, 255, 0.13), transparent 62%);"></div>
+      <div data-v-aa442b0f="" class="relative mx-auto flex max-w-[1180px] flex-col gap-[34px]">
+        <div data-v-aa442b0f="" class="flex items-center gap-[14px] text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"><span data-v-aa442b0f="" class="bg-lime h-px w-[26px]" style="box-shadow: 0 0 6px #b8ff2e;"></span> a very small studio · a lot of side projects </div>
+        <h1 data-v-aa442b0f="" class="font-display m-0 font-black tracking-[-0.035em] text-[#f4f4f6]" style="line-height: 0.86;"> WE BUILD THE<br data-v-aa442b0f=""><span data-v-aa442b0f="" class="animate-sweep bg-clip-text text-transparent" style="background-image: linear-gradient(90deg, #b8ff2e, #22e0ff, #ff2ea6, #ffc21f, #b8ff2e);">MISSING APPS</span></h1>
+        <p data-v-aa442b0f="" class="m-0 max-w-[640px] text-[15.5px] leading-[1.75] text-[#a8a8b3]"> Neon Pixels is one human and one very caffeinated agent, shipping the tools we kept wishing existed. Every project here started as a personal annoyance and escaped into production. <span data-v-aa442b0f="" class="text-fg">You're welcome to use them.</span></p>
+        <div data-v-aa442b0f="" class="flex flex-wrap gap-[10px]"><a data-v-aa442b0f="" href="#grimicorn" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #b8ff2e; border-color: #2b3a14; background: #12180a; --pill-bg-hover: #1a2410; --accent: #b8ff2e;"><span data-v-aa442b0f="" class="h-[6px] w-[6px]" style="background: #b8ff2e; box-shadow: 0 0 7px #b8ff2e;"></span>grimicorn.dev</a><a data-v-aa442b0f="" href="#wanderist" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #22e0ff; border-color: #123340; background: #08161b; --pill-bg-hover: #0c2028; --accent: #22e0ff;"><span data-v-aa442b0f="" class="h-[6px] w-[6px]" style="background: #22e0ff; box-shadow: 0 0 7px #22e0ff;"></span>wanderist.io</a><a data-v-aa442b0f="" href="#basin" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #ffc21f; border-color: #3d2f0c; background: #1a1305; --pill-bg-hover: #241a07; --accent: #ffc21f;"><span data-v-aa442b0f="" class="h-[6px] w-[6px]" style="background: #ffc21f; box-shadow: 0 0 7px #ffc21f;"></span>basin.fm</a><a data-v-aa442b0f="" href="#markpost" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #ff2ea6; border-color: #3d1029; background: #1b0713; --pill-bg-hover: #250a1a; --accent: #ff2ea6;"><span data-v-aa442b0f="" class="h-[6px] w-[6px]" style="background: #ff2ea6; box-shadow: 0 0 7px #ff2ea6;"></span>markpost.io</a></div>
       </div>
-      <div data-v-aa442b0f="" class="flex flex-col gap-[26px]">
-        <p data-v-aa442b0f="" class="m-0 text-[15.5px] leading-[1.8] text-[#b4b4bf]"> Neon Pixels is me and Grimicorn — my agent, my co-worker, and the reason commits show up at 3am. Everything under this roof solves a problem <em data-v-aa442b0f="" class="text-fg not-italic">I personally had</em>, and then kept going because it turns out other people had it too. </p>
-        <p data-v-aa442b0f="" class="m-0 text-[15.5px] leading-[1.8] text-[#b4b4bf]"> It's also a playground. Each project doubles as an experiment in how far automated, agent-driven development can actually go when you let it off the leash. Some of it works beautifully. Some of it is on fire. Both are the point. </p>
-        <div data-v-aa442b0f="" class="border-border bg-border grid gap-px border" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
-          <div data-v-aa442b0f="" class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]"><span data-v-aa442b0f="" class="font-display text-lime text-[30px] leading-none font-black">4</span><span data-v-aa442b0f="" class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase">projects live-ish</span></div>
-          <div class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]" data-v-aa442b0f=""><span class="font-display text-cyan text-[30px] leading-none font-black" data-v-aa442b0f="">2</span><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase" data-v-aa442b0f="">team members</span></div>
-          <div class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]" data-v-aa442b0f=""><span class="font-display text-amber text-[30px] leading-none font-black" data-v-aa442b0f="">1</span><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase" data-v-aa442b0f="">of them sleeps</span></div>
-          <div class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]" data-v-aa442b0f=""><span class="font-display text-pink text-[30px] leading-none font-black" data-v-aa442b0f="">∞</span><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase" data-v-aa442b0f="">personal annoyances</span></div>
+    </section><!-- about -->
+    <section data-v-aa442b0f="" id="about" class="border-border bg-panel relative z-[2] border-t border-b px-10 py-20">
+      <div data-v-aa442b0f="" class="mx-auto grid max-w-[1180px] items-start gap-16 md:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+        <div data-v-aa442b0f="" class="flex flex-col gap-[18px]">
+          <div data-v-aa442b0f="" class="flex items-center gap-3 text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"><span data-v-aa442b0f="" class="h-px w-[22px] bg-[#7a7a85]"></span> about </div>
+          <h2 data-v-aa442b0f="" class="font-display m-0 font-black tracking-[-0.025em] text-[#f2f2f4]" style="line-height: 1.02;"> A studio of<br data-v-aa442b0f="">two, sort of. </h2>
+        </div>
+        <div data-v-aa442b0f="" class="flex flex-col gap-[26px]">
+          <p data-v-aa442b0f="" class="m-0 text-[15.5px] leading-[1.8] text-[#b4b4bf]"> Neon Pixels is me and Grimicorn — my agent, my co-worker, and the reason commits show up at 3am. Everything under this roof solves a problem <em data-v-aa442b0f="" class="text-fg not-italic">I personally had</em>, and then kept going because it turns out other people had it too. </p>
+          <p data-v-aa442b0f="" class="m-0 text-[15.5px] leading-[1.8] text-[#b4b4bf]"> It's also a playground. Each project doubles as an experiment in how far automated, agent-driven development can actually go when you let it off the leash. Some of it works beautifully. Some of it is on fire. Both are the point. </p>
+          <div data-v-aa442b0f="" class="border-border bg-border grid gap-px border" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+            <div data-v-aa442b0f="" class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]"><span data-v-aa442b0f="" class="font-display text-lime text-[30px] leading-none font-black">4</span><span data-v-aa442b0f="" class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase">projects live-ish</span></div>
+            <div class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]" data-v-aa442b0f=""><span class="font-display text-cyan text-[30px] leading-none font-black" data-v-aa442b0f="">2</span><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase" data-v-aa442b0f="">team members</span></div>
+            <div class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]" data-v-aa442b0f=""><span class="font-display text-amber text-[30px] leading-none font-black" data-v-aa442b0f="">1</span><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase" data-v-aa442b0f="">of them sleeps</span></div>
+            <div class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]" data-v-aa442b0f=""><span class="font-display text-pink text-[30px] leading-none font-black" data-v-aa442b0f="">∞</span><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase" data-v-aa442b0f="">personal annoyances</span></div>
+          </div>
         </div>
       </div>
+    </section><!-- projects heading -->
+    <div data-v-aa442b0f="" id="projects" class="relative z-[2] mx-auto max-w-[1180px] px-10 pt-16 pb-[34px]">
+      <div data-v-aa442b0f="" class="border-border flex items-baseline justify-between gap-5 border-b pb-4">
+        <div data-v-aa442b0f="" class="flex items-center gap-3 text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"><span data-v-aa442b0f="" class="h-px w-[22px] bg-[#7a7a85]"></span> the projects </div><span data-v-aa442b0f="" class="text-fg-faint text-[11px] tracking-[0.1em]">04 / 04</span>
+      </div>
     </div>
-  </section><!-- projects heading -->
-  <div data-v-aa442b0f="" id="projects" class="relative z-[2] mx-auto max-w-[1180px] px-10 pt-16 pb-[34px]">
-    <div data-v-aa442b0f="" class="border-border flex items-baseline justify-between gap-5 border-b pb-4">
-      <div data-v-aa442b0f="" class="flex items-center gap-3 text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"><span data-v-aa442b0f="" class="h-px w-[22px] bg-[#7a7a85]"></span> the projects </div><span data-v-aa442b0f="" class="text-fg-faint text-[11px] tracking-[0.1em]">04 / 04</span>
-    </div>
-  </div>
-  <!-- projects: one data-driven section per PROJECTS entry; each keeps its
+    <!-- projects: one data-driven section per PROJECTS entry; each keeps its
          bespoke visual in the #visual slot. reverse alternates the layout. -->
-  <section data-v-aa442b0f="" id="grimicorn" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(100deg, #0d1206 0%, #08080a 58%);">
-    <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(90deg, #b8ff2e, transparent 65%);"></div>
-    <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora top-[-30%] left-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 28s; background: radial-gradient(circle, rgba(184, 255, 46, 0.18), transparent 62%);"></div>
-    <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
-      <div data-v-6057c22f="" class="flex flex-col gap-5">
-        <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[3px] text-bg bg-lime">LIVE</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">01 — agent workflow</span></div>
-        <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">grimicorn<span data-v-6057c22f="" class="text-lime animate-flicker" style="text-shadow: 0 0 18px rgba(184, 255, 46, 0.6);">.dev</span></h3>
-        <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]">The chaotic coding sidekick behind everything else on this page. An automated agent workflow that builds, breaks, and ships the other Neon Pixels projects while I'm asleep.</p><a data-v-6057c22f="" href="https://grimicorn.dev" target="_blank" rel="noopener noreferrer" class="cta-fill text-bg self-start px-5 py-3 text-[13px] font-bold bg-lime" style="--accent: #b8ff2e; box-shadow: 0 0 26px rgba(184, 255, 46, 0.35); --accent-glow: rgba(184, 255, 46, 0.6);">visit grimicorn.dev →</a>
-      </div>
-      <div data-v-aa442b0f="" class="border border-[#23301a] bg-[#0a0d06]" style="box-shadow: 0 0 60px rgba(184, 255, 46, 0.1);">
-        <div data-v-aa442b0f="" class="flex items-center gap-2 border-b border-[#23301a] px-[14px] py-[11px]"><span data-v-aa442b0f="" class="bg-pink h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="bg-amber h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="bg-lime h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="text-fg-dim ml-2 text-[11px]">grimicorn-agent — zsh</span></div>
-        <div data-v-aa442b0f="" class="text-fg-subtle px-[18px] py-[18px] text-[12.5px] leading-[2.05]">
-          <div data-v-aa442b0f=""><span data-v-aa442b0f="" class="text-lime">grimicorn@dev</span> ~ % status</div>
-          <div data-v-aa442b0f="" class="text-fg font-bold">UNLEASHED</div>
-          <div data-v-aa442b0f="" class="text-purple">[03:14] merged a PR you haven't read</div>
-          <div data-v-aa442b0f="" class="text-purple">[03:16] shipped wanderist map tiles</div>
-          <div data-v-aa442b0f="" class="text-purple">[03:19] broke staging. on purpose.</div>
-          <div data-v-aa442b0f=""><span data-v-aa442b0f="" class="text-lime">grimicorn@dev</span> ~ % <span data-v-aa442b0f="" class="bg-lime animate-blink inline-block h-[14px] w-2 align-[-2px]"></span></div>
+    <section data-v-aa442b0f="" id="grimicorn" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(100deg, #0d1206 0%, #08080a 58%);">
+      <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(90deg, #b8ff2e, transparent 65%);"></div>
+      <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora top-[-30%] left-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 28s; background: radial-gradient(circle, rgba(184, 255, 46, 0.18), transparent 62%);"></div>
+      <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
+        <div data-v-6057c22f="" class="flex flex-col gap-5">
+          <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[3px] text-bg bg-lime">LIVE</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">01 — agent workflow</span></div>
+          <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">grimicorn<span data-v-6057c22f="" class="text-lime animate-flicker" style="text-shadow: 0 0 18px rgba(184, 255, 46, 0.6);">.dev</span></h3>
+          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]">The chaotic coding sidekick behind everything else on this page. An automated agent workflow that builds, breaks, and ships the other Neon Pixels projects while I'm asleep.</p><a data-v-6057c22f="" href="https://grimicorn.dev" target="_blank" rel="noopener noreferrer" class="cta-fill text-bg self-start px-5 py-3 text-[13px] font-bold bg-lime" style="--accent: #b8ff2e; box-shadow: 0 0 26px rgba(184, 255, 46, 0.35); --accent-glow: rgba(184, 255, 46, 0.6);">visit grimicorn.dev →</a>
+        </div>
+        <div data-v-aa442b0f="" class="border border-[#23301a] bg-[#0a0d06]" style="box-shadow: 0 0 60px rgba(184, 255, 46, 0.1);">
+          <div data-v-aa442b0f="" class="flex items-center gap-2 border-b border-[#23301a] px-[14px] py-[11px]"><span data-v-aa442b0f="" class="bg-pink h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="bg-amber h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="bg-lime h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="text-fg-dim ml-2 text-[11px]">grimicorn-agent — zsh</span></div>
+          <div data-v-aa442b0f="" class="text-fg-subtle px-[18px] py-[18px] text-[12.5px] leading-[2.05]">
+            <div data-v-aa442b0f=""><span data-v-aa442b0f="" class="text-lime">grimicorn@dev</span> ~ % status</div>
+            <div data-v-aa442b0f="" class="text-fg font-bold">UNLEASHED</div>
+            <div data-v-aa442b0f="" class="text-purple">[03:14] merged a PR you haven't read</div>
+            <div data-v-aa442b0f="" class="text-purple">[03:16] shipped wanderist map tiles</div>
+            <div data-v-aa442b0f="" class="text-purple">[03:19] broke staging. on purpose.</div>
+            <div data-v-aa442b0f=""><span data-v-aa442b0f="" class="text-lime">grimicorn@dev</span> ~ % <span data-v-aa442b0f="" class="bg-lime animate-blink inline-block h-[14px] w-2 align-[-2px]"></span></div>
+          </div>
         </div>
       </div>
-    </div>
-  </section>
-  <section data-v-aa442b0f="" id="wanderist" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(260deg, #04141a 0%, #08080a 58%);">
-    <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(270deg, #22e0ff, transparent 65%);"></div>
-    <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-26%] right-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 34s; background: radial-gradient(circle, rgba(34, 224, 255, 0.16), transparent 62%);"></div>
-    <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]">
-      <div data-v-aa442b0f="" class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]" style="box-shadow: 0 0 60px rgba(34, 224, 255, 0.1);">
-        <div data-v-aa442b0f="" class="flex justify-between text-[11px] tracking-[0.16em] text-[#5a6d75] uppercase"><span data-v-aa442b0f="">trip log</span><span data-v-aa442b0f="">47 / 50 states</span></div>
-        <div data-v-aa442b0f="" class="grid grid-cols-[repeat(16,minmax(0,1fr))] gap-1">
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-          <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+    </section>
+    <section data-v-aa442b0f="" id="wanderist" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(260deg, #04141a 0%, #08080a 58%);">
+      <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(270deg, #22e0ff, transparent 65%);"></div>
+      <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-26%] right-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 34s; background: radial-gradient(circle, rgba(34, 224, 255, 0.16), transparent 62%);"></div>
+      <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]">
+        <div data-v-aa442b0f="" class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]" style="box-shadow: 0 0 60px rgba(34, 224, 255, 0.1);">
+          <div data-v-aa442b0f="" class="flex justify-between text-[11px] tracking-[0.16em] text-[#5a6d75] uppercase"><span data-v-aa442b0f="">trip log</span><span data-v-aa442b0f="">47 / 50 states</span></div>
+          <div data-v-aa442b0f="" class="grid grid-cols-[repeat(16,minmax(0,1fr))] gap-1">
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+          </div>
+          <div data-v-aa442b0f="" class="flex gap-5 text-[11px] text-[#5a6d75]"><span data-v-aa442b0f="">60k+ miles</span><span data-v-aa442b0f="">26 states</span><span data-v-aa442b0f="">3 countries</span></div>
         </div>
-        <div data-v-aa442b0f="" class="flex gap-5 text-[11px] text-[#5a6d75]"><span data-v-aa442b0f="">60k+ miles</span><span data-v-aa442b0f="">26 states</span><span data-v-aa442b0f="">3 countries</span></div>
+        <div data-v-6057c22f="" class="flex flex-col gap-5">
+          <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[2px] border text-cyan border-cyan">IN PROGRESS</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">02 — travel</span></div>
+          <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">wanderist<span data-v-6057c22f="" class="text-cyan" style="text-shadow: 0 0 18px rgba(34, 224, 255, 0.6);">.io</span></h3>
+          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]">A travel blog and tracker in one. Log where you've been, plot it, write about it — without gluing together four apps and a spreadsheet to do it.</p><a data-v-6057c22f="" href="https://wanderist.io" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-cyan border-cyan" style="--accent: #22e0ff;">visit wanderist.io →</a>
+        </div>
       </div>
-      <div data-v-6057c22f="" class="flex flex-col gap-5">
-        <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[2px] border text-cyan border-cyan">IN PROGRESS</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">02 — travel</span></div>
-        <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">wanderist<span data-v-6057c22f="" class="text-cyan" style="text-shadow: 0 0 18px rgba(34, 224, 255, 0.6);">.io</span></h3>
-        <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]">A travel blog and tracker in one. Log where you've been, plot it, write about it — without gluing together four apps and a spreadsheet to do it.</p><a data-v-6057c22f="" href="https://wanderist.io" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-cyan border-cyan" style="--accent: #22e0ff;">visit wanderist.io →</a>
+    </section>
+    <section data-v-aa442b0f="" id="basin" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(100deg, #170f02 0%, #08080a 58%);">
+      <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(90deg, #ffc21f, transparent 65%);"></div>
+      <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora bottom-[-34%] left-[2%] h-[520px] w-[520px]" style="--np-aurora-dur: 30s; background: radial-gradient(circle, rgba(255, 194, 31, 0.15), transparent 62%);"></div>
+      <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
+        <div data-v-6057c22f="" class="flex flex-col gap-5">
+          <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[2px] border text-amber border-amber">IN PROGRESS</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">03 — syndication</span></div>
+          <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">basin<span data-v-6057c22f="" class="text-amber" style="text-shadow: 0 0 18px rgba(255, 194, 31, 0.6);">.fm</span></h3>
+          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]">Everything you consume, in one stream. RSS, podcasts, YouTube and Bluesky today — Twitter, Instagram and whatever else annoys me next.</p><a data-v-6057c22f="" href="https://basin.fm" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-amber border-amber" style="--accent: #ffc21f;">visit basin.fm →</a>
+        </div>
+        <div data-v-aa442b0f="" class="flex flex-col gap-px border border-[#2e2410] bg-[#2e2410]" style="box-shadow: 0 0 60px rgba(255, 194, 31, 0.09);">
+          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f; box-shadow: 0 0 8px #ffc21f;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #e8e8ea;">Syntax — 900: The One About Agents</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">podcast</span></div>
+          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f88; box-shadow: none;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #c4c4cd;">CSS-Tricks — Anchor positioning, finally</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">rss</span></div>
+          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f55; box-shadow: none;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #c4c4cd;">@dan.bsky.social — shipped something at 3am</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">bluesky</span></div>
+          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f33; box-shadow: none;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #c4c4cd;">Fireship — 100 seconds of something new</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">youtube</span></div>
+          <div data-v-aa442b0f="" class="text-fg-dim flex items-center gap-[10px] bg-[#0d0a02] px-[18px] py-[13px] text-[11px]"><span data-v-aa442b0f="" class="text-amber">+ twitter</span><span data-v-aa442b0f="" class="text-amber">+ instagram</span><span data-v-aa442b0f="" class="ml-auto">maybe someday</span></div>
+        </div>
       </div>
-    </div>
-  </section>
-  <section data-v-aa442b0f="" id="basin" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(100deg, #170f02 0%, #08080a 58%);">
-    <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(90deg, #ffc21f, transparent 65%);"></div>
-    <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora bottom-[-34%] left-[2%] h-[520px] w-[520px]" style="--np-aurora-dur: 30s; background: radial-gradient(circle, rgba(255, 194, 31, 0.15), transparent 62%);"></div>
-    <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
-      <div data-v-6057c22f="" class="flex flex-col gap-5">
-        <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[2px] border text-amber border-amber">IN PROGRESS</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">03 — syndication</span></div>
-        <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">basin<span data-v-6057c22f="" class="text-amber" style="text-shadow: 0 0 18px rgba(255, 194, 31, 0.6);">.fm</span></h3>
-        <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]">Everything you consume, in one stream. RSS, podcasts, YouTube and Bluesky today — Twitter, Instagram and whatever else annoys me next.</p><a data-v-6057c22f="" href="https://basin.fm" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-amber border-amber" style="--accent: #ffc21f;">visit basin.fm →</a>
+    </section>
+    <section data-v-aa442b0f="" id="markpost" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(260deg, #180618 0%, #08080a 58%);">
+      <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(270deg, #ff2ea6, transparent 65%);"></div>
+      <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-20%] right-0 h-[540px] w-[540px]" style="--np-aurora-dur: 36s; background: radial-gradient(circle, rgba(255, 46, 166, 0.16), transparent 62%);"></div>
+      <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]">
+        <div data-v-aa442b0f="" class="grid grid-cols-[1fr_auto_1fr] items-center gap-[18px]">
+          <div data-v-aa442b0f="" class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"><span data-v-aa442b0f="" class="text-[10.5px] tracking-[0.16em] text-[#7a5566] uppercase">in</span><span data-v-aa442b0f="" class="text-fg text-[12.5px]">POST /webhook</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">✉ notes@markpost.io</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">{ "title": "idea" }</span></div>
+          <div data-v-aa442b0f="" class="text-pink animate-flicker flex items-center justify-center text-[22px]" style="text-shadow: 0 0 14px rgba(255, 46, 166, 0.8);" aria-hidden="true"> → </div>
+          <div data-v-aa442b0f="" class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]" style="box-shadow: 0 0 50px rgba(255, 46, 166, 0.12);"><span data-v-aa442b0f="" class="text-[10.5px] tracking-[0.16em] text-[#7a5566] uppercase">out</span><span data-v-aa442b0f="" class="text-pink text-[12.5px]">~/vault/idea.md</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]"># idea</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">created: 2026-08-08</span></div>
+        </div>
+        <div data-v-6057c22f="" class="flex flex-col gap-5">
+          <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[2px] border text-pink border-pink">IN PROGRESS</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">04 — capture</span></div>
+          <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">markpost<span data-v-6057c22f="" class="text-pink" style="text-shadow: 0 0 18px rgba(255, 46, 166, 0.6);">.io</span></h3>
+          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]">Send a webhook or an email, get a Markdown file on your own filesystem. Built for Obsidian, works with anything that reads Markdown.</p><a data-v-6057c22f="" href="https://markpost.io" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-pink border-pink" style="--accent: #ff2ea6;">visit markpost.io →</a>
+        </div>
       </div>
-      <div data-v-aa442b0f="" class="flex flex-col gap-px border border-[#2e2410] bg-[#2e2410]" style="box-shadow: 0 0 60px rgba(255, 194, 31, 0.09);">
-        <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f; box-shadow: 0 0 8px #ffc21f;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #e8e8ea;">Syntax — 900: The One About Agents</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">podcast</span></div>
-        <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f88; box-shadow: none;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #c4c4cd;">CSS-Tricks — Anchor positioning, finally</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">rss</span></div>
-        <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f55; box-shadow: none;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #c4c4cd;">@dan.bsky.social — shipped something at 3am</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">bluesky</span></div>
-        <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f33; box-shadow: none;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #c4c4cd;">Fireship — 100 seconds of something new</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">youtube</span></div>
-        <div data-v-aa442b0f="" class="text-fg-dim flex items-center gap-[10px] bg-[#0d0a02] px-[18px] py-[13px] text-[11px]"><span data-v-aa442b0f="" class="text-amber">+ twitter</span><span data-v-aa442b0f="" class="text-amber">+ instagram</span><span data-v-aa442b0f="" class="ml-auto">maybe someday</span></div>
-      </div>
-    </div>
-  </section>
-  <section data-v-aa442b0f="" id="markpost" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(260deg, #180618 0%, #08080a 58%);">
-    <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(270deg, #ff2ea6, transparent 65%);"></div>
-    <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-20%] right-0 h-[540px] w-[540px]" style="--np-aurora-dur: 36s; background: radial-gradient(circle, rgba(255, 46, 166, 0.16), transparent 62%);"></div>
-    <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]">
-      <div data-v-aa442b0f="" class="grid grid-cols-[1fr_auto_1fr] items-center gap-[18px]">
-        <div data-v-aa442b0f="" class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"><span data-v-aa442b0f="" class="text-[10.5px] tracking-[0.16em] text-[#7a5566] uppercase">in</span><span data-v-aa442b0f="" class="text-fg text-[12.5px]">POST /webhook</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">✉ notes@markpost.io</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">{ "title": "idea" }</span></div>
-        <div data-v-aa442b0f="" class="text-pink animate-flicker flex items-center justify-center text-[22px]" style="text-shadow: 0 0 14px rgba(255, 46, 166, 0.8);" aria-hidden="true"> → </div>
-        <div data-v-aa442b0f="" class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]" style="box-shadow: 0 0 50px rgba(255, 46, 166, 0.12);"><span data-v-aa442b0f="" class="text-[10.5px] tracking-[0.16em] text-[#7a5566] uppercase">out</span><span data-v-aa442b0f="" class="text-pink text-[12.5px]">~/vault/idea.md</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]"># idea</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">created: 2026-08-08</span></div>
-      </div>
-      <div data-v-6057c22f="" class="flex flex-col gap-5">
-        <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[2px] border text-pink border-pink">IN PROGRESS</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">04 — capture</span></div>
-        <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">markpost<span data-v-6057c22f="" class="text-pink" style="text-shadow: 0 0 18px rgba(255, 46, 166, 0.6);">.io</span></h3>
-        <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]">Send a webhook or an email, get a Markdown file on your own filesystem. Built for Obsidian, works with anything that reads Markdown.</p><a data-v-6057c22f="" href="https://markpost.io" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-pink border-pink" style="--accent: #ff2ea6;">visit markpost.io →</a>
-      </div>
-    </div>
-  </section><!-- footer -->
+    </section>
+  </main><!-- footer -->
   <footer data-v-aa442b0f="" class="border-border bg-panel relative z-[2] border-t px-10 pt-[52px] pb-10">
     <div data-v-aa442b0f="" class="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-7">
       <div data-v-aa442b0f="" class="flex items-center gap-[11px]"><svg data-v-aa442b0f="" width="18" height="18" viewBox="0 0 34 34" class="block" aria-hidden="true">
