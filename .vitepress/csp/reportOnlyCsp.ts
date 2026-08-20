@@ -4,44 +4,55 @@ import { createHash } from "node:crypto";
 // filesystem, so the extraction and header-building logic is unit-testable in
 // isolation; the build-time FS work lives in writeReportOnlyHeaders.ts.
 
-const SCRIPT_TAG_PATTERN = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
-const SRC_ATTRIBUTE_PATTERN = /\bsrc\s*=/i;
-const TYPE_ATTRIBUTE_PATTERN = /\btype\s*=\s*["']?([^"'\s>]+)/i;
+// Attribute segment is quote-aware so a stray `>` inside an attribute value
+// can't truncate the tag and split the hashed body across the wrong bytes.
+const SCRIPT_TAG_PATTERN =
+  /<script\b((?:"[^"]*"|'[^']*'|[^>])*)>([\s\S]*?)<\/script>/gi;
+// Anchored on start-or-whitespace so `data-src` / `data-type` don't satisfy a
+// bare `\b` boundary and misclassify an inline script as external or inert.
+const SRC_ATTRIBUTE_PATTERN = /(?:^|\s)src\s*=/i;
+const TYPE_ATTRIBUTE_PATTERN = /(?:^|\s)type\s*=\s*["']?([^"'\s>]+)/i;
 
-// script-src governs only scripts the browser executes as JavaScript. A classic
-// script (no type) and a module script run; a non-JS type such as
-// application/ld+json is an inert data block the browser never executes, so
-// hashing it would ship a dead source. An empty string is the no-type default.
-const EXECUTABLE_SCRIPT_TYPES = new Set([
-  "",
-  "module",
-  "text/javascript",
-  "application/javascript",
+// script-src governs every <script> the browser executes as JavaScript, which is
+// almost all of them: classic, module, importmap, MIME aliases. Only a few types
+// are inert data blocks the browser never runs (application/ld+json is the one
+// VitePress emits). Deny-listing the inert types means an unrecognized type errs
+// toward a spare, harmless hash rather than a missing one that would break the
+// page once 'unsafe-inline' is dropped at enforcement.
+const INERT_SCRIPT_TYPES = new Set([
+  "application/ld+json",
+  "application/json",
+  "text/template",
+  "text/html",
 ]);
 
 const SHA256_SOURCE_PREFIX = "sha256-";
 const SCRIPT_SRC_DIRECTIVE = "script-src";
+const DEFAULT_SRC_DIRECTIVE = "default-src";
 const SELF_SOURCE = "'self'";
 const UNSAFE_INLINE_SOURCE = "'unsafe-inline'";
 const DIRECTIVE_SEPARATOR = "; ";
+const MIME_PARAMETER_SEPARATOR = ";";
 
 type Directive = { name: string; sources: string[] };
 
+// The bare MIME type, lowercased, with any parameters (e.g. `;charset=utf-8`)
+// stripped so `text/javascript;charset=utf-8` classifies as `text/javascript`.
 function scriptType(attributes: string) {
   const match = attributes.match(TYPE_ATTRIBUTE_PATTERN);
   if (!match) {
     return "";
   }
-  return match[1].toLowerCase();
+  return match[1].split(MIME_PARAMETER_SEPARATOR)[0].trim().toLowerCase();
 }
 
 // An inline script the browser executes: it has no src (external fetch, covered
-// by host sources rather than a hash) and carries an executable type.
+// by host sources rather than a hash) and is not an inert data type.
 function isExecutableInlineScript(attributes: string) {
   if (SRC_ATTRIBUTE_PATTERN.test(attributes)) {
     return false;
   }
-  return EXECUTABLE_SCRIPT_TYPES.has(scriptType(attributes));
+  return !INERT_SCRIPT_TYPES.has(scriptType(attributes));
 }
 
 // The exact textContent of every executable inline <script> in the HTML. The
@@ -108,6 +119,22 @@ function isScriptSrc({ name }: Directive) {
   return name.toLowerCase() === SCRIPT_SRC_DIRECTIVE;
 }
 
+function isDefaultSrc({ name }: Directive) {
+  return name.toLowerCase() === DEFAULT_SRC_DIRECTIVE;
+}
+
+// When the enforcing policy declares no script-src it inherits default-src, so a
+// synthesized script-src must start from those same sources (minus
+// 'unsafe-inline') rather than fabricating a more permissive 'self'. Falls back
+// to 'self' only when neither directive exists.
+function scriptSrcFallbackSources(directives: Directive[]) {
+  const defaultSrc = directives.find(isDefaultSrc);
+  if (!defaultSrc) {
+    return [SELF_SOURCE];
+  }
+  return lockDownScriptSrc(defaultSrc.sources, []);
+}
+
 // The Report-Only policy: the enforcing CSP verbatim, except script-src trades
 // 'unsafe-inline' for the build's inline-script hashes. Every other directive is
 // untouched, so the browser reports (never blocks) only genuine script-src drift.
@@ -129,7 +156,7 @@ export function buildReportOnlyCsp(
     rebuilt.push(
       formatDirective({
         name: SCRIPT_SRC_DIRECTIVE,
-        sources: [SELF_SOURCE, ...scriptHashes],
+        sources: [...scriptSrcFallbackSources(directives), ...scriptHashes],
       }),
     );
   }

@@ -11,7 +11,8 @@ import { buildReportOnlyCsp, collectInlineScriptHashes } from "./reportOnlyCsp";
 // rollout step, so a missed hash reports a violation without breaking the page.
 
 const NETLIFY_CONFIG_URL = new URL("../../netlify.toml", import.meta.url);
-const ENFORCING_CSP_PATTERN = /^\s*Content-Security-Policy\s*=\s*"([^"]*)"/im;
+const ENFORCING_CSP_PATTERN = /^\s*Content-Security-Policy\s*=\s*"([^"]*)"/gim;
+const FILE_NOT_FOUND_CODE = "ENOENT";
 
 const HTML_EXTENSION = ".html";
 const HEADERS_FILE_NAME = "_headers";
@@ -35,13 +36,48 @@ async function readHtmlDocuments(outDir: string) {
 
 async function readEnforcingCsp() {
   const netlifyConfig = await readFile(NETLIFY_CONFIG_URL, "utf8");
-  const match = netlifyConfig.match(ENFORCING_CSP_PATTERN);
-  if (!match || !match[1].trim()) {
+  const matches = [...netlifyConfig.matchAll(ENFORCING_CSP_PATTERN)];
+  if (matches.length === 0 || !matches[0][1].trim()) {
     throw new Error(
       "CSP Report-Only: could not read the enforcing Content-Security-Policy from netlify.toml",
     );
   }
-  return match[1].trim();
+  if (matches.length > 1) {
+    throw new Error(
+      "CSP Report-Only: netlify.toml declares multiple Content-Security-Policy headers; cannot decide which one the Report-Only header should mirror",
+    );
+  }
+  return matches[0][1].trim();
+}
+
+function isFileNotFound(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: string }).code === FILE_NOT_FOUND_CODE
+  );
+}
+
+// The Report-Only rule shares its `/*` path with any hand-written `_headers`
+// (VitePress copies public/_headers into the publish dir), so append rather than
+// clobber. Netlify merges same-path rules, so both sets of headers still apply.
+async function readExistingHeaders(headersPath: string) {
+  try {
+    return await readFile(headersPath, "utf8");
+  } catch (error) {
+    if (isFileNotFound(error)) {
+      return "";
+    }
+    throw error;
+  }
+}
+
+function mergeHeaders(existingHeaders: string, generatedHeaders: string) {
+  const trimmed = existingHeaders.trim();
+  if (!trimmed) {
+    return generatedHeaders;
+  }
+  return `${trimmed}\n\n${generatedHeaders}`;
 }
 
 function formatHeadersFile(reportOnlyCsp: string) {
@@ -60,9 +96,11 @@ export async function writeReportOnlyHeaders(outDir: string) {
     await readEnforcingCsp(),
     scriptHashes,
   );
+  const headersPath = join(outDir, HEADERS_FILE_NAME);
+  const existingHeaders = await readExistingHeaders(headersPath);
   await writeFile(
-    join(outDir, HEADERS_FILE_NAME),
-    formatHeadersFile(reportOnlyCsp),
+    headersPath,
+    mergeHeaders(existingHeaders, formatHeadersFile(reportOnlyCsp)),
     "utf8",
   );
 }

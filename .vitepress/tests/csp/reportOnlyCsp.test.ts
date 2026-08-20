@@ -45,6 +45,31 @@ describe("extractInlineScriptBodies", () => {
       `<script id="b">b()</script>`;
     expect(extractInlineScriptBodies(html)).toEqual(["a()", "b()"]);
   });
+
+  it("does not treat data-src / data-type as src or type attributes", () => {
+    const html =
+      `<script data-src="/ignored.js">withDataSrc()</script>` +
+      `<script data-type="boot">withDataType()</script>`;
+    expect(extractInlineScriptBodies(html)).toEqual([
+      "withDataSrc()",
+      "withDataType()",
+    ]);
+  });
+
+  it("hashes a type carrying a MIME parameter and an importmap", () => {
+    const html =
+      `<script type="text/javascript;charset=utf-8">withCharset()</script>` +
+      `<script type="importmap">{"imports":{}}</script>`;
+    expect(extractInlineScriptBodies(html)).toEqual([
+      "withCharset()",
+      `{"imports":{}}`,
+    ]);
+  });
+
+  it("keeps the body intact when an attribute value contains a '>'", () => {
+    const html = `<script data-label="a>b">boot()</script>`;
+    expect(extractInlineScriptBodies(html)).toEqual(["boot()"]);
+  });
 });
 
 describe("sha256Source", () => {
@@ -95,10 +120,24 @@ describe("buildReportOnlyCsp", () => {
     expect(reportOnly).toContain(`connect-src 'self'`);
   });
 
-  it("appends a script-src when the enforcing policy declares none", () => {
+  it("appends a script-src that inherits default-src when none is declared", () => {
     const reportOnly = buildReportOnlyCsp("default-src 'self'", hashes);
     expect(reportOnly).toBe(
       `default-src 'self'; script-src 'self' 'sha256-AAA=' 'sha256-BBB='`,
+    );
+  });
+
+  it("inherits a restrictive default-src rather than fabricating 'self'", () => {
+    const reportOnly = buildReportOnlyCsp("default-src 'none'", hashes);
+    expect(reportOnly).toBe(
+      `default-src 'none'; script-src 'none' 'sha256-AAA=' 'sha256-BBB='`,
+    );
+  });
+
+  it("falls back to 'self' when neither script-src nor default-src exists", () => {
+    const reportOnly = buildReportOnlyCsp("object-src 'none'", hashes);
+    expect(reportOnly).toBe(
+      `object-src 'none'; script-src 'self' 'sha256-AAA=' 'sha256-BBB='`,
     );
   });
 });
