@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { mount } from "@vue/test-utils";
+import { mount, type VueWrapper } from "@vue/test-utils";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
+import { PROJECTS } from "@theme/data/projects";
 
 // happy-dom evaluates no computed CSS, so the skip link's "hidden until focused"
 // styling can't be asserted on the mounted DOM — scan the component source
@@ -18,6 +19,17 @@ const COMPONENT_PATH = path.resolve(
 
 // Interactive control classes the global :focus-visible ring lands on.
 const INTERACTIVE_FOCUS_CLASSES = ["pill", "nav-link", "footer-link"];
+
+// Tabbable-element selector, shared by the skip-link ordering check and the
+// aria-hidden visual guard so the two can't drift on what counts as focusable.
+// Excludes the not-tabbable cases on every branch: disabled controls, a
+// negative tabindex (matched programmatically but never on Tab, so the
+// exclusion has to hang off each term, not just the trailing [tabindex]),
+// contenteditable="false", and a bare <summary> outside <details>. Media
+// elements only count with controls; object/embed are omitted as they aren't
+// reliable tab stops across engines.
+const TABBABLE_SELECTOR =
+  'a[href]:not([tabindex^="-"]), area[href]:not([tabindex^="-"]), button:not([disabled]):not([tabindex^="-"]), input:not([disabled]):not([tabindex^="-"]), select:not([disabled]):not([tabindex^="-"]), textarea:not([disabled]):not([tabindex^="-"]), iframe:not([tabindex^="-"]), audio[controls]:not([tabindex^="-"]), video[controls]:not([tabindex^="-"]), details > summary:not([tabindex^="-"]), [contenteditable]:not([contenteditable="false"]):not([tabindex^="-"]), [tabindex]:not([tabindex^="-"])';
 
 // Matches any absolute URL (has a scheme) or a protocol-relative URL. In-page
 // hash links (#top, #projects) are internal and must NOT open a new tab.
@@ -35,7 +47,17 @@ const PROJECT_URLS = [
   "https://markpost.io",
 ];
 
-const PROJECT_SECTION_IDS = ["grimicorn", "wanderist", "basin", "markpost"];
+// Derive the section ids from the data so a project added later is covered by
+// the id-driven assertions below (notably the aria-hidden guard) instead of
+// slipping past a hardcoded list.
+const PROJECT_SECTION_IDS = PROJECTS.map((project) => project.id);
+
+// Resolve a section's outer layout grid. The child combinator is load-bearing:
+// a plain descendant `.grid` would also match a nested visual whose own root
+// carries a `grid` class (the markpost mockup does). The attribute selector
+// needs no CSS escaping, so it stays correct whatever an id turns out to be.
+const gridFor = (wrapper: VueWrapper, id: string) =>
+  wrapper.get(`section[id="${id}"] > .grid`);
 
 describe("NeonPixelsPage", () => {
   it("renders correctly", () => {
@@ -72,9 +94,7 @@ describe("NeonPixelsPage", () => {
     // our own <main>) so they don't masquerade as the first stop. Scope is this
     // component; the theme layout renders it as the whole page body (VitePress's
     // own nav chrome is display:none), so first-here is first on the page.
-    const tabbables = wrapper.findAll(
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [contenteditable], [tabindex]:not([tabindex^="-"])',
-    );
+    const tabbables = wrapper.findAll(TABBABLE_SELECTOR);
     expect(tabbables.length).toBeGreaterThan(0);
     expect(tabbables[0].classes()).toContain("skip-link");
     wrapper.unmount();
@@ -124,9 +144,21 @@ describe("NeonPixelsPage", () => {
   it("renders a section for each of the four projects", () => {
     const wrapper = mount(NeonPixelsPage);
     PROJECT_SECTION_IDS.forEach((id) => {
-      expect(wrapper.find(`section#${id}`).exists()).toBe(true);
+      // Exactly one — a duplicated id in the data would leave a second section
+      // untested here (and break the matching hero pill anchor) if we only
+      // checked existence.
+      expect(wrapper.findAll(`section[id="${id}"]`)).toHaveLength(1);
     });
     wrapper.unmount();
+  });
+
+  it("keeps the derived id list in lockstep with the expected project set", () => {
+    // An emptied PROJECTS would make every id-driven forEach below pass
+    // vacuously (zero iterations, zero assertions). Pinning the count against
+    // the hand-written PROJECT_URLS list — the file's other source of truth for
+    // "these are the projects" — guards that centrally and also fails loudly if
+    // the two lists drift, instead of surfacing as an off-by-two elsewhere.
+    expect(PROJECT_SECTION_IDS).toHaveLength(PROJECT_URLS.length);
   });
 
   it("renders both a summary and a bespoke visual in every section", () => {
@@ -135,22 +167,57 @@ describe("NeonPixelsPage", () => {
     // the summary column; assert both columns are present so a project added
     // without a visual fails here instead of shipping a half-empty section.
     PROJECT_SECTION_IDS.forEach((id) => {
-      const grid = wrapper.get(`section#${id} .grid`);
+      const grid = gridFor(wrapper, id);
       expect(grid.element.children).toHaveLength(2);
+    });
+    wrapper.unmount();
+  });
+
+  it("hides each decorative project visual from assistive technology", () => {
+    const wrapper = mount(NeonPixelsPage);
+    // Each section grid holds a summary column and a bespoke visual column.
+    // The visuals are fabricated product mockups (a terminal, a heatmap, a
+    // feed, in/out panels) whose text is illustrative chrome, not information
+    // the page commits to — so the visual container must carry aria-hidden
+    // while the summary (the real prose and CTA) must not. Identify the summary
+    // by content — it's the column holding this project's CTA link — so this
+    // survives the per-section layout flip without re-deriving the parity rule
+    // (that lives solely in the alternation test below).
+    PROJECTS.forEach((project) => {
+      const columns = Array.from(gridFor(wrapper, project.id).element.children);
+      expect(columns).toHaveLength(2);
+      const summaryColumn = columns.find((column) =>
+        column.querySelector(`a[href="${project.url}"]`),
+      );
+      expect(summaryColumn).toBeDefined();
+      const visualColumn = columns.find((column) => column !== summaryColumn);
+      expect(visualColumn?.getAttribute("aria-hidden")).toBe("true");
+      expect(summaryColumn?.getAttribute("aria-hidden")).toBeNull();
+      // aria-hidden on a container with a focusable descendant is itself an
+      // ARIA violation (the control stays tabbable but has no accessible
+      // name), so a future mockup must not introduce one — checked on the
+      // column root and its descendants. This also keeps the summary-detection
+      // above honest: it relies on the visuals carrying no anchors.
+      expect(visualColumn?.matches(TABBABLE_SELECTOR)).toBe(false);
+      expect(visualColumn?.querySelector(TABBABLE_SELECTOR)).toBeNull();
     });
     wrapper.unmount();
   });
 
   it("alternates the section layout down the page", () => {
     const wrapper = mount(NeonPixelsPage);
-    const columnsFor = (id: string) =>
-      wrapper.get(`section#${id} .grid`).element.className;
+    const columnsFor = (id: string) => gridFor(wrapper, id).element.className;
     // Odd-indexed sections flip the visual to the left; a broken parity check
-    // would still pass every other assertion, so pin the alternation here.
-    expect(columnsFor("grimicorn")).toContain("0.72fr)_minmax(0,1fr)");
-    expect(columnsFor("wanderist")).toContain("1fr)_minmax(0,0.72fr)");
-    expect(columnsFor("basin")).toContain("0.72fr)_minmax(0,1fr)");
-    expect(columnsFor("markpost")).toContain("1fr)_minmax(0,0.72fr)");
+    // would still pass every other assertion, so pin the alternation here — the
+    // single owner of the visual/summary ordering rule. Driven off the data so
+    // a project added later is covered, not just the original four.
+    PROJECTS.forEach((project, projectIndex) => {
+      const expected =
+        projectIndex % 2 === 1
+          ? "1fr)_minmax(0,0.72fr)"
+          : "0.72fr)_minmax(0,1fr)";
+      expect(columnsFor(project.id)).toContain(expected);
+    });
     wrapper.unmount();
   });
 
