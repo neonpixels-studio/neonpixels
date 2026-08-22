@@ -47,10 +47,10 @@ const PROJECT_URLS = [
 // slipping past a hardcoded list.
 const PROJECT_SECTION_IDS = PROJECTS.map((project) => project.id);
 
-// Resolve a section's outer layout grid. Uses an attribute selector (no CSS
-// escaping needed for ids like "basin.fm" or a leading digit) and the child
-// combinator so it can't accidentally match a nested visual whose own root
-// carries a `grid` class (the markpost mockup does).
+// Resolve a section's outer layout grid. The child combinator is load-bearing:
+// a plain descendant `.grid` would also match a nested visual whose own root
+// carries a `grid` class (the markpost mockup does). The attribute selector
+// needs no CSS escaping, so it stays correct whatever an id turns out to be.
 const gridFor = (wrapper: VueWrapper, id: string) =>
   wrapper.get(`section[id="${id}"] > .grid`);
 
@@ -139,16 +139,21 @@ describe("NeonPixelsPage", () => {
   it("renders a section for each of the four projects", () => {
     const wrapper = mount(NeonPixelsPage);
     PROJECT_SECTION_IDS.forEach((id) => {
-      expect(wrapper.find(`section[id="${id}"]`).exists()).toBe(true);
+      // Exactly one — a duplicated id in the data would leave a second section
+      // untested here (and break the matching hero pill anchor) if we only
+      // checked existence.
+      expect(wrapper.findAll(`section[id="${id}"]`)).toHaveLength(1);
     });
     wrapper.unmount();
   });
 
-  it("drives its id-based assertions from a non-empty project list", () => {
+  it("keeps the derived id list in lockstep with the expected project set", () => {
     // An emptied PROJECTS would make every id-driven forEach below pass
-    // vacuously (zero iterations, zero assertions). Guard it once, centrally,
-    // so the protection can't be deleted along with any single loop.
-    expect(PROJECT_SECTION_IDS.length).toBeGreaterThan(0);
+    // vacuously (zero iterations, zero assertions). Pinning the count against
+    // the hand-written PROJECT_URLS list — the file's other source of truth for
+    // "these are the projects" — guards that centrally and also fails loudly if
+    // the two lists drift, instead of surfacing as an off-by-two elsewhere.
+    expect(PROJECT_SECTION_IDS).toHaveLength(PROJECT_URLS.length);
   });
 
   it("renders both a summary and a bespoke visual in every section", () => {
@@ -169,31 +174,27 @@ describe("NeonPixelsPage", () => {
     // The visuals are fabricated product mockups (a terminal, a heatmap, a
     // feed, in/out panels) whose text is illustrative chrome, not information
     // the page commits to — so the visual container must carry aria-hidden
-    // while the summary (the real prose and CTA) must not. The layout flips the
-    // visual to the left on odd-indexed sections (NeonPixelsPage sets `reverse`
-    // from `projectIndex % 2 === 1`), so index the columns off that parity
-    // rather than guessing which column is which by content.
-    PROJECTS.forEach((project, projectIndex) => {
+    // while the summary (the real prose and CTA) must not. Identify the summary
+    // by content — it's the column holding this project's CTA link — so this
+    // survives the per-section layout flip without re-deriving the parity rule
+    // (that lives solely in the alternation test below).
+    PROJECTS.forEach((project) => {
       const columns = Array.from(gridFor(wrapper, project.id).element.children);
       expect(columns).toHaveLength(2);
-      const visualIsFirst = projectIndex % 2 === 1;
-      const [visualColumn, summaryColumn] = visualIsFirst
-        ? columns
-        : [columns[1], columns[0]];
-      // Confirm the parity-derived split is right: the summary column is the one
-      // holding this project's CTA link, so a layout regression fails loudly
-      // here instead of silently mislabelling the columns.
-      expect(
-        summaryColumn.querySelector(`a[href="${project.url}"]`),
-      ).not.toBeNull();
-      expect(visualColumn.getAttribute("aria-hidden")).toBe("true");
-      expect(summaryColumn.getAttribute("aria-hidden")).toBeNull();
+      const summaryColumn = columns.find((column) =>
+        column.querySelector(`a[href="${project.url}"]`),
+      );
+      expect(summaryColumn).toBeDefined();
+      const visualColumn = columns.find((column) => column !== summaryColumn);
+      expect(visualColumn?.getAttribute("aria-hidden")).toBe("true");
+      expect(summaryColumn?.getAttribute("aria-hidden")).toBeNull();
       // aria-hidden on a container with a focusable descendant is itself an
       // ARIA violation (the control stays tabbable but has no accessible
       // name), so a future mockup must not introduce one — checked on the
-      // column root and its descendants.
-      expect(visualColumn.matches(TABBABLE_SELECTOR)).toBe(false);
-      expect(visualColumn.querySelector(TABBABLE_SELECTOR)).toBeNull();
+      // column root and its descendants. This also keeps the summary-detection
+      // above honest: it relies on the visuals carrying no anchors.
+      expect(visualColumn?.matches(TABBABLE_SELECTOR)).toBe(false);
+      expect(visualColumn?.querySelector(TABBABLE_SELECTOR)).toBeNull();
     });
     wrapper.unmount();
   });
@@ -202,11 +203,16 @@ describe("NeonPixelsPage", () => {
     const wrapper = mount(NeonPixelsPage);
     const columnsFor = (id: string) => gridFor(wrapper, id).element.className;
     // Odd-indexed sections flip the visual to the left; a broken parity check
-    // would still pass every other assertion, so pin the alternation here.
-    expect(columnsFor("grimicorn")).toContain("0.72fr)_minmax(0,1fr)");
-    expect(columnsFor("wanderist")).toContain("1fr)_minmax(0,0.72fr)");
-    expect(columnsFor("basin")).toContain("0.72fr)_minmax(0,1fr)");
-    expect(columnsFor("markpost")).toContain("1fr)_minmax(0,0.72fr)");
+    // would still pass every other assertion, so pin the alternation here — the
+    // single owner of the visual/summary ordering rule. Driven off the data so
+    // a project added later is covered, not just the original four.
+    PROJECTS.forEach((project, projectIndex) => {
+      const expected =
+        projectIndex % 2 === 1
+          ? "1fr)_minmax(0,0.72fr)"
+          : "0.72fr)_minmax(0,1fr)";
+      expect(columnsFor(project.id)).toContain(expected);
+    });
     wrapper.unmount();
   });
 
