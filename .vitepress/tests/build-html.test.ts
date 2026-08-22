@@ -5,10 +5,12 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import {
   existsSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
@@ -35,6 +37,16 @@ const INDEX_HTML_FILE = "index.html";
 // so a deploy build compiles the site once; CI and local runs leave it unset and
 // the suite builds its own throwaway copy, keeping the smoke check self-contained.
 const REUSE_BUILD_DIR_ENV = SMOKE_BUILD_REUSE_DIR_ENV;
+const HTML_EXTENSION = ".html";
+const HEADERS_FILE = "_headers";
+const NETLIFY_CONFIG_FILE = "netlify.toml";
+const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
+const REPORT_ONLY_HEADER_LINE = new RegExp(
+  `^\\s*${REPORT_ONLY_HEADER_NAME}:\\s*(.+)$`,
+  "m",
+);
+const SHA256_SCRIPT_SOURCE = /'sha256-[A-Za-z0-9+/]+=*'/;
+const ENFORCING_SCRIPT_SRC = "script-src 'self' 'unsafe-inline'";
 // The last artifact vitepress writes; it flushes after build() resolves, so we
 // wait on it before cleanup to avoid an unhandled ENOENT racing the dir removal.
 const SITEMAP_FILE = "sitemap.xml";
@@ -80,6 +92,7 @@ let builtHead = "";
 // Only a build the suite created itself is cleaned up; a reused deploy dir is left
 // in place because it is the artifact Netlify publishes.
 let ownsBuildDir = false;
+let generatedHeaders = "";
 
 // A complete vitepress build emits both the entry HTML and the sitemap (the last
 // artifact it writes); requiring both rejects a wrong dir or a build still in
@@ -129,6 +142,43 @@ async function prepareBuildDir() {
   await build(PROJECT_ROOT, { outDir: freshDir });
   await waitForBuildToSettle(freshDir);
   return freshDir;
+}
+
+// Independent oracle: the exact textContent of every executable inline script the
+// build emitted (scripts with a src or an application/ld+json type are excluded),
+// so it is the set the Report-Only script-src hashes must cover. Quote-aware and
+// whitespace-tolerant on the end tag so it is not strictly weaker than the code
+// under test — a script the production extractor mishandles must still surface
+// here rather than being skipped identically by both.
+function executableInlineScriptBodies(html: string) {
+  const bodies: string[] = [];
+  for (const match of html.matchAll(
+    /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi,
+  )) {
+    const attributes = match[1];
+    if (/(?:^|\s)src\s*=/i.test(attributes)) {
+      continue;
+    }
+    if (/(?:^|\s)type\s*=\s*["']?application\/ld\+json/i.test(attributes)) {
+      continue;
+    }
+    if (match[2].trim() === "") {
+      continue;
+    }
+    bodies.push(match[2]);
+  }
+  return bodies;
+}
+
+function readAllBuiltHtml(outDir: string) {
+  return readdirSync(outDir, { recursive: true })
+    .filter((name) => typeof name === "string" && name.endsWith(HTML_EXTENSION))
+    .map((name) => readFileSync(resolve(outDir, name as string), "utf8"));
+}
+
+function reportOnlyHeaderValue(headersFile: string) {
+  const match = headersFile.match(REPORT_ONLY_HEADER_LINE);
+  return match ? match[1].trim() : null;
 }
 
 function extractHead(html: string) {
@@ -231,6 +281,7 @@ beforeAll(async () => {
   buildOutDir = await prepareBuildDir();
   const indexHtml = readFileSync(resolve(buildOutDir, INDEX_HTML_FILE), "utf8");
   builtHead = extractHead(indexHtml);
+  generatedHeaders = readFileSync(resolve(buildOutDir, HEADERS_FILE), "utf8");
 }, BUILD_TIMEOUT_MS);
 
 afterAll(() => {
@@ -335,5 +386,45 @@ describe("reuse-dir resolution", () => {
     } finally {
       rmSync(partialDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("generated CSP Report-Only header", () => {
+  it("emits a Content-Security-Policy-Report-Only header scoped to /*", () => {
+    expect(generatedHeaders).toMatch(
+      new RegExp(`^/\\*\\n\\s+${REPORT_ONLY_HEADER_NAME}:`, "m"),
+    );
+    expect(reportOnlyHeaderValue(generatedHeaders)).not.toBeNull();
+  });
+
+  it("carries a script-src of hashes with no 'unsafe-inline'", () => {
+    const value = reportOnlyHeaderValue(generatedHeaders)!;
+    const scriptSrc = value
+      .split(";")
+      .map((directive) => directive.trim())
+      .find((directive) => directive.startsWith("script-src"));
+    expect(scriptSrc, "no script-src in Report-Only header").toBeTruthy();
+    expect(scriptSrc).toMatch(SHA256_SCRIPT_SOURCE);
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+  });
+
+  it("hashes every executable inline script across all built pages", () => {
+    const value = reportOnlyHeaderValue(generatedHeaders)!;
+    const bodies = readAllBuiltHtml(buildOutDir).flatMap(
+      executableInlineScriptBodies,
+    );
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      const digest = createHash("sha256").update(body, "utf8").digest("base64");
+      expect(value).toContain(`'sha256-${digest}'`);
+    }
+  });
+
+  it("leaves the enforcing CSP in netlify.toml unchanged (still 'unsafe-inline')", () => {
+    const netlifyConfig = readFileSync(
+      resolve(PROJECT_ROOT, NETLIFY_CONFIG_FILE),
+      "utf8",
+    );
+    expect(netlifyConfig).toContain(ENFORCING_SCRIPT_SRC);
   });
 });
