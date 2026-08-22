@@ -451,7 +451,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
             :style="{ boxShadow: WANDERIST_GLOW }"
           >
             <div
-              class="flex justify-between text-[11px] tracking-[0.16em] text-[#5a6d75] uppercase"
+              class="text-wanderist-label flex justify-between text-[11px] tracking-[0.16em] uppercase"
             >
               <span>trip log</span><span>47 / 50 states</span>
             </div>
@@ -467,7 +467,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
                 }"
               />
             </div>
-            <div class="flex gap-5 text-[11px] text-[#5a6d75]">
+            <div class="text-wanderist-label flex gap-5 text-[11px]">
               <span>60k+ miles</span><span>26 states</span
               ><span>3 countries</span>
             </div>
@@ -516,7 +516,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"
             >
               <span
-                class="text-[10.5px] tracking-[0.16em] text-[#7a5566] uppercase"
+                class="text-markpost-label text-[10.5px] tracking-[0.16em] uppercase"
                 >in</span
               >
               <span class="text-fg text-[12.5px]">POST /webhook</span>
@@ -539,7 +539,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               :style="{ boxShadow: MARKPOST_OUT_GLOW }"
             >
               <span
-                class="text-[10.5px] tracking-[0.16em] text-[#7a5566] uppercase"
+                class="text-markpost-label text-[10.5px] tracking-[0.16em] uppercase"
                 >out</span
               >
               <span class="text-pink text-[12.5px]">~/vault/idea.md</span>

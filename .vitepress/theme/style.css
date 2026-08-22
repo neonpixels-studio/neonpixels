@@ -8,6 +8,13 @@
   --color-fg-subtle: #8a8a95;
   --color-fg-dim: #7d7d88;
   --color-fg-faint: #787882;
+  /* Per-project stat-block micro-labels. These sit on the tinted project panels
+     (not --color-bg), so they carry their own hue and are tuned to clear WCAG AA
+     4.5:1 against their panel: --color-wanderist-label on #051216 (~4.77:1) and
+     --color-markpost-label on #150610 (~4.78:1). Guarded in
+     wcag-text-contrast.test.ts. */
+  --color-wanderist-label: #6d838b;
+  --color-markpost-label: #957480;
   --color-border: #1c1c22;
   --color-lime: #b8ff2e;
   --color-cyan: #22e0ff;
