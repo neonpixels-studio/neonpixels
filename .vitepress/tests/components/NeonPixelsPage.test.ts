@@ -22,9 +22,14 @@ const INTERACTIVE_FOCUS_CLASSES = ["pill", "nav-link", "footer-link"];
 
 // Tabbable-element selector, shared by the skip-link ordering check and the
 // aria-hidden visual guard so the two can't drift on what counts as focusable.
-// Excludes the not-tabbable cases: disabled controls and any negative tabindex.
+// Excludes the not-tabbable cases on every branch: disabled controls, a
+// negative tabindex (matched programmatically but never on Tab, so the
+// exclusion has to hang off each term, not just the trailing [tabindex]),
+// contenteditable="false", and a bare <summary> outside <details>. Media
+// elements only count with controls; object/embed are omitted as they aren't
+// reliable tab stops across engines.
 const TABBABLE_SELECTOR =
-  'a[href], area[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, object, embed, audio[controls], video[controls], details > summary, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex^="-"])';
+  'a[href]:not([tabindex^="-"]), area[href]:not([tabindex^="-"]), button:not([disabled]):not([tabindex^="-"]), input:not([disabled]):not([tabindex^="-"]), select:not([disabled]):not([tabindex^="-"]), textarea:not([disabled]):not([tabindex^="-"]), iframe:not([tabindex^="-"]), audio[controls]:not([tabindex^="-"]), video[controls]:not([tabindex^="-"]), details > summary:not([tabindex^="-"]), [contenteditable]:not([contenteditable="false"]):not([tabindex^="-"]), [tabindex]:not([tabindex^="-"])';
 
 // Matches any absolute URL (has a scheme) or a protocol-relative URL. In-page
 // hash links (#top, #projects) are internal and must NOT open a new tab.
