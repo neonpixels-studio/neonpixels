@@ -131,7 +131,7 @@ function resolveReuseDir() {
     return reuseDir;
   }
   throw new Error(
-    `${REUSE_BUILD_DIR_ENV}=${configured} but no complete build (${INDEX_HTML_FILE} + ${SITEMAP_FILE}) exists there`,
+    `${REUSE_BUILD_DIR_ENV}=${configured} but no complete build (${REQUIRED_BUILD_ARTIFACTS.join(", ")}) exists there`,
   );
 }
 
