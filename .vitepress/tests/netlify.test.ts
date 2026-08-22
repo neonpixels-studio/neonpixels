@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
+
 const NETLIFY_CONFIG_PATH = resolve(process.cwd(), "netlify.toml");
 const NVMRC_PATH = resolve(process.cwd(), ".nvmrc");
 // Netlify also honours .node-version and .tool-versions (mise/asdf), and reads
@@ -13,6 +15,57 @@ const TOOL_VERSIONS_NODE = /^(?:nodejs|node)\s/m;
 
 // Read once at module scope, matching this file's existing convention.
 const NETLIFY_CONFIG = readFileSync(NETLIFY_CONFIG_PATH, "utf8");
+
+// The deploy must compile the site exactly once: `npm run build` produces the
+// publish dir, then the smoke suite reuses it via SMOKE_BUILD_REUSE_DIR instead
+// of compiling a throwaway second copy (see build-html.test.ts). Regressing to a
+// separate build step would double the cold-build time this guard exists to stop.
+const BUILD_SCRIPT_INVOCATION = "npm run build";
+const TEST_SCRIPT_INVOCATION = "npm run test:ci";
+// Counts `npm run build` only as a whole script name, so `npm run build:foo`
+// neither inflates the count nor passes as the real build.
+const BUILD_SCRIPT_PATTERN = /npm run build(?![\w:-])/g;
+// The site compiles only via the build script; a bare `vitepress build` in the
+// command would be a second compile the reuse wiring is meant to remove.
+const DIRECT_COMPILE_INVOCATION = "vitepress build";
+
+// Slice to the [build] table so a `command`/`publish` override in a
+// [context.*] table can't make the guard assert against a line the deploy
+// never runs.
+function readBuildTable() {
+  const lines = NETLIFY_CONFIG.split("\n");
+  const start = lines.findIndex((line) => line.trim() === "[build]");
+  if (start === -1) {
+    throw new Error("netlify.toml has no [build] table");
+  }
+  const rest = lines.slice(start + 1);
+  const nextTable = rest.findIndex((line) => /^\s*\[/.test(line));
+  const end = nextTable === -1 ? rest.length : nextTable;
+  return rest.slice(0, end).join("\n");
+}
+
+const BUILD_TABLE = readBuildTable();
+
+function readBuildTableValue(key: string) {
+  const match = BUILD_TABLE.match(
+    new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, "m"),
+  );
+  if (!match) {
+    throw new Error(`netlify.toml [build] has no ${key} value`);
+  }
+  return match[1];
+}
+
+// Counts top-level `key = ...` assignments (ignoring commented lines), so a
+// `command`/`publish` override in any table can be compared against the count
+// inside [build].
+function countKeyDefinitions(source: string, key: string) {
+  const pattern = new RegExp(`^\\s*${key}\\s*=`);
+  return source
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("#"))
+    .filter((line) => pattern.test(line)).length;
+}
 
 // The Node version lives in .nvmrc only (read by CI and Netlify alike). This
 // test is the sole in-repo record of which major we build on, so it pins the
@@ -221,6 +274,43 @@ describe("Node version source of truth", () => {
       : "";
     expect(TOOL_VERSIONS_NODE.test(toolVersions)).toBe(false);
   });
+});
+
+describe("Netlify build compiles the site once", () => {
+  const buildCommand = readBuildTableValue("command");
+  const publishDir = readBuildTableValue("publish");
+  const reuseAssignment = `${SMOKE_BUILD_REUSE_DIR_ENV}=${publishDir}`;
+
+  it("invokes the build script exactly once", () => {
+    expect(buildCommand.match(BUILD_SCRIPT_PATTERN) ?? []).toHaveLength(1);
+  });
+
+  it("never compiles the site outside the build script", () => {
+    expect(buildCommand).not.toContain(DIRECT_COMPILE_INVOCATION);
+  });
+
+  it("runs the smoke suite after the single build so reuse has an artifact", () => {
+    const buildIndex = buildCommand.indexOf(BUILD_SCRIPT_INVOCATION);
+    const suiteIndex = buildCommand.indexOf(TEST_SCRIPT_INVOCATION);
+    expect(suiteIndex).toBeGreaterThan(buildIndex);
+  });
+
+  it("binds the reuse flag to the smoke suite, not the build", () => {
+    const buildIndex = buildCommand.indexOf(BUILD_SCRIPT_INVOCATION);
+    expect(buildCommand.indexOf(reuseAssignment)).toBeGreaterThan(buildIndex);
+  });
+
+  // A [context.*] table's `command` overrides [build].command on Netlify, so a
+  // double-build hidden there would run in production while the [build] slice
+  // still looks clean. Assert the deploy command lives only in [build].
+  it.each(["command", "publish"])(
+    "defines %s only in the [build] table",
+    (key) => {
+      const occurrences = countKeyDefinitions(NETLIFY_CONFIG, key);
+      const inBuild = countKeyDefinitions(BUILD_TABLE, key);
+      expect(occurrences).toBe(inBuild);
+    },
+  );
 });
 
 describe("Content-Security-Policy", () => {

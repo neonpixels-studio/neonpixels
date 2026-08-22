@@ -1,21 +1,24 @@
 // @vitest-environment node
 // The build runs a real server-side render; happy-dom's stubbed network layer
 // otherwise logs ECONNREFUSED noise during it, so this file uses Node.
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import {
   existsSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { build } from "vitepress";
+
+import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
 
 // Asserts the tags survive `vitepress build` into the emitted HTML, not just the
 // config.head array. config.test.ts already covers the config object; this closes
@@ -29,6 +32,11 @@ const BUILD_TIMEOUT_MS = 120_000;
 
 const HEAD_CLOSE_TAG = "</head>";
 const INDEX_HTML_FILE = "index.html";
+// When a prior `vitepress build` already produced dist output, reuse it instead
+// of compiling a second time. The Netlify deploy sets this to the published dir
+// so a deploy build compiles the site once; CI and local runs leave it unset and
+// the suite builds its own throwaway copy, keeping the smoke check self-contained.
+const REUSE_BUILD_DIR_ENV = SMOKE_BUILD_REUSE_DIR_ENV;
 const HTML_EXTENSION = ".html";
 const HEADERS_FILE = "_headers";
 const NETLIFY_CONFIG_FILE = "netlify.toml";
@@ -81,7 +89,67 @@ const ABSOLUTE_URL_META: ReadonlyArray<readonly [string, string]> = [
 
 let buildOutDir = "";
 let builtHead = "";
+// Only a build the suite created itself is cleaned up; a reused deploy dir is left
+// in place because it is the artifact Netlify publishes.
+let ownsBuildDir = false;
 let generatedHeaders = "";
+
+// A complete vitepress build emits the entry HTML, the sitemap (the last artifact
+// it writes), and the generated _headers file; beforeAll reads all three, so
+// requiring all three rejects a wrong dir or a build still in flight that an
+// index.html-only check would accept, and keeps the reuse guard from letting a
+// dir missing _headers through to a raw ENOENT.
+const REQUIRED_BUILD_ARTIFACTS: readonly string[] = [
+  INDEX_HTML_FILE,
+  SITEMAP_FILE,
+  HEADERS_FILE,
+];
+
+function reuseDirIsComplete(reuseDir: string) {
+  return REQUIRED_BUILD_ARTIFACTS.every((artifact) =>
+    existsSync(resolve(reuseDir, artifact)),
+  );
+}
+
+// Returns the resolved reuse dir when the deploy pointed the suite at an existing
+// build, or null when the suite should compile its own. Fails loud if the flag is
+// set but the referenced build is missing or incomplete, rather than silently
+// rebuilding or greening against a partial artifact.
+function resolveReuseDir() {
+  const rawValue = process.env[REUSE_BUILD_DIR_ENV];
+  if (rawValue === undefined) {
+    return null;
+  }
+  const configured = rawValue.trim();
+  if (!configured) {
+    throw new Error(
+      `${REUSE_BUILD_DIR_ENV} is set but empty; unset it to build a fresh copy or point it at a complete build`,
+    );
+  }
+  const reuseDir = resolve(PROJECT_ROOT, configured);
+  if (reuseDirIsComplete(reuseDir)) {
+    return reuseDir;
+  }
+  throw new Error(
+    `${REUSE_BUILD_DIR_ENV}=${configured} but no complete build (${REQUIRED_BUILD_ARTIFACTS.join(", ")}) exists there`,
+  );
+}
+
+async function prepareBuildDir() {
+  const reuseDir = resolveReuseDir();
+  if (reuseDir) {
+    return reuseDir;
+  }
+  // Build into a throwaway dir so the suite never clobbers the real dist output.
+  const freshDir = mkdtempSync(join(tmpdir(), "neonpixels-build-html-"));
+  // Record ownership before building so afterAll still cleans up the temp tree
+  // if build() or the settle wait throws partway through.
+  buildOutDir = freshDir;
+  ownsBuildDir = true;
+  await build(PROJECT_ROOT, { outDir: freshDir });
+  await waitForBuildToSettle(freshDir);
+  return freshDir;
+}
 
 // Independent oracle: the exact textContent of every executable inline script the
 // build emitted (scripts with a src or an application/ld+json type are excluded),
@@ -217,17 +285,14 @@ async function waitForBuildToSettle(outDir: string) {
 }
 
 beforeAll(async () => {
-  // Build into a throwaway dir so the suite never clobbers the real dist output.
-  buildOutDir = mkdtempSync(join(tmpdir(), "neonpixels-build-html-"));
-  await build(PROJECT_ROOT, { outDir: buildOutDir });
-  await waitForBuildToSettle(buildOutDir);
+  buildOutDir = await prepareBuildDir();
   const indexHtml = readFileSync(resolve(buildOutDir, INDEX_HTML_FILE), "utf8");
   builtHead = extractHead(indexHtml);
   generatedHeaders = readFileSync(resolve(buildOutDir, HEADERS_FILE), "utf8");
 }, BUILD_TIMEOUT_MS);
 
 afterAll(() => {
-  if (buildOutDir) {
+  if (buildOutDir && ownsBuildDir) {
     rmSync(buildOutDir, { recursive: true, force: true });
   }
 });
@@ -265,6 +330,91 @@ describe("built index.html head", () => {
       expect(new URL(content!).protocol).toBe(HTTPS_PROTOCOL);
     },
   );
+});
+
+// Creates a throwaway dir seeded with the given build artifacts, runs the
+// assertion against it, and always removes the tree — even if a fixture write or
+// the assertion throws. Centralizes the near-identical stub-build fixtures below
+// so they can't drift or leak a temp dir on a mid-setup failure.
+function withStubBuildDir(
+  prefix: string,
+  artifacts: readonly string[],
+  assertion: (_dir: string) => void,
+) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  try {
+    artifacts.forEach((artifact) => {
+      writeFileSync(resolve(dir, artifact), "<stub/>");
+    });
+    assertion(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// The deploy only compiles once when this resolution is honest: reuse a complete
+// build, ignore the unset flag, and refuse an incomplete dir. CI never sets the
+// flag, so without these cases the reuse path would first run in production.
+describe("reuse-dir resolution", () => {
+  const originalValue = process.env[REUSE_BUILD_DIR_ENV];
+
+  afterEach(() => {
+    if (originalValue === undefined) {
+      delete process.env[REUSE_BUILD_DIR_ENV];
+      return;
+    }
+    process.env[REUSE_BUILD_DIR_ENV] = originalValue;
+  });
+
+  it("returns null when the reuse flag is unset", () => {
+    delete process.env[REUSE_BUILD_DIR_ENV];
+    expect(resolveReuseDir()).toBeNull();
+  });
+
+  it("throws when the reuse flag is set but empty", () => {
+    process.env[REUSE_BUILD_DIR_ENV] = "";
+    expect(() => resolveReuseDir()).toThrow(REUSE_BUILD_DIR_ENV);
+  });
+
+  it("returns the resolved dir when it holds a complete build", () => {
+    withStubBuildDir(
+      "neonpixels-reuse-ok-",
+      REQUIRED_BUILD_ARTIFACTS,
+      (completeDir) => {
+        process.env[REUSE_BUILD_DIR_ENV] = completeDir;
+        expect(resolveReuseDir()).toBe(completeDir);
+      },
+    );
+  });
+
+  // Production passes a relative value (`.vitepress/dist`); this proves it
+  // anchors to the project root, not the shell's cwd, so vitest launched from a
+  // subdirectory still resolves the same dist. The build lives under tmpdir (not
+  // the repo tree) and is reached via a project-root-relative path.
+  it("resolves a relative reuse dir against the project root", () => {
+    withStubBuildDir(
+      "neonpixels-reuse-rel-",
+      REQUIRED_BUILD_ARTIFACTS,
+      (completeDir) => {
+        process.env[REUSE_BUILD_DIR_ENV] = relative(PROJECT_ROOT, completeDir);
+        expect(resolveReuseDir()).toBe(completeDir);
+      },
+    );
+  });
+
+  // Seeds every required artifact except _headers, so this also guards the
+  // completeness check against dropping the _headers requirement that beforeAll
+  // depends on.
+  it("throws when the reuse flag points at an incomplete build", () => {
+    withStubBuildDir(
+      "neonpixels-reuse-bad-",
+      [INDEX_HTML_FILE, SITEMAP_FILE],
+      (partialDir) => {
+        process.env[REUSE_BUILD_DIR_ENV] = partialDir;
+        expect(() => resolveReuseDir()).toThrow(REUSE_BUILD_DIR_ENV);
+      },
+    );
+  });
 });
 
 describe("generated CSP Report-Only header", () => {
