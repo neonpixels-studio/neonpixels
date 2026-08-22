@@ -2,7 +2,14 @@
 // The build runs a real server-side render; happy-dom's stubbed network layer
 // otherwise logs ECONNREFUSED noise during it, so this file uses Node.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
+import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -22,6 +29,16 @@ const BUILD_TIMEOUT_MS = 120_000;
 
 const HEAD_CLOSE_TAG = "</head>";
 const INDEX_HTML_FILE = "index.html";
+const HTML_EXTENSION = ".html";
+const HEADERS_FILE = "_headers";
+const NETLIFY_CONFIG_FILE = "netlify.toml";
+const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
+const REPORT_ONLY_HEADER_LINE = new RegExp(
+  `^\\s*${REPORT_ONLY_HEADER_NAME}:\\s*(.+)$`,
+  "m",
+);
+const SHA256_SCRIPT_SOURCE = /'sha256-[A-Za-z0-9+/]+=*'/;
+const ENFORCING_SCRIPT_SRC = "script-src 'self' 'unsafe-inline'";
 // The last artifact vitepress writes; it flushes after build() resolves, so we
 // wait on it before cleanup to avoid an unhandled ENOENT racing the dir removal.
 const SITEMAP_FILE = "sitemap.xml";
@@ -64,6 +81,44 @@ const ABSOLUTE_URL_META: ReadonlyArray<readonly [string, string]> = [
 
 let buildOutDir = "";
 let builtHead = "";
+let generatedHeaders = "";
+
+// Independent oracle: the exact textContent of every executable inline script the
+// build emitted (scripts with a src or an application/ld+json type are excluded),
+// so it is the set the Report-Only script-src hashes must cover. Quote-aware and
+// whitespace-tolerant on the end tag so it is not strictly weaker than the code
+// under test — a script the production extractor mishandles must still surface
+// here rather than being skipped identically by both.
+function executableInlineScriptBodies(html: string) {
+  const bodies: string[] = [];
+  for (const match of html.matchAll(
+    /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi,
+  )) {
+    const attributes = match[1];
+    if (/(?:^|\s)src\s*=/i.test(attributes)) {
+      continue;
+    }
+    if (/(?:^|\s)type\s*=\s*["']?application\/ld\+json/i.test(attributes)) {
+      continue;
+    }
+    if (match[2].trim() === "") {
+      continue;
+    }
+    bodies.push(match[2]);
+  }
+  return bodies;
+}
+
+function readAllBuiltHtml(outDir: string) {
+  return readdirSync(outDir, { recursive: true })
+    .filter((name) => typeof name === "string" && name.endsWith(HTML_EXTENSION))
+    .map((name) => readFileSync(resolve(outDir, name as string), "utf8"));
+}
+
+function reportOnlyHeaderValue(headersFile: string) {
+  const match = headersFile.match(REPORT_ONLY_HEADER_LINE);
+  return match ? match[1].trim() : null;
+}
 
 function extractHead(html: string) {
   const closeIndex = html.indexOf(HEAD_CLOSE_TAG);
@@ -168,6 +223,7 @@ beforeAll(async () => {
   await waitForBuildToSettle(buildOutDir);
   const indexHtml = readFileSync(resolve(buildOutDir, INDEX_HTML_FILE), "utf8");
   builtHead = extractHead(indexHtml);
+  generatedHeaders = readFileSync(resolve(buildOutDir, HEADERS_FILE), "utf8");
 }, BUILD_TIMEOUT_MS);
 
 afterAll(() => {
@@ -209,4 +265,44 @@ describe("built index.html head", () => {
       expect(new URL(content!).protocol).toBe(HTTPS_PROTOCOL);
     },
   );
+});
+
+describe("generated CSP Report-Only header", () => {
+  it("emits a Content-Security-Policy-Report-Only header scoped to /*", () => {
+    expect(generatedHeaders).toMatch(
+      new RegExp(`^/\\*\\n\\s+${REPORT_ONLY_HEADER_NAME}:`, "m"),
+    );
+    expect(reportOnlyHeaderValue(generatedHeaders)).not.toBeNull();
+  });
+
+  it("carries a script-src of hashes with no 'unsafe-inline'", () => {
+    const value = reportOnlyHeaderValue(generatedHeaders)!;
+    const scriptSrc = value
+      .split(";")
+      .map((directive) => directive.trim())
+      .find((directive) => directive.startsWith("script-src"));
+    expect(scriptSrc, "no script-src in Report-Only header").toBeTruthy();
+    expect(scriptSrc).toMatch(SHA256_SCRIPT_SOURCE);
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+  });
+
+  it("hashes every executable inline script across all built pages", () => {
+    const value = reportOnlyHeaderValue(generatedHeaders)!;
+    const bodies = readAllBuiltHtml(buildOutDir).flatMap(
+      executableInlineScriptBodies,
+    );
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      const digest = createHash("sha256").update(body, "utf8").digest("base64");
+      expect(value).toContain(`'sha256-${digest}'`);
+    }
+  });
+
+  it("leaves the enforcing CSP in netlify.toml unchanged (still 'unsafe-inline')", () => {
+    const netlifyConfig = readFileSync(
+      resolve(PROJECT_ROOT, NETLIFY_CONFIG_FILE),
+      "utf8",
+    );
+    expect(netlifyConfig).toContain(ENFORCING_SCRIPT_SRC);
+  });
 });
