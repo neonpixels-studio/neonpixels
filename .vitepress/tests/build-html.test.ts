@@ -94,13 +94,20 @@ let builtHead = "";
 let ownsBuildDir = false;
 let generatedHeaders = "";
 
-// A complete vitepress build emits both the entry HTML and the sitemap (the last
-// artifact it writes); requiring both rejects a wrong dir or a build still in
-// flight, which an index.html-only check would accept.
+// A complete vitepress build emits the entry HTML, the sitemap (the last artifact
+// it writes), and the generated _headers file; beforeAll reads all three, so
+// requiring all three rejects a wrong dir or a build still in flight that an
+// index.html-only check would accept, and keeps the reuse guard from letting a
+// dir missing _headers through to a raw ENOENT.
+const REQUIRED_BUILD_ARTIFACTS: readonly string[] = [
+  INDEX_HTML_FILE,
+  SITEMAP_FILE,
+  HEADERS_FILE,
+];
+
 function reuseDirIsComplete(reuseDir: string) {
-  return (
-    existsSync(resolve(reuseDir, INDEX_HTML_FILE)) &&
-    existsSync(resolve(reuseDir, SITEMAP_FILE))
+  return REQUIRED_BUILD_ARTIFACTS.every((artifact) =>
+    existsSync(resolve(reuseDir, artifact)),
   );
 }
 
@@ -325,6 +332,26 @@ describe("built index.html head", () => {
   );
 });
 
+// Creates a throwaway dir seeded with the given build artifacts, runs the
+// assertion against it, and always removes the tree — even if a fixture write or
+// the assertion throws. Centralizes the near-identical stub-build fixtures below
+// so they can't drift or leak a temp dir on a mid-setup failure.
+function withStubBuildDir(
+  prefix: string,
+  artifacts: readonly string[],
+  assertion: (_dir: string) => void,
+) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  try {
+    artifacts.forEach((artifact) => {
+      writeFileSync(resolve(dir, artifact), "<stub/>");
+    });
+    assertion(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // The deploy only compiles once when this resolution is honest: reuse a complete
 // build, ignore the unset flag, and refuse an incomplete dir. CI never sets the
 // flag, so without these cases the reuse path would first run in production.
@@ -350,15 +377,14 @@ describe("reuse-dir resolution", () => {
   });
 
   it("returns the resolved dir when it holds a complete build", () => {
-    const completeDir = mkdtempSync(join(tmpdir(), "neonpixels-reuse-ok-"));
-    writeFileSync(resolve(completeDir, INDEX_HTML_FILE), "<html></html>");
-    writeFileSync(resolve(completeDir, SITEMAP_FILE), "<urlset/>");
-    process.env[REUSE_BUILD_DIR_ENV] = completeDir;
-    try {
-      expect(resolveReuseDir()).toBe(completeDir);
-    } finally {
-      rmSync(completeDir, { recursive: true, force: true });
-    }
+    withStubBuildDir(
+      "neonpixels-reuse-ok-",
+      REQUIRED_BUILD_ARTIFACTS,
+      (completeDir) => {
+        process.env[REUSE_BUILD_DIR_ENV] = completeDir;
+        expect(resolveReuseDir()).toBe(completeDir);
+      },
+    );
   });
 
   // Production passes a relative value (`.vitepress/dist`); this proves it
@@ -366,26 +392,28 @@ describe("reuse-dir resolution", () => {
   // subdirectory still resolves the same dist. The build lives under tmpdir (not
   // the repo tree) and is reached via a project-root-relative path.
   it("resolves a relative reuse dir against the project root", () => {
-    const completeDir = mkdtempSync(join(tmpdir(), "neonpixels-reuse-rel-"));
-    try {
-      writeFileSync(resolve(completeDir, INDEX_HTML_FILE), "<html></html>");
-      writeFileSync(resolve(completeDir, SITEMAP_FILE), "<urlset/>");
-      process.env[REUSE_BUILD_DIR_ENV] = relative(PROJECT_ROOT, completeDir);
-      expect(resolveReuseDir()).toBe(completeDir);
-    } finally {
-      rmSync(completeDir, { recursive: true, force: true });
-    }
+    withStubBuildDir(
+      "neonpixels-reuse-rel-",
+      REQUIRED_BUILD_ARTIFACTS,
+      (completeDir) => {
+        process.env[REUSE_BUILD_DIR_ENV] = relative(PROJECT_ROOT, completeDir);
+        expect(resolveReuseDir()).toBe(completeDir);
+      },
+    );
   });
 
+  // Seeds every required artifact except _headers, so this also guards the
+  // completeness check against dropping the _headers requirement that beforeAll
+  // depends on.
   it("throws when the reuse flag points at an incomplete build", () => {
-    const partialDir = mkdtempSync(join(tmpdir(), "neonpixels-reuse-bad-"));
-    writeFileSync(resolve(partialDir, INDEX_HTML_FILE), "<html></html>");
-    process.env[REUSE_BUILD_DIR_ENV] = partialDir;
-    try {
-      expect(() => resolveReuseDir()).toThrow(REUSE_BUILD_DIR_ENV);
-    } finally {
-      rmSync(partialDir, { recursive: true, force: true });
-    }
+    withStubBuildDir(
+      "neonpixels-reuse-bad-",
+      [INDEX_HTML_FILE, SITEMAP_FILE],
+      (partialDir) => {
+        process.env[REUSE_BUILD_DIR_ENV] = partialDir;
+        expect(() => resolveReuseDir()).toThrow(REUSE_BUILD_DIR_ENV);
+      },
+    );
   });
 });
 
