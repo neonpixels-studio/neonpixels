@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mount } from "@vue/test-utils";
+import { mount, type VueWrapper } from "@vue/test-utils";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -24,7 +24,7 @@ const INTERACTIVE_FOCUS_CLASSES = ["pill", "nav-link", "footer-link"];
 // aria-hidden visual guard so the two can't drift on what counts as focusable.
 // Excludes the not-tabbable cases: disabled controls and any negative tabindex.
 const TABBABLE_SELECTOR =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [contenteditable], [tabindex]:not([tabindex^="-"])';
+  'a[href], area[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, object, embed, audio[controls], video[controls], details > summary, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex^="-"])';
 
 // Matches any absolute URL (has a scheme) or a protocol-relative URL. In-page
 // hash links (#top, #projects) are internal and must NOT open a new tab.
@@ -46,6 +46,13 @@ const PROJECT_URLS = [
 // the id-driven assertions below (notably the aria-hidden guard) instead of
 // slipping past a hardcoded list.
 const PROJECT_SECTION_IDS = PROJECTS.map((project) => project.id);
+
+// Resolve a section's outer layout grid. Uses an attribute selector (no CSS
+// escaping needed for ids like "basin.fm" or a leading digit) and the child
+// combinator so it can't accidentally match a nested visual whose own root
+// carries a `grid` class (the markpost mockup does).
+const gridFor = (wrapper: VueWrapper, id: string) =>
+  wrapper.get(`section[id="${id}"] > .grid`);
 
 describe("NeonPixelsPage", () => {
   it("renders correctly", () => {
@@ -132,7 +139,7 @@ describe("NeonPixelsPage", () => {
   it("renders a section for each of the four projects", () => {
     const wrapper = mount(NeonPixelsPage);
     PROJECT_SECTION_IDS.forEach((id) => {
-      expect(wrapper.find(`section#${id}`).exists()).toBe(true);
+      expect(wrapper.find(`section[id="${id}"]`).exists()).toBe(true);
     });
     wrapper.unmount();
   });
@@ -150,7 +157,7 @@ describe("NeonPixelsPage", () => {
     // the summary column; assert both columns are present so a project added
     // without a visual fails here instead of shipping a half-empty section.
     PROJECT_SECTION_IDS.forEach((id) => {
-      const grid = wrapper.get(`section#${id} .grid`);
+      const grid = gridFor(wrapper, id);
       expect(grid.element.children).toHaveLength(2);
     });
     wrapper.unmount();
@@ -162,35 +169,38 @@ describe("NeonPixelsPage", () => {
     // The visuals are fabricated product mockups (a terminal, a heatmap, a
     // feed, in/out panels) whose text is illustrative chrome, not information
     // the page commits to — so the visual container must carry aria-hidden
-    // while the summary (the real prose and CTA) must not. The summary is the
-    // column carrying the external CTA link; identify it by content so this
-    // survives the per-section layout flip without re-deriving the parity.
-    PROJECT_SECTION_IDS.forEach((id) => {
-      const grid = wrapper.get(`section#${id} > .grid`);
-      const columns = Array.from(grid.element.children);
+    // while the summary (the real prose and CTA) must not. The layout flips the
+    // visual to the left on odd-indexed sections (NeonPixelsPage sets `reverse`
+    // from `projectIndex % 2 === 1`), so index the columns off that parity
+    // rather than guessing which column is which by content.
+    PROJECTS.forEach((project, projectIndex) => {
+      const columns = Array.from(gridFor(wrapper, project.id).element.children);
       expect(columns).toHaveLength(2);
-      const summaryColumn = columns.find(
-        (column) =>
-          column.matches("a[href]") || column.querySelector("a[href]"),
-      );
-      const visualColumn = columns.find((column) => column !== summaryColumn);
-      expect(visualColumn?.getAttribute("aria-hidden")).toBe("true");
-      expect(summaryColumn?.getAttribute("aria-hidden")).toBeNull();
+      const visualIsFirst = projectIndex % 2 === 1;
+      const [visualColumn, summaryColumn] = visualIsFirst
+        ? columns
+        : [columns[1], columns[0]];
+      // Confirm the parity-derived split is right: the summary column is the one
+      // holding this project's CTA link, so a layout regression fails loudly
+      // here instead of silently mislabelling the columns.
+      expect(
+        summaryColumn.querySelector(`a[href="${project.url}"]`),
+      ).not.toBeNull();
+      expect(visualColumn.getAttribute("aria-hidden")).toBe("true");
+      expect(summaryColumn.getAttribute("aria-hidden")).toBeNull();
       // aria-hidden on a container with a focusable descendant is itself an
       // ARIA violation (the control stays tabbable but has no accessible
       // name), so a future mockup must not introduce one — checked on the
-      // column root and its descendants. This also keeps the summary-detection
-      // heuristic above honest — it relies on the visuals carrying no anchors.
-      expect(visualColumn?.matches(TABBABLE_SELECTOR)).toBe(false);
-      expect(visualColumn?.querySelector(TABBABLE_SELECTOR)).toBeNull();
+      // column root and its descendants.
+      expect(visualColumn.matches(TABBABLE_SELECTOR)).toBe(false);
+      expect(visualColumn.querySelector(TABBABLE_SELECTOR)).toBeNull();
     });
     wrapper.unmount();
   });
 
   it("alternates the section layout down the page", () => {
     const wrapper = mount(NeonPixelsPage);
-    const columnsFor = (id: string) =>
-      wrapper.get(`section#${id} .grid`).element.className;
+    const columnsFor = (id: string) => gridFor(wrapper, id).element.className;
     // Odd-indexed sections flip the visual to the left; a broken parity check
     // would still pass every other assertion, so pin the alternation here.
     expect(columnsFor("grimicorn")).toContain("0.72fr)_minmax(0,1fr)");
