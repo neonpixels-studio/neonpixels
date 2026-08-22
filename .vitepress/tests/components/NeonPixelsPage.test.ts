@@ -137,6 +137,13 @@ describe("NeonPixelsPage", () => {
     wrapper.unmount();
   });
 
+  it("drives its id-based assertions from a non-empty project list", () => {
+    // An emptied PROJECTS would make every id-driven forEach below pass
+    // vacuously (zero iterations, zero assertions). Guard it once, centrally,
+    // so the protection can't be deleted along with any single loop.
+    expect(PROJECT_SECTION_IDS.length).toBeGreaterThan(0);
+  });
+
   it("renders both a summary and a bespoke visual in every section", () => {
     const wrapper = mount(NeonPixelsPage);
     // A section with no matching #visual branch would leave the grid with only
@@ -151,9 +158,6 @@ describe("NeonPixelsPage", () => {
 
   it("hides each decorative project visual from assistive technology", () => {
     const wrapper = mount(NeonPixelsPage);
-    // Guard against a data change emptying PROJECTS, which would make this
-    // (and every other id-driven loop) pass vacuously with zero assertions.
-    expect(PROJECT_SECTION_IDS.length).toBeGreaterThan(0);
     // Each section grid holds a summary column and a bespoke visual column.
     // The visuals are fabricated product mockups (a terminal, a heatmap, a
     // feed, in/out panels) whose text is illustrative chrome, not information
