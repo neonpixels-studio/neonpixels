@@ -408,6 +408,10 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
         :project="project"
         :reverse="projectIndex % 2 === 1"
       >
+        <!-- Every branch below is a fabricated, decorative product mockup, so
+             its root div must carry aria-hidden="true" to keep the illustrative
+             chrome out of the accessibility tree. The "hides each decorative
+             project visual" test enforces this for any new branch. -->
         <template #visual>
           <div
             v-if="project.id === 'grimicorn'"
@@ -534,7 +538,6 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
             <div
               class="text-pink animate-flicker flex items-center justify-center text-[22px]"
               :style="{ textShadow: MARKPOST_ARROW_GLOW }"
-              aria-hidden="true"
             >
               →
             </div>

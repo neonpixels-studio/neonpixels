@@ -20,6 +20,12 @@ const COMPONENT_PATH = path.resolve(
 // Interactive control classes the global :focus-visible ring lands on.
 const INTERACTIVE_FOCUS_CLASSES = ["pill", "nav-link", "footer-link"];
 
+// Tabbable-element selector, shared by the skip-link ordering check and the
+// aria-hidden visual guard so the two can't drift on what counts as focusable.
+// Excludes the not-tabbable cases: disabled controls and any negative tabindex.
+const TABBABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [contenteditable], [tabindex]:not([tabindex^="-"])';
+
 // Matches any absolute URL (has a scheme) or a protocol-relative URL. In-page
 // hash links (#top, #projects) are internal and must NOT open a new tab.
 const EXTERNAL_HREF_PATTERN = /^([a-z][a-z0-9+.-]*:|\/\/)/i;
@@ -37,7 +43,7 @@ const PROJECT_URLS = [
 ];
 
 // Derive the section ids from the data so a project added later is covered by
-// every id-driven assertion below (notably the aria-hidden guard) instead of
+// the id-driven assertions below (notably the aria-hidden guard) instead of
 // slipping past a hardcoded list.
 const PROJECT_SECTION_IDS = PROJECTS.map((project) => project.id);
 
@@ -76,9 +82,7 @@ describe("NeonPixelsPage", () => {
     // our own <main>) so they don't masquerade as the first stop. Scope is this
     // component; the theme layout renders it as the whole page body (VitePress's
     // own nav chrome is display:none), so first-here is first on the page.
-    const tabbables = wrapper.findAll(
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [contenteditable], [tabindex]:not([tabindex^="-"])',
-    );
+    const tabbables = wrapper.findAll(TABBABLE_SELECTOR);
     expect(tabbables.length).toBeGreaterThan(0);
     expect(tabbables[0].classes()).toContain("skip-link");
     wrapper.unmount();
@@ -147,6 +151,9 @@ describe("NeonPixelsPage", () => {
 
   it("hides each decorative project visual from assistive technology", () => {
     const wrapper = mount(NeonPixelsPage);
+    // Guard against a data change emptying PROJECTS, which would make this
+    // (and every other id-driven loop) pass vacuously with zero assertions.
+    expect(PROJECT_SECTION_IDS.length).toBeGreaterThan(0);
     // Each section grid holds a summary column and a bespoke visual column.
     // The visuals are fabricated product mockups (a terminal, a heatmap, a
     // feed, in/out panels) whose text is illustrative chrome, not information
@@ -158,22 +165,20 @@ describe("NeonPixelsPage", () => {
       const grid = wrapper.get(`section#${id} > .grid`);
       const columns = Array.from(grid.element.children);
       expect(columns).toHaveLength(2);
-      const summaryColumn = columns.find((column) =>
-        column.querySelector("a[href]"),
+      const summaryColumn = columns.find(
+        (column) =>
+          column.matches("a[href]") || column.querySelector("a[href]"),
       );
       const visualColumn = columns.find((column) => column !== summaryColumn);
       expect(visualColumn?.getAttribute("aria-hidden")).toBe("true");
       expect(summaryColumn?.getAttribute("aria-hidden")).toBeNull();
       // aria-hidden on a container with a focusable descendant is itself an
       // ARIA violation (the control stays tabbable but has no accessible
-      // name), so a future mockup must not introduce one. This also keeps the
-      // summary-detection heuristic above honest — it relies on the visuals
-      // carrying no anchors.
-      expect(
-        visualColumn?.querySelector(
-          'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        ),
-      ).toBeNull();
+      // name), so a future mockup must not introduce one — checked on the
+      // column root and its descendants. This also keeps the summary-detection
+      // heuristic above honest — it relies on the visuals carrying no anchors.
+      expect(visualColumn?.matches(TABBABLE_SELECTOR)).toBe(false);
+      expect(visualColumn?.querySelector(TABBABLE_SELECTOR)).toBeNull();
     });
     wrapper.unmount();
   });

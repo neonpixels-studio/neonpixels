@@ -163,7 +163,7 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
       <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]">
         <div data-v-aa442b0f="" class="grid grid-cols-[1fr_auto_1fr] items-center gap-[18px]" aria-hidden="true">
           <div data-v-aa442b0f="" class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"><span data-v-aa442b0f="" class="text-[10.5px] tracking-[0.16em] text-[#7a5566] uppercase">in</span><span data-v-aa442b0f="" class="text-fg text-[12.5px]">POST /webhook</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">✉ notes@markpost.io</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">{ "title": "idea" }</span></div>
-          <div data-v-aa442b0f="" class="text-pink animate-flicker flex items-center justify-center text-[22px]" style="text-shadow: 0 0 14px rgba(255, 46, 166, 0.8);" aria-hidden="true"> → </div>
+          <div data-v-aa442b0f="" class="text-pink animate-flicker flex items-center justify-center text-[22px]" style="text-shadow: 0 0 14px rgba(255, 46, 166, 0.8);"> → </div>
           <div data-v-aa442b0f="" class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]" style="box-shadow: 0 0 50px rgba(255, 46, 166, 0.12);"><span data-v-aa442b0f="" class="text-[10.5px] tracking-[0.16em] text-[#7a5566] uppercase">out</span><span data-v-aa442b0f="" class="text-pink text-[12.5px]">~/vault/idea.md</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]"># idea</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">created: 2026-08-08</span></div>
         </div>
         <div data-v-6057c22f="" class="flex flex-col gap-5">
