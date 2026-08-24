@@ -6,6 +6,7 @@ import {
   collectInlineScriptHashes,
   extractInlineScriptBodies,
   sha256Source,
+  withReportingDirectives,
 } from "../../csp/reportOnlyCsp";
 
 const ENFORCING_CSP =
@@ -177,5 +178,31 @@ describe("buildReportOnlyCsp", () => {
     expect(reportOnly).toBe(
       `object-src 'none'; script-src 'self' 'sha256-AAA=' 'sha256-BBB='`,
     );
+  });
+});
+
+describe("withReportingDirectives", () => {
+  it("appends report-uri (collector path) and report-to (group) to the policy", () => {
+    const withReporting = withReportingDirectives(
+      "default-src 'self'",
+      "csp-endpoint",
+      "/csp-report",
+    );
+    expect(withReporting).toBe(
+      `default-src 'self'; report-uri /csp-report; report-to csp-endpoint`,
+    );
+  });
+
+  it("leaves the existing policy directives untouched ahead of the report directives", () => {
+    const withReporting = withReportingDirectives(
+      "default-src 'self'; script-src 'self' 'sha256-AAA='",
+      "csp-endpoint",
+      "/csp-report",
+    );
+    expect(withReporting.startsWith("default-src 'self'; script-src")).toBe(
+      true,
+    );
+    expect(withReporting).toContain("report-uri /csp-report");
+    expect(withReporting).toContain("report-to csp-endpoint");
   });
 });

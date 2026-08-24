@@ -59,6 +59,20 @@ describe("writeReportOnlyHeaders", () => {
     expect(headers).not.toContain("script-src 'self' 'unsafe-inline'");
   });
 
+  it("wires the Report-Only policy to the collector and emits Reporting-Endpoints", async () => {
+    writeOutFile("index.html", INLINE_SCRIPT);
+    writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+    await writeReportOnlyHeaders(outDir, netlifyConfigPath);
+
+    const headers = readGeneratedHeaders();
+    expect(headers).toContain("report-uri /csp-report");
+    expect(headers).toContain("report-to csp-endpoint");
+    expect(headers).toContain(
+      `Reporting-Endpoints: csp-endpoint="/csp-report"`,
+    );
+  });
+
   it("preserves a hand-written _headers file instead of clobbering it", async () => {
     writeOutFile("index.html", INLINE_SCRIPT);
     writeOutFile(

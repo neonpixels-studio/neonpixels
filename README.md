@@ -49,6 +49,22 @@ Deploys to [Netlify](https://www.netlify.com). See [`netlify.toml`](netlify.toml
 the build command, publish directory and security headers. The build runs the test
 suite before building, so a failing test blocks the deploy.
 
+### CSP violation collector
+
+The enforcing `Content-Security-Policy` in `netlify.toml` still allows
+`script-src 'unsafe-inline'`. The build (`buildEnd` in `.vitepress/config.ts`)
+also publishes a stricter `Content-Security-Policy-Report-Only` header via a
+generated `_headers` file that hashes VitePress's inline scripts. That header is
+wired to a collector — a `Reporting-Endpoints` header plus `report-to` /
+`report-uri` directives point violations at the `/csp-report` Netlify Function
+([`netlify/functions/csp-report.ts`](netlify/functions/csp-report.ts)), which
+records them to the function logs. The parsing/validation is isolated in
+[`.vitepress/csp/cspReportCollector.ts`](.vitepress/csp/cspReportCollector.ts)
+so it is unit-testable without the Netlify runtime. Once the logs show no
+`script-src` violations in production, `'unsafe-inline'` can be dropped from the
+enforcing `script-src` (see the `@todo` in `netlify.toml`). No environment
+variables or external services are required — the collector is same-origin.
+
 ## Git hooks
 
 Managed with [Husky](https://typicode.github.io/husky):

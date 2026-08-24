@@ -1,7 +1,12 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { buildReportOnlyCsp, collectInlineScriptHashes } from "./reportOnlyCsp";
+import {
+  buildReportOnlyCsp,
+  collectInlineScriptHashes,
+  withReportingDirectives,
+} from "./reportOnlyCsp";
+import { CSP_REPORT_PATH, CSP_REPORTING_GROUP } from "./cspReportCollector";
 
 // Build-time glue: reads the emitted HTML, hashes its inline scripts, and writes
 // a Netlify `_headers` file carrying a Content-Security-Policy-Report-Only header
@@ -21,6 +26,8 @@ const HTML_EXTENSION = ".html";
 const HEADERS_FILE_NAME = "_headers";
 const HEADERS_PATH_GLOB = "/*";
 const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
+// Names the collector the `report-to` directive delivers to (Reporting API).
+const REPORTING_ENDPOINTS_HEADER_NAME = "Reporting-Endpoints";
 // Matches the header only as its own `_headers` line, so the name appearing in a
 // comment in a hand-written file doesn't trip the conflict guard.
 const REPORT_ONLY_HEADER_LINE = new RegExp(
@@ -105,8 +112,20 @@ function handWrittenHeaders(existingHeaders: string) {
   return withoutGenerated;
 }
 
+// The `report-to` group in the CSP resolves through this header, so the two
+// ship together under the same path glob.
+function reportingEndpointsHeaderValue() {
+  return `${CSP_REPORTING_GROUP}="${CSP_REPORT_PATH}"`;
+}
+
 function formatGeneratedBlock(reportOnlyCsp: string) {
-  return `${GENERATED_MARKER}\n${HEADERS_PATH_GLOB}\n  ${REPORT_ONLY_HEADER_NAME}: ${reportOnlyCsp}\n`;
+  return [
+    GENERATED_MARKER,
+    HEADERS_PATH_GLOB,
+    `  ${REPORT_ONLY_HEADER_NAME}: ${reportOnlyCsp}`,
+    `  ${REPORTING_ENDPOINTS_HEADER_NAME}: ${reportingEndpointsHeaderValue()}`,
+    "",
+  ].join("\n");
 }
 
 function mergeHeaders(handWritten: string, generatedBlock: string) {
@@ -127,9 +146,10 @@ export async function writeReportOnlyHeaders(
       "CSP Report-Only: no executable inline scripts found in the build output; refusing to emit a script-src that would silently mismatch",
     );
   }
-  const reportOnlyCsp = buildReportOnlyCsp(
-    await readEnforcingCsp(netlifyConfigPath),
-    scriptHashes,
+  const reportOnlyCsp = withReportingDirectives(
+    buildReportOnlyCsp(await readEnforcingCsp(netlifyConfigPath), scriptHashes),
+    CSP_REPORTING_GROUP,
+    CSP_REPORT_PATH,
   );
   if (reportOnlyCsp.length > MAX_HEADER_BYTES) {
     throw new Error(
