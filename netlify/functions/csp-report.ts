@@ -1,6 +1,8 @@
 import {
   collectCspReports,
   CSP_REPORT_PATH,
+  HTTP_PAYLOAD_TOO_LARGE,
+  MAX_BODY_BYTES,
   POST_METHOD,
   type CollectorResult,
   type CspViolation,
@@ -16,9 +18,25 @@ const VIOLATION_LOG_PREFIX = "csp-violation";
 // Logged when a body parsed as JSON but matched no known report shape, so a
 // browser format the parsers miss is visible rather than a silent clean 204.
 const UNPARSED_LOG_PREFIX = "csp-report-unparsed";
+// Logged when a request is rejected outright (bad JSON, too large, unsupported
+// type). Without it an unmodelled content type would read as "no violations",
+// and the rollout would drop 'unsafe-inline' on false evidence.
+const REJECTED_LOG_PREFIX = "csp-report-rejected";
+const HTTP_BAD_REQUEST = 400;
 const HTTP_METHOD_NOT_ALLOWED = 405;
+const MAX_LOGGED_CONTENT_TYPE = 128;
 
-function recordResult(result: CollectorResult) {
+// A rejected request carried a report we failed to record; a 405 is just a bot
+// or crawler hitting the endpoint with the wrong method, not a lost report.
+function isLostReport(status: number) {
+  return status >= HTTP_BAD_REQUEST && status !== HTTP_METHOD_NOT_ALLOWED;
+}
+
+function loggableContentType(contentType: string | null) {
+  return (contentType ?? "").slice(0, MAX_LOGGED_CONTENT_TYPE);
+}
+
+function recordResult(result: CollectorResult, contentType: string | null) {
   for (const violation of result.violations) {
     // console output is the collection sink: Netlify captures it in the
     // function logs, where the rollout can watch for genuine script-src drift.
@@ -28,6 +46,15 @@ function recordResult(result: CollectorResult) {
     console.warn(
       UNPARSED_LOG_PREFIX,
       JSON.stringify({ dropped: result.dropped }),
+    );
+  }
+  if (isLostReport(result.status)) {
+    console.warn(
+      REJECTED_LOG_PREFIX,
+      JSON.stringify({
+        status: result.status,
+        contentType: loggableContentType(contentType),
+      }),
     );
   }
 }
@@ -44,13 +71,31 @@ function responseHeaders(status: number) {
   return undefined;
 }
 
-export default async (request: Request): Promise<Response> => {
-  const result = collectCspReports({
+// True when the client's declared body size already exceeds the cap, so the
+// adapter answers 413 without buffering a hostile multi-megabyte payload.
+function exceedsDeclaredSize(request: Request) {
+  const declaredLength = Number(request.headers.get("content-length"));
+  return Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES;
+}
+
+async function collect(
+  request: Request,
+  contentType: string | null,
+): Promise<CollectorResult> {
+  if (exceedsDeclaredSize(request)) {
+    return { status: HTTP_PAYLOAD_TOO_LARGE, violations: [], dropped: 0 };
+  }
+  return collectCspReports({
     method: request.method,
-    contentType: request.headers.get("content-type"),
+    contentType,
     body: await request.text(),
   });
-  recordResult(result);
+}
+
+export default async (request: Request): Promise<Response> => {
+  const contentType = request.headers.get("content-type");
+  const result = await collect(request, contentType);
+  recordResult(result, contentType);
   return new Response(null, {
     status: result.status,
     headers: responseHeaders(result.status),

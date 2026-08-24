@@ -124,6 +124,19 @@ describe("writeReportOnlyHeaders", () => {
     ).rejects.toThrow(/two conflicting policies/);
   });
 
+  it("throws when a hand-written file already declares a Reporting-Endpoints header", async () => {
+    writeOutFile("index.html", INLINE_SCRIPT);
+    writeOutFile(
+      HEADERS_FILE,
+      `/*\n  Reporting-Endpoints: csp-endpoint="https://elsewhere.example"\n`,
+    );
+    writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+    await expect(
+      writeReportOnlyHeaders(outDir, netlifyConfigPath),
+    ).rejects.toThrow(/two conflicting policies/);
+  });
+
   it("throws when the build output has no executable inline scripts", async () => {
     writeOutFile(
       "index.html",

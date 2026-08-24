@@ -28,11 +28,17 @@ const HEADERS_PATH_GLOB = "/*";
 const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
 // Names the collector the `report-to` directive delivers to (Reporting API).
 const REPORTING_ENDPOINTS_HEADER_NAME = "Reporting-Endpoints";
-// Matches the header only as its own `_headers` line, so the name appearing in a
-// comment in a hand-written file doesn't trip the conflict guard.
-const REPORT_ONLY_HEADER_LINE = new RegExp(
-  `^\\s*${REPORT_ONLY_HEADER_NAME}\\s*:`,
-  "m",
+// Both headers this script generates. A hand-written copy of either would ship a
+// second, conflicting value for the same path, so guard against both.
+const GENERATED_HEADER_NAMES = [
+  REPORT_ONLY_HEADER_NAME,
+  REPORTING_ENDPOINTS_HEADER_NAME,
+];
+// Matches a generated header only as its own `_headers` line, so the name
+// appearing in a comment in a hand-written file doesn't trip the conflict guard.
+const GENERATED_HEADER_LINE = new RegExp(
+  `^\\s*(?:${GENERATED_HEADER_NAMES.join("|")})\\s*:`,
+  "im",
 );
 
 // A single header comfortably under the ~8 KB limit CDNs and origins enforce; the
@@ -97,16 +103,16 @@ async function readExistingHeaders(headersPath: string) {
 
 // Strip this script's own previous block, then keep any remaining hand-written
 // `_headers` (VitePress copies public/_headers into the publish dir). A leftover
-// Report-Only header from a hand-written file would ship two conflicting
-// policies, so fail loud rather than merge it.
+// copy of either generated header from a hand-written file would ship two
+// conflicting values, so fail loud rather than merge it.
 function handWrittenHeaders(existingHeaders: string) {
   const markerIndex = existingHeaders.indexOf(GENERATED_MARKER);
   const withoutGenerated = (
     markerIndex === -1 ? existingHeaders : existingHeaders.slice(0, markerIndex)
   ).trim();
-  if (REPORT_ONLY_HEADER_LINE.test(withoutGenerated)) {
+  if (GENERATED_HEADER_LINE.test(withoutGenerated)) {
     throw new Error(
-      `CSP Report-Only: ${HEADERS_FILE_NAME} already defines a ${REPORT_ONLY_HEADER_NAME} header; refusing to ship two conflicting policies`,
+      `CSP Report-Only: ${HEADERS_FILE_NAME} already defines one of ${GENERATED_HEADER_NAMES.join(", ")}; refusing to ship two conflicting policies`,
     );
   }
   return withoutGenerated;

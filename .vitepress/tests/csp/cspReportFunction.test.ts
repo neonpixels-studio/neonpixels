@@ -78,7 +78,7 @@ describe("csp-report Netlify function", () => {
     expect(warn.mock.calls[0][0]).toBe("csp-report-unparsed");
   });
 
-  it("logs nothing and replies 415 for an unsupported content type", async () => {
+  it("replies 415 and logs a rejection marker for an unsupported content type", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const response = await cspReportHandler(
@@ -86,10 +86,14 @@ describe("csp-report Netlify function", () => {
     );
 
     expect(response.status).toBe(415);
-    expect(warn).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toBe("csp-report-rejected");
+    const logged = JSON.parse(warn.mock.calls[0][1] as string);
+    expect(logged.status).toBe(415);
+    expect(logged.contentType).toBe("application/json");
   });
 
-  it("logs nothing and replies 400 for a malformed body", async () => {
+  it("replies 400 and logs a rejection marker for a malformed body", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const response = await cspReportHandler(
@@ -97,14 +101,40 @@ describe("csp-report Netlify function", () => {
     );
 
     expect(response.status).toBe(400);
-    expect(warn).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toBe("csp-report-rejected");
   });
 
-  it("replies 405 with an Allow header for a non-POST request", async () => {
+  it("replies 413 from the Content-Length without buffering the body", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // A real Request recomputes Content-Length from its body, so use a stub to
+    // prove the oversize declaration short-circuits before request.text() runs.
+    const text = vi.fn();
+    const request = {
+      method: "POST",
+      headers: new Headers({
+        "content-type": LEGACY_CONTENT_TYPE,
+        "content-length": String(64 * 1024 + 1),
+      }),
+      text,
+    } as unknown as Request;
+
+    const response = await cspReportHandler(request);
+
+    expect(response.status).toBe(413);
+    expect(text).not.toHaveBeenCalled();
+    expect(warn.mock.calls[0][0]).toBe("csp-report-rejected");
+  });
+
+  it("replies 405 with an Allow header and logs nothing for a non-POST request", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
     const response = await cspReportHandler(
       new Request("https://neonpixels.io/csp-report", { method: "GET" }),
     );
+
     expect(response.status).toBe(405);
     expect(response.headers.get("allow")).toBe("POST");
+    expect(warn).not.toHaveBeenCalled();
   });
 });

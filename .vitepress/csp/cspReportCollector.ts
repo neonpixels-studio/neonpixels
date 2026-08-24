@@ -27,7 +27,7 @@ const DEFAULT_DISPOSITION = "report";
 const HTTP_NO_CONTENT = 204;
 const HTTP_BAD_REQUEST = 400;
 const HTTP_METHOD_NOT_ALLOWED = 405;
-const HTTP_PAYLOAD_TOO_LARGE = 413;
+export const HTTP_PAYLOAD_TOO_LARGE = 413;
 const HTTP_UNSUPPORTED_MEDIA_TYPE = 415;
 
 const CONTENT_TYPE_PARAMETER_SEPARATOR = ";";
@@ -35,9 +35,16 @@ const CONTENT_TYPE_PARAMETER_SEPARATOR = ";";
 // The endpoint is public and unauthenticated, so bound both the request size and
 // each free-text field: a genuine violation report is small (well under 64 KB),
 // and capping the fields keeps a crafted multi-megabyte `script-sample` from
-// bloating the function logs the reports are gathered into.
-const MAX_BODY_BYTES = 64 * 1024;
+// bloating the function logs the reports are gathered into. Exported so the
+// adapter can reject an oversize request by its Content-Length before buffering.
+export const MAX_BODY_BYTES = 64 * 1024;
 const MAX_FIELD_LENGTH = 512;
+
+const textEncoder = new TextEncoder();
+
+function byteLength(body: string) {
+  return textEncoder.encode(body).length;
+}
 
 // A JSON.parse that failed, kept distinct from any legitimate parsed value
 // (including null) so the caller can tell a malformed body from valid `null`.
@@ -147,16 +154,17 @@ function parseReportingApiReports(payload: unknown): ParsedReports {
   if (!Array.isArray(payload)) {
     return { violations: [], dropped: 1 };
   }
-  const bodies = payload
-    .map(asRecord)
+  const entries = payload.map(asRecord);
+  const malformedEntries = entries.filter((entry) => entry === null).length;
+  const bodies = entries
     .filter((entry): entry is Record<string, unknown> => entry !== null)
     .filter(isCspViolationEntry)
     .map((entry) => asRecord(entry.body));
   const violations = bodies
     .filter((body): body is Record<string, unknown> => body !== null)
     .map(normalizeReportingApiBody);
-  const dropped = bodies.filter((body) => body === null).length;
-  return { violations, dropped };
+  const missingBodies = bodies.filter((body) => body === null).length;
+  return { violations, dropped: malformedEntries + missingBodies };
 }
 
 type ReportParser = (_payload: unknown) => ParsedReports;
@@ -199,7 +207,7 @@ export function collectCspReports({
   if (!parseReports) {
     return { status: HTTP_UNSUPPORTED_MEDIA_TYPE, violations: [], dropped: 0 };
   }
-  if (body.length > MAX_BODY_BYTES) {
+  if (byteLength(body) > MAX_BODY_BYTES) {
     return { status: HTTP_PAYLOAD_TOO_LARGE, violations: [], dropped: 0 };
   }
   const payload = parseJson(body);

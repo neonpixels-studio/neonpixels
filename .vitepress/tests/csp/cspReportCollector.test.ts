@@ -112,6 +112,31 @@ describe("collectCspReports request guards", () => {
     expect(result.violations).toEqual([]);
   });
 
+  it("accepts a body of exactly the byte cap", () => {
+    // A valid legacy report padded to exactly 64 KiB of ASCII (1 byte/char).
+    const prefix = `{"csp-report":{"script-sample":"`;
+    const suffix = `"}}`;
+    const padding = "x".repeat(64 * 1024 - prefix.length - suffix.length);
+    const body = `${prefix}${padding}${suffix}`;
+    expect(body).toHaveLength(64 * 1024);
+    const result = collectCspReports({
+      method: "POST",
+      contentType: LEGACY_CONTENT_TYPE,
+      body,
+    });
+    expect(result.status).toBe(204);
+  });
+
+  it("measures the cap in bytes, not UTF-16 code units", () => {
+    // 40 K astral chars = 40 K code units but ~160 KB of UTF-8 bytes.
+    const result = collectCspReports({
+      method: "POST",
+      contentType: LEGACY_CONTENT_TYPE,
+      body: "😀".repeat(40 * 1024),
+    });
+    expect(result.status).toBe(413);
+  });
+
   it("truncates a long free-text field rather than logging it whole", () => {
     const result = collectCspReports(
       legacyRequest({
@@ -223,6 +248,14 @@ describe("collectCspReports Reporting API application/reports+json", () => {
     expect(result.status).toBe(204);
     expect(result.violations).toEqual([]);
     expect(result.dropped).toBe(1);
+  });
+
+  it("counts non-object array entries as dropped, not silently discarded", () => {
+    const result = collectCspReports(
+      reportingApiRequest(["oops", 42, REPORTING_API_REPORT]),
+    );
+    expect(result.violations).toHaveLength(1);
+    expect(result.dropped).toBe(2);
   });
 
   it("treats a legitimately empty batch as zero dropped", () => {
