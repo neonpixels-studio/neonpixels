@@ -16,15 +16,12 @@ const { page } = useData();
 // rendered by the child view below, not this layout, so resolve it by id and
 // move focus ourselves; focus() also scrolls it into view.
 function skipToContent(event: MouseEvent) {
-  // VitePress's router already suppresses same-page hash nav at the window
-  // capture phase (it only scrolls, never focuses), so this handler owns moving
-  // focus; preventDefault here is belt-and-suspenders and covers the non-router
-  // test environment. The <main> is rendered by the child view, so resolve it
-  // by id.
+  // preventDefault is belt-and-suspenders: VitePress already suppresses the hash
+  // nav at capture phase, but this also covers the non-router test environment.
   event.preventDefault();
   const landmark = document.getElementById(MAIN_CONTENT_ID);
   // Fail loud rather than no-op silently: if a view ever forgets to expose the
-  // shared landmark id, surface it in dev instead of a dead bypass.
+  // shared landmark id, surface it in the console instead of a dead bypass.
   if (!landmark) {
     console.warn(`skip link: no #${MAIN_CONTENT_ID} landmark on this route`);
     return;

@@ -37,6 +37,9 @@ enableAutoUnmount(afterEach);
 afterEach(() => {
   pageState.isNotFound = false;
   document.body.innerHTML = "";
+  // Restore any console spy here too, so a failing assertion mid-test can't
+  // leave console.warn stubbed for the tests that follow.
+  vi.restoreAllMocks();
 });
 
 describe("AppLayout", () => {
@@ -118,7 +121,8 @@ describe("AppLayout", () => {
   it("warns and moves no focus when the route exposes no landmark", async () => {
     // Exercises the fail-loud guard so it can't be deleted or inverted with the
     // suite still green: stub the view to a fragment with no <main>, so
-    // getElementById(MAIN_CONTENT_ID) misses.
+    // getElementById(MAIN_CONTENT_ID) misses. afterEach restores the spy even if
+    // an assertion below throws.
     pageState.isNotFound = false;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const wrapper = mount(AppLayout, {
@@ -127,10 +131,12 @@ describe("AppLayout", () => {
         stubs: { NeonPixelsPage: { template: "<div>no landmark here</div>" } },
       },
     });
+    // Assert the handler moved no focus, not just that the fixture lacks a main:
+    // capture focus before the click and pin it unchanged after.
+    const focusBeforeClick = document.activeElement;
     await wrapper.get("a.skip-link").trigger("click");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(MAIN_CONTENT_ID));
-    expect(document.querySelector("main")).toBeNull();
-    warn.mockRestore();
+    expect(document.activeElement).toBe(focusBeforeClick);
   });
 
   it("hides the skip link off-canvas until it is focused", () => {
