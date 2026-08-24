@@ -3,20 +3,10 @@ import { mount, type VueWrapper } from "@vue/test-utils";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 import { PROJECTS } from "@theme/data/projects";
 import { MAIN_CONTENT_ID } from "@theme/a11y";
+import { TABBABLE_SELECTOR } from "../utils/tabbable";
 
 // Interactive control classes the global :focus-visible ring lands on.
 const INTERACTIVE_FOCUS_CLASSES = ["pill", "nav-link", "footer-link"];
-
-// Tabbable-element selector, used by the aria-hidden visual guard to assert a
-// decorative mockup holds no focusable descendant.
-// Excludes the not-tabbable cases on every branch: disabled controls, a
-// negative tabindex (matched programmatically but never on Tab, so the
-// exclusion has to hang off each term, not just the trailing [tabindex]),
-// contenteditable="false", and a bare <summary> outside <details>. Media
-// elements only count with controls; object/embed are omitted as they aren't
-// reliable tab stops across engines.
-const TABBABLE_SELECTOR =
-  'a[href]:not([tabindex^="-"]), area[href]:not([tabindex^="-"]), button:not([disabled]):not([tabindex^="-"]), input:not([disabled]):not([tabindex^="-"]), select:not([disabled]):not([tabindex^="-"]), textarea:not([disabled]):not([tabindex^="-"]), iframe:not([tabindex^="-"]), audio[controls]:not([tabindex^="-"]), video[controls]:not([tabindex^="-"]), details > summary:not([tabindex^="-"]), [contenteditable]:not([contenteditable="false"]):not([tabindex^="-"]), [tabindex]:not([tabindex^="-"])';
 
 // Matches any absolute URL (has a scheme) or a protocol-relative URL. In-page
 // hash links (#top, #projects) are internal and must NOT open a new tab.

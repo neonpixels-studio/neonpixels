@@ -16,8 +16,16 @@ const { page } = useData();
 // rendered by the child view below, not this layout, so resolve it by id and
 // move focus ourselves; focus() also scrolls it into view.
 function skipToContent(event: MouseEvent) {
+  const landmark = document.getElementById(MAIN_CONTENT_ID);
+  // Fail loud rather than swallow the click: if a view ever forgets to expose
+  // the landmark, warn and let the browser's default fragment nav run instead
+  // of preventDefault-ing into a no-op that quietly breaks the bypass.
+  if (!landmark) {
+    console.warn(`skip link: no #${MAIN_CONTENT_ID} landmark on this route`);
+    return;
+  }
   event.preventDefault();
-  document.getElementById(MAIN_CONTENT_ID)?.focus();
+  landmark.focus();
 }
 </script>
 
