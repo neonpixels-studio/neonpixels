@@ -1,6 +1,8 @@
 import {
   collectCspReports,
   CSP_REPORT_PATH,
+  HTTP_BAD_REQUEST,
+  HTTP_METHOD_NOT_ALLOWED,
   HTTP_PAYLOAD_TOO_LARGE,
   MAX_BODY_BYTES,
   POST_METHOD,
@@ -22,8 +24,6 @@ const UNPARSED_LOG_PREFIX = "csp-report-unparsed";
 // type). Without it an unmodelled content type would read as "no violations",
 // and the rollout would drop 'unsafe-inline' on false evidence.
 const REJECTED_LOG_PREFIX = "csp-report-rejected";
-const HTTP_BAD_REQUEST = 400;
-const HTTP_METHOD_NOT_ALLOWED = 405;
 const MAX_LOGGED_CONTENT_TYPE = 128;
 
 // A rejected request carried a report we failed to record; a 405 is just a bot
@@ -71,6 +71,10 @@ function responseHeaders(status: number) {
   return undefined;
 }
 
+function isPost(request: Request) {
+  return request.method.toUpperCase() === POST_METHOD;
+}
+
 // True when the client's declared body size already exceeds the cap, so the
 // adapter answers 413 without buffering a hostile multi-megabyte payload.
 function exceedsDeclaredSize(request: Request) {
@@ -78,18 +82,34 @@ function exceedsDeclaredSize(request: Request) {
   return Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES;
 }
 
+// Read the body defensively: an aborted or truncated upload rejects here, and an
+// uncaught rejection would return a 500 with no log — the one lost-report path
+// that produces no marker. Signal it as null so the caller answers 400 (logged).
+async function readBody(request: Request) {
+  try {
+    return await request.text();
+  } catch {
+    return null;
+  }
+}
+
 async function collect(
   request: Request,
   contentType: string | null,
 ): Promise<CollectorResult> {
+  // Method first, so a non-POST always gets a 405 (with Allow) rather than a 413
+  // from an oversize Content-Length it never had a report behind.
+  if (!isPost(request)) {
+    return { status: HTTP_METHOD_NOT_ALLOWED, violations: [], dropped: 0 };
+  }
   if (exceedsDeclaredSize(request)) {
     return { status: HTTP_PAYLOAD_TOO_LARGE, violations: [], dropped: 0 };
   }
-  return collectCspReports({
-    method: request.method,
-    contentType,
-    body: await request.text(),
-  });
+  const body = await readBody(request);
+  if (body === null) {
+    return { status: HTTP_BAD_REQUEST, violations: [], dropped: 0 };
+  }
+  return collectCspReports({ method: request.method, contentType, body });
 }
 
 export default async (request: Request): Promise<Response> => {

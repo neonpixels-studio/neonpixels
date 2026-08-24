@@ -61,9 +61,13 @@ wired to a collector — a `Reporting-Endpoints` header plus `report-to` /
 records them to the function logs. The parsing/validation is isolated in
 [`.vitepress/csp/cspReportCollector.ts`](.vitepress/csp/cspReportCollector.ts)
 so it is unit-testable without the Netlify runtime. Once the logs show no
-`script-src` violations in production, `'unsafe-inline'` can be dropped from the
-enforcing `script-src` (see the `@todo` in `netlify.toml`). No environment
-variables or external services are required — the collector is same-origin.
+`script-src` violations **and no `csp-report-rejected` or `csp-report-unparsed`
+entries** over the observation window, `'unsafe-inline'` can be dropped from the
+enforcing `script-src` (see the `@todo` in `netlify.toml`). The two markers
+matter: a request rejected for an unmodelled content type or an unrecognized
+body shape would otherwise read as "no violations", so a clean run must show
+neither. No environment variables or external services are required — the
+collector is same-origin.
 
 ## Git hooks
 

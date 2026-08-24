@@ -140,7 +140,10 @@ describe("collectCspReports request guards", () => {
   it("truncates a long free-text field rather than logging it whole", () => {
     const result = collectCspReports(
       legacyRequest({
-        "csp-report": { "script-sample": "a".repeat(1000) },
+        "csp-report": {
+          "effective-directive": "script-src-elem",
+          "script-sample": "a".repeat(1000),
+        },
       }),
     );
     expect(result.violations[0].sample).toHaveLength(512);
@@ -151,7 +154,7 @@ describe("collectCspReports request guards", () => {
     const result = collectCspReports({
       method: "POST",
       contentType: LEGACY_CONTENT_TYPE,
-      body: `{"csp-report":{"line-number":1e999}}`,
+      body: `{"csp-report":{"effective-directive":"img-src","line-number":1e999}}`,
     });
     expect(result.violations[0].lineNumber).toBeNull();
   });
@@ -196,7 +199,12 @@ describe("collectCspReports legacy application/csp-report", () => {
 
   it("defaults disposition to report and missing numbers to null", () => {
     const result = collectCspReports(
-      legacyRequest({ "csp-report": { "blocked-uri": "eval" } }),
+      legacyRequest({
+        "csp-report": {
+          "effective-directive": "script-src-elem",
+          "blocked-uri": "eval",
+        },
+      }),
     );
     expect(result.violations[0].disposition).toBe("report");
     expect(result.violations[0].lineNumber).toBeNull();
@@ -205,6 +213,15 @@ describe("collectCspReports legacy application/csp-report", () => {
 
   it("flags an unrecognized body shape as dropped rather than a silent 204", () => {
     const result = collectCspReports(legacyRequest({ other: {} }));
+    expect(result.status).toBe(204);
+    expect(result.violations).toEqual([]);
+    expect(result.dropped).toBe(1);
+  });
+
+  it("drops a directive-less report instead of logging an empty violation", () => {
+    const result = collectCspReports(
+      legacyRequest({ "csp-report": { "blocked-uri": "inline" } }),
+    );
     expect(result.status).toBe(204);
     expect(result.violations).toEqual([]);
     expect(result.dropped).toBe(1);
@@ -248,6 +265,19 @@ describe("collectCspReports Reporting API application/reports+json", () => {
     expect(result.status).toBe(204);
     expect(result.violations).toEqual([]);
     expect(result.dropped).toBe(1);
+  });
+
+  it("caps the batch at 20 violations and reports the excess as dropped", () => {
+    // Minimal reports so 100 of them stay under the 64 KB body cap (which would
+    // otherwise 413 before the per-batch cap is reached).
+    const minimal = {
+      type: "csp-violation",
+      body: { effectiveDirective: "x" },
+    };
+    const batch = Array.from({ length: 100 }, () => minimal);
+    const result = collectCspReports(reportingApiRequest(batch));
+    expect(result.violations).toHaveLength(20);
+    expect(result.dropped).toBe(80);
   });
 
   it("counts non-object array entries as dropped, not silently discarded", () => {

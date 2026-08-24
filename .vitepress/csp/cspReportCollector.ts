@@ -24,21 +24,25 @@ const LEGACY_REPORT_KEY = "csp-report";
 const CSP_VIOLATION_TYPE = "csp-violation";
 const DEFAULT_DISPOSITION = "report";
 
-const HTTP_NO_CONTENT = 204;
-const HTTP_BAD_REQUEST = 400;
-const HTTP_METHOD_NOT_ALLOWED = 405;
+// Exported so the adapter shares one source of truth for the status contract
+// rather than re-declaring codes it has to keep in sync with this module.
+export const HTTP_NO_CONTENT = 204;
+export const HTTP_BAD_REQUEST = 400;
+export const HTTP_METHOD_NOT_ALLOWED = 405;
 export const HTTP_PAYLOAD_TOO_LARGE = 413;
 const HTTP_UNSUPPORTED_MEDIA_TYPE = 415;
 
 const CONTENT_TYPE_PARAMETER_SEPARATOR = ";";
 
-// The endpoint is public and unauthenticated, so bound both the request size and
-// each free-text field: a genuine violation report is small (well under 64 KB),
-// and capping the fields keeps a crafted multi-megabyte `script-sample` from
-// bloating the function logs the reports are gathered into. Exported so the
-// adapter can reject an oversize request by its Content-Length before buffering.
+// The endpoint is public and unauthenticated, so bound the request size, each
+// free-text field, and the batch count: a genuine violation report is small
+// (well under 64 KB) and a real page produces a handful of distinct violations,
+// so these caps keep a crafted payload from flooding the function logs the
+// reports are gathered into. MAX_BODY_BYTES is exported so the adapter can
+// reject an oversize request by its Content-Length before buffering.
 export const MAX_BODY_BYTES = 64 * 1024;
 const MAX_FIELD_LENGTH = 512;
+const MAX_VIOLATIONS_PER_REQUEST = 20;
 
 const textEncoder = new TextEncoder();
 
@@ -91,7 +95,9 @@ function readString(record: Record<string, unknown>, key: string) {
   if (typeof value !== "string") {
     return "";
   }
-  return value.slice(0, MAX_FIELD_LENGTH);
+  // Truncate on code points so the cap never leaves a lone surrogate that would
+  // serialize as a bare `\ud83d` escape in the log line.
+  return [...value].slice(0, MAX_FIELD_LENGTH).join("");
 }
 
 // Reject NaN/Infinity (both `typeof === "number"`, reachable via a crafted body
@@ -134,6 +140,25 @@ function normalizeReportingApiBody(
   };
 }
 
+// A real browser report always names the directive it breached, so a normalized
+// violation with no effective directive is noise (or forgery) and is not logged.
+function isUsableViolation(violation: CspViolation) {
+  return violation.effectiveDirective !== "";
+}
+
+// Drop directive-less candidates and cap the batch, folding both the unusable
+// and the over-cap excess into `dropped` so nothing is silently discarded.
+function finalizeViolations(
+  candidates: CspViolation[],
+  droppedBefore: number,
+): ParsedReports {
+  const usable = candidates.filter(isUsableViolation);
+  const violations = usable.slice(0, MAX_VIOLATIONS_PER_REQUEST);
+  const unusable = candidates.length - usable.length;
+  const overCap = usable.length - violations.length;
+  return { violations, dropped: droppedBefore + unusable + overCap };
+}
+
 function parseLegacyReports(payload: unknown): ParsedReports {
   const root = asRecord(payload);
   if (!root) {
@@ -143,7 +168,7 @@ function parseLegacyReports(payload: unknown): ParsedReports {
   if (!report) {
     return { violations: [], dropped: 1 };
   }
-  return { violations: [normalizeLegacyReport(report)], dropped: 0 };
+  return finalizeViolations([normalizeLegacyReport(report)], 0);
 }
 
 function isCspViolationEntry(entry: Record<string, unknown>) {
@@ -160,11 +185,11 @@ function parseReportingApiReports(payload: unknown): ParsedReports {
     .filter((entry): entry is Record<string, unknown> => entry !== null)
     .filter(isCspViolationEntry)
     .map((entry) => asRecord(entry.body));
-  const violations = bodies
+  const candidates = bodies
     .filter((body): body is Record<string, unknown> => body !== null)
     .map(normalizeReportingApiBody);
   const missingBodies = bodies.filter((body) => body === null).length;
-  return { violations, dropped: malformedEntries + missingBodies };
+  return finalizeViolations(candidates, malformedEntries + missingBodies);
 }
 
 type ReportParser = (_payload: unknown) => ParsedReports;

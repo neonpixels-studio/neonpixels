@@ -137,4 +137,33 @@ describe("csp-report Netlify function", () => {
     expect(response.headers.get("allow")).toBe("POST");
     expect(warn).not.toHaveBeenCalled();
   });
+
+  it("replies 405 for a non-POST even when it declares an oversize body", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const request = {
+      method: "GET",
+      headers: new Headers({ "content-length": String(64 * 1024 + 1) }),
+      text: vi.fn(),
+    } as unknown as Request;
+
+    const response = await cspReportHandler(request);
+
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("POST");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("replies 400 and logs a rejection when the body read fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const request = {
+      method: "POST",
+      headers: new Headers({ "content-type": LEGACY_CONTENT_TYPE }),
+      text: vi.fn().mockRejectedValue(new Error("aborted")),
+    } as unknown as Request;
+
+    const response = await cspReportHandler(request);
+
+    expect(response.status).toBe(400);
+    expect(warn.mock.calls[0][0]).toBe("csp-report-rejected");
+  });
 });
