@@ -115,11 +115,39 @@ describe("AppLayout", () => {
     },
   );
 
+  it("warns and moves no focus when the route exposes no landmark", async () => {
+    // Exercises the fail-loud guard so it can't be deleted or inverted with the
+    // suite still green: stub the view to a fragment with no <main>, so
+    // getElementById(MAIN_CONTENT_ID) misses.
+    pageState.isNotFound = false;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const wrapper = mount(AppLayout, {
+      attachTo: document.body,
+      global: {
+        stubs: { NeonPixelsPage: { template: "<div>no landmark here</div>" } },
+      },
+    });
+    await wrapper.get("a.skip-link").trigger("click");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(MAIN_CONTENT_ID));
+    expect(document.querySelector("main")).toBeNull();
+    warn.mockRestore();
+  });
+
   it("hides the skip link off-canvas until it is focused", () => {
     // Guards the reveal mechanism from silent deletion. position: fixed takes it
     // out of flow; the transform lifts it above the viewport, restored to
     // translateY(0) on :focus; z-index clears the sticky header (z-30) so the
     // revealed chip isn't buried; the reduced-motion rule drops the transition.
+    // The rules are `scoped`, so also assert the rendered link actually carries
+    // AppLayout's scope attribute — otherwise moving the link into a child SFC
+    // would leave these regexes matching text that no longer styles anything.
+    const wrapper = mount(AppLayout);
+    const scopeAttributes = Object.keys(
+      wrapper.get("a.skip-link").attributes(),
+    );
+    expect(scopeAttributes.some((name) => name.startsWith("data-v-"))).toBe(
+      true,
+    );
     const layoutSource = readFileSync(LAYOUT_PATH, "utf8");
     expect(layoutSource).toMatch(/\.skip-link\s*\{[^}]*position:\s*fixed/);
     expect(layoutSource).toMatch(
