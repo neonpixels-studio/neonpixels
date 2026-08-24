@@ -100,6 +100,17 @@ describe("writeReportOnlyHeaders", () => {
     expect(occurrences).toBe(1);
   });
 
+  it("keeps a single Reporting-Endpoints line across rebuilds", async () => {
+    writeOutFile("index.html", INLINE_SCRIPT);
+    writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+    await writeReportOnlyHeaders(outDir, netlifyConfigPath);
+    await writeReportOnlyHeaders(outDir, netlifyConfigPath);
+
+    const headers = readGeneratedHeaders();
+    expect(headers.split("Reporting-Endpoints:").length - 1).toBe(1);
+  });
+
   it("throws when a hand-written file already declares a Report-Only header", async () => {
     writeOutFile("index.html", INLINE_SCRIPT);
     writeOutFile(

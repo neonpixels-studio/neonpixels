@@ -193,6 +193,19 @@ describe("withReportingDirectives", () => {
     );
   });
 
+  it("replaces a pre-existing report-uri/report-to instead of duplicating it", () => {
+    const withReporting = withReportingDirectives(
+      "default-src 'self'; report-uri /old; report-to old-group",
+      "csp-endpoint",
+      "/csp-report",
+    );
+    expect(withReporting.match(/report-uri/g)).toHaveLength(1);
+    expect(withReporting.match(/report-to/g)).toHaveLength(1);
+    expect(withReporting).toContain("report-uri /csp-report");
+    expect(withReporting).not.toContain("/old");
+    expect(withReporting).not.toContain("old-group");
+  });
+
   it("leaves the existing policy directives untouched ahead of the report directives", () => {
     const withReporting = withReportingDirectives(
       "default-src 'self'; script-src 'self' 'sha256-AAA='",

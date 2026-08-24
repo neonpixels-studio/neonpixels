@@ -102,6 +102,35 @@ describe("collectCspReports request guards", () => {
     expect(result.violations).toEqual([]);
   });
 
+  it("rejects an over-sized body with 413 before parsing", () => {
+    const result = collectCspReports({
+      method: "POST",
+      contentType: LEGACY_CONTENT_TYPE,
+      body: "x".repeat(64 * 1024 + 1),
+    });
+    expect(result.status).toBe(413);
+    expect(result.violations).toEqual([]);
+  });
+
+  it("truncates a long free-text field rather than logging it whole", () => {
+    const result = collectCspReports(
+      legacyRequest({
+        "csp-report": { "script-sample": "a".repeat(1000) },
+      }),
+    );
+    expect(result.violations[0].sample).toHaveLength(512);
+  });
+
+  it("drops a non-finite line number to null", () => {
+    // `1e999` parses to Infinity (JSON.stringify would collapse it to null first).
+    const result = collectCspReports({
+      method: "POST",
+      contentType: LEGACY_CONTENT_TYPE,
+      body: `{"csp-report":{"line-number":1e999}}`,
+    });
+    expect(result.violations[0].lineNumber).toBeNull();
+  });
+
   it("accepts a lowercase method and a content type carrying a charset", () => {
     const result = collectCspReports({
       method: "post",
@@ -149,10 +178,11 @@ describe("collectCspReports legacy application/csp-report", () => {
     expect(result.violations[0].columnNumber).toBeNull();
   });
 
-  it("returns 204 with no violations when the csp-report key is missing", () => {
+  it("flags an unrecognized body shape as dropped rather than a silent 204", () => {
     const result = collectCspReports(legacyRequest({ other: {} }));
     expect(result.status).toBe(204);
     expect(result.violations).toEqual([]);
+    expect(result.dropped).toBe(1);
   });
 });
 
@@ -186,17 +216,26 @@ describe("collectCspReports Reporting API application/reports+json", () => {
     expect(result.violations[0].effectiveDirective).toBe("script-src-elem");
   });
 
-  it("skips a report whose body is missing or malformed", () => {
+  it("flags a csp-violation report with a missing body as dropped", () => {
     const result = collectCspReports(
       reportingApiRequest([{ type: "csp-violation" }]),
     );
     expect(result.status).toBe(204);
     expect(result.violations).toEqual([]);
+    expect(result.dropped).toBe(1);
   });
 
-  it("returns 204 with no violations when the payload is not an array", () => {
+  it("treats a legitimately empty batch as zero dropped", () => {
+    const result = collectCspReports(reportingApiRequest([]));
+    expect(result.status).toBe(204);
+    expect(result.violations).toEqual([]);
+    expect(result.dropped).toBe(0);
+  });
+
+  it("flags a non-array payload as dropped", () => {
     const result = collectCspReports(reportingApiRequest({ type: "x" }));
     expect(result.status).toBe(204);
     expect(result.violations).toEqual([]);
+    expect(result.dropped).toBe(1);
   });
 });

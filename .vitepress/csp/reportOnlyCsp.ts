@@ -195,13 +195,28 @@ export function buildReportOnlyCsp(
 // while `report-uri` is the deprecated directive Firefox and older engines still
 // require, pointing straight at the collector path. Both are appended so a
 // violation is gathered regardless of which the browser honours.
+const REPORTING_DIRECTIVE_NAMES = new Set([
+  REPORT_URI_DIRECTIVE,
+  REPORT_TO_DIRECTIVE,
+]);
+
+function isReportingDirective({ name }: Directive) {
+  return REPORTING_DIRECTIVE_NAMES.has(name.toLowerCase());
+}
+
 export function withReportingDirectives(
   csp: string,
   reportingGroup: string,
   collectorPath: string,
 ) {
+  // Drop any pre-existing report-uri/report-to first: a browser honours only the
+  // first occurrence of a repeated directive, so a duplicate would silently send
+  // reports somewhere other than the collector.
+  const withoutReporting = parseDirectives(csp)
+    .filter((directive) => !isReportingDirective(directive))
+    .map(formatDirective);
   return [
-    csp,
+    ...withoutReporting,
     `${REPORT_URI_DIRECTIVE} ${collectorPath}`,
     `${REPORT_TO_DIRECTIVE} ${reportingGroup}`,
   ].join(DIRECTIVE_SEPARATOR);
