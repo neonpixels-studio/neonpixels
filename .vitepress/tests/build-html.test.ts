@@ -653,16 +653,17 @@ describe("generated CSP Report-Only header", () => {
 });
 
 describe("shipped immutable asset caching", () => {
+  // Two-space indent is pinned literally: a blank line between the path and the
+  // header terminates the rule block for Netlify, so `\s+` (which matches \n)
+  // would green a malformed file that ships no Cache-Control at all.
   it("ships the hand-written /assets/* immutable Cache-Control rule", () => {
     expect(generatedHeaders).toMatch(
-      /^\/assets\/\*\n\s+Cache-Control: public, max-age=31536000, immutable$/m,
+      /^\/assets\/\*\n {2}Cache-Control: public, max-age=31536000, immutable$/m,
     );
   });
 
-  it("keeps the immutable rule above the generated Report-Only block so it composes", () => {
+  it("ships the immutable rule and the generated Report-Only block together", () => {
+    expect(generatedHeaders).toContain("/assets/*");
     expect(generatedHeaders).toContain(REPORT_ONLY_HEADER_NAME);
-    expect(generatedHeaders.indexOf("/assets/*")).toBeLessThan(
-      generatedHeaders.indexOf(REPORT_ONLY_HEADER_NAME),
-    );
   });
 });
