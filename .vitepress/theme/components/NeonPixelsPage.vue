@@ -8,6 +8,7 @@ import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "../brand";
 // already derive their glows.
 import { hexToRgba } from "../utils/color";
 import { PROJECTS } from "../data/projects";
+import { STATES_TOTAL, STATES_VISITED, STATE_VISITS } from "../data/states";
 import ProjectSection from "./ProjectSection.vue";
 
 // Zero-padded project total for the "NN / NN" counter, so the header tracks the
@@ -43,10 +44,22 @@ const TRIP_CELL_COLORS = {
   off: "#0e2831",
 };
 
-const TRIP_CELLS =
-  "on off off mid off on off off low off on off off mid off off off low on off off off mid off off on off off low off on off mid off off on off low off on off off mid off off off on off".split(
-    " ",
-  ) as (keyof typeof TRIP_CELL_COLORS)[];
+// Visited states cycle through the three lit brightnesses for the heatmap's
+// visited / partly / faint texture; unvisited states take the empty tint.
+// Derived from STATE_VISITS so the grid always renders STATES_TOTAL cells with
+// STATES_VISITED lit — the picture can't drift from the caption. Typing the
+// arrays (rather than casting the result) keeps a typo like "lo" a compile
+// error instead of a silent `background: undefined`, and `Exclude<_, "off">`
+// stops the empty tint being listed as a lit brightness.
+type TripCellState = keyof typeof TRIP_CELL_COLORS;
+const LIT_CELL_STATES: Exclude<TripCellState, "off">[] = ["on", "mid", "low"];
+
+const TRIP_CELLS: TripCellState[] = STATE_VISITS.map((visited, cellIndex) => {
+  if (!visited) {
+    return "off";
+  }
+  return LIT_CELL_STATES[cellIndex % LIT_CELL_STATES.length];
+});
 
 // Basin aggregates a mixed feed; opacity of the leading dot fades with recency
 // via descending alpha suffixes on the amber accent (88/55/33 hex). Only the
@@ -459,12 +472,20 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
             <div
               class="text-wanderist-label flex justify-between text-[11px] tracking-[0.16em] uppercase"
             >
-              <span>trip log</span><span>47 / 50 states</span>
+              <span>trip log</span
+              ><span>{{ STATES_VISITED }} / {{ STATES_TOTAL }} states</span>
             </div>
-            <div class="grid grid-cols-[repeat(16,minmax(0,1fr))] gap-1">
+            <!-- 10 columns lays the 50 state cells out as a clean 10x5 block;
+                 the taller card (vs. the old 3-row strip) is deliberate now that
+                 the grid holds all 50 states. -->
+            <div
+              class="grid grid-cols-[repeat(10,minmax(0,1fr))] gap-1"
+              data-testid="trip-log-heatmap"
+            >
               <div
                 v-for="(state, cellIndex) in TRIP_CELLS"
                 :key="cellIndex"
+                data-testid="trip-log-cell"
                 :style="{
                   aspectRatio: '1',
                   background: TRIP_CELL_COLORS[state],
