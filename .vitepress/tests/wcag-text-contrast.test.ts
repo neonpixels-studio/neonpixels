@@ -101,14 +101,65 @@ const LABELS_ON_PANELS = [
 const PANEL_BACKGROUND_CLASS = /(?:^|\s)bg-\[(#[0-9a-fA-F]{6})\](?=\s|$)/;
 const PANEL_BACKGROUND_STYLE = /background(?:-color)?:\s*(#[0-9a-fA-F]{6})/;
 
-// An ancestor that paints *a* background (any bg-* utility or background style)
-// but not in a form the extractors above understand — a token class, rgb()/
-// alpha/shorthand hex, a variant prefix. Climbing past it would silently assert
-// the label against a surface it doesn't render on, so fail loud instead.
-const PAINTS_BACKGROUND_CLASS = /(?:^|\s)(?:[a-z-]+:)?bg-\S/;
-const PAINTS_BACKGROUND_STYLE = /background(?:-color)?:/;
+// An ancestor that paints *a* background (a color bg-* utility, a `background`,
+// `background-color`, or `background-image` style) but not in a form the
+// extractors above understand — a token class, rgb()/alpha/shorthand hex, a
+// gradient/image, a variant prefix. Climbing past it would silently assert the
+// label against a surface it doesn't render on, so fail loud instead.
+const PAINTS_BACKGROUND_STYLE = /background(?:-color|-image)?:/;
 
-function readPanelBackground(element: Element): string | null {
+// Tailwind `bg-*` utilities that set background-size/-position/-repeat/
+// -attachment/-clip/-origin rather than a background color. An ancestor carrying
+// only these paints no contrast surface, so it must not count as a background
+// paint. (Gradient/image utilities like `bg-gradient-to-r` *do* paint and are
+// deliberately absent — they trip the fail-loud, same as an inline
+// `background-image`.)
+const NON_COLOR_BACKGROUND_UTILITIES = new Set([
+  "bg-auto",
+  "bg-cover",
+  "bg-contain",
+  "bg-bottom",
+  "bg-center",
+  "bg-left",
+  "bg-left-bottom",
+  "bg-left-top",
+  "bg-right",
+  "bg-right-bottom",
+  "bg-right-top",
+  "bg-top",
+  "bg-repeat",
+  "bg-no-repeat",
+  "bg-repeat-x",
+  "bg-repeat-y",
+  "bg-repeat-round",
+  "bg-repeat-space",
+  "bg-fixed",
+  "bg-local",
+  "bg-scroll",
+  "bg-clip-border",
+  "bg-clip-padding",
+  "bg-clip-content",
+  "bg-clip-text",
+  "bg-origin-border",
+  "bg-origin-padding",
+  "bg-origin-content",
+]);
+
+// A single leading variant prefix (`md:`, `hover:`) is stripped before the
+// denylist check, matching the single-prefix scope of the extractors above.
+function isColorBackgroundUtility(utility: string): boolean {
+  const base = utility.replace(/^[a-z-]+:/, "");
+  if (!base.startsWith("bg-")) {
+    return false;
+  }
+  return !NON_COLOR_BACKGROUND_UTILITIES.has(base);
+}
+
+function classesPaintColorBackground(classes: string): boolean {
+  return classes.split(/\s+/).some(isColorBackgroundUtility);
+}
+
+export function readPanelBackground(element: Element): string | null {
   const classes = element.getAttribute("class") ?? "";
   const style = element.getAttribute("style") ?? "";
   const hex =
@@ -118,8 +169,7 @@ function readPanelBackground(element: Element): string | null {
     return hex[1];
   }
   const paints =
-    PAINTS_BACKGROUND_STYLE.test(style) ||
-    PAINTS_BACKGROUND_CLASS.test(classes);
+    PAINTS_BACKGROUND_STYLE.test(style) || classesPaintColorBackground(classes);
   if (paints) {
     throw new Error(
       "wcag-text-contrast: panel paints a background this resolver can't read (token/alpha/rgb/variant) — teach readPanelBackground the new form",
@@ -155,4 +205,49 @@ describe("stat-block micro-labels meet WCAG AA", () => {
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     },
   );
+});
+
+function elementWith(attributes: { class?: string; style?: string }): Element {
+  const element = document.createElement("div");
+  if (attributes.class) {
+    element.setAttribute("class", attributes.class);
+  }
+  if (attributes.style) {
+    element.setAttribute("style", attributes.style);
+  }
+  return element;
+}
+
+const UNREADABLE_BACKGROUND_MESSAGE =
+  /paints a background this resolver can't read/;
+
+describe("readPanelBackground background detection", () => {
+  it("fails loud on an inline background-image it can't read", () => {
+    const element = elementWith({ style: "background-image: url(/hero.png);" });
+    expect(() => readPanelBackground(element)).toThrow(
+      UNREADABLE_BACKGROUND_MESSAGE,
+    );
+  });
+
+  it("fails loud on a gradient background-image utility", () => {
+    const element = elementWith({ class: "bg-gradient-to-r from-black" });
+    expect(() => readPanelBackground(element)).toThrow(
+      UNREADABLE_BACKGROUND_MESSAGE,
+    );
+  });
+
+  it.each(["bg-cover", "bg-center", "bg-clip-text"])(
+    "does not count non-color utility %s as a background paint",
+    (utility) => {
+      const element = elementWith({ class: `${utility} text-white` });
+      expect(readPanelBackground(element)).toBeNull();
+    },
+  );
+
+  it("still fails loud on a color bg-* utility it can't read", () => {
+    const element = elementWith({ class: "bg-slate-900" });
+    expect(() => readPanelBackground(element)).toThrow(
+      UNREADABLE_BACKGROUND_MESSAGE,
+    );
+  });
 });
