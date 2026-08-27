@@ -97,17 +97,22 @@ describe("muted text tokens meet WCAG AA", () => {
 // opaque background. Resolving it lets the arbitrary-hex scan below assert every
 // hardcoded `text-[#hex]` label against the surface it actually renders on,
 // instead of a hand-written allowlist. The resolver reads the opaque-background
-// idioms this codebase uses and, crucially, fails loud on any painted surface it
-// can't read (a new rgb()/variable/utility form) rather than silently asserting
-// against the wrong color — that failure is the signal to teach it the new form.
+// idioms this codebase uses in `class`/`style` (utilities, inline fills), and
+// fails loud on an unconditional painted surface it can't read (a new
+// rgb()/variable form) rather than silently asserting against the wrong color —
+// that failure is the signal to teach it the new form. Out of scope, since they
+// aren't on the element: fills declared in a component's scoped `<style>` block,
+// and conditional (`hover:`/`dark:`/`[&…]:`) fills that don't paint the default
+// state — those are climbed past.
 
 // One definition of a Tailwind class token's boundaries, shared by every
 // class matcher so they agree on what a variant and a word boundary are: a left
 // edge (start or whitespace), optional stacked standard variants (`dark:hover:`),
 // the token body, then a right edge. `variants: false` (default) refuses a
 // variant prefix — a fill read as unconditional must not actually be one.
-// Arbitrary-selector variants (`[&>a]:`) aren't standard segments; the
-// occurrence guards below catch a bracketed class those let slip.
+// Arbitrary-selector variants (`[&>a]:`) aren't standard segments, so a fill
+// behind one isn't matched — correctly, since it paints a child, not this
+// element, and is climbed past like any conditional fill.
 const STACKED_VARIANT_PREFIX = "(?:[a-z][\\w-]*:)*";
 function classTokenPattern(
   body: string,
@@ -125,9 +130,12 @@ const ARBITRARY_TEXT_VALUE = new RegExp(
   `(?:^|\\s)(${STACKED_VARIANT_PREFIX})text-\\[([^\\]]+)\\](\\/\\S+)?(?=\\s|$)`,
   "g",
 );
-// A bracket value that names a color (vs. a length like `15px`): the fail-loud
-// trigger on the foreground side, mirroring readLayerBackground.
-const COLOR_LIKE_VALUE = /^(?:#|--|rgb|hsl|oklch|oklab|lab|lch|color|var\()/i;
+// A bracket value that is a length/number/function rather than a color
+// (`text-[15px]`, `text-[calc(...)]`): skipped. Anything else in a `text-[…]` is
+// treated as a color and must read as a clean opaque hex or fail loud — the
+// fail-loud trigger on the foreground side, mirroring readLayerBackground.
+const NON_COLOR_TEXT_VALUE =
+  /^-?[\d.]+(?:px|rem|em|%|vw|vh|vmin|vmax|ch|ex)?$|^(?:calc|clamp|min|max)\(/i;
 const OPAQUE_TEXT_HEX = /^#[0-9a-fA-F]{6}$/;
 
 // Opaque `bg-[#rrggbb]` fill. Tail-anchored so an opacity modifier
@@ -197,15 +205,6 @@ const RGBA_VALUE =
 
 // Keywords that paint nothing at all (bare, no hex present) — climbed past.
 const NON_PAINTING_VALUE = /^(?:none|inherit|initial|unset|revert)$/i;
-
-// Raw occurrences of an arbitrary bracket utility, to fail loud when a variant
-// form (`[&>a]:`, `!important`) hides one from the matchers above.
-const ARBITRARY_TEXT_LITERAL = /text-\[/g;
-const ARBITRARY_BACKGROUND_LITERAL = /bg-\[/g;
-
-function occurrenceCount(haystack: string, pattern: RegExp): number {
-  return (haystack.match(pattern) ?? []).length;
-}
 
 // A translucent layer to composite: an opaque base color and its alpha (0–1).
 type Overlay = { base: string; alpha: number };
@@ -302,12 +301,21 @@ function layerFromValue(value: string): ResolvedLayer {
     const alpha = rgba[4] === undefined ? 1 : parseAlpha(rgba[4]);
     return alpha >= 1 ? base : { base, alpha };
   }
-  if (/\btransparent\b/i.test(trimmed) || NON_PAINTING_VALUE.test(trimmed)) {
-    return null;
+  // No readable opaque stop. Ignoring `transparent`, if a color the resolver
+  // can't read still remains (a var()/hsl()/named paint, alone or as another
+  // gradient stop), fail loud; otherwise the value only paints transparent/
+  // nothing, so climb.
+  const readableColorRemains = trimmed
+    .replace(/\btransparent\b/gi, "")
+    .match(
+      /#[0-9a-fA-F]+|\b(?:rgb|hsl|oklch|oklab|lab|lch|color|var)\s*\(|--\w/i,
+    );
+  if (readableColorRemains) {
+    throw new Error(
+      `wcag-text-contrast: background "${value}" is opaque but unreadable (rgb/hsl/var/named) — teach readLayerBackground the new form`,
+    );
   }
-  throw new Error(
-    `wcag-text-contrast: background "${value}" is opaque but unreadable (rgb/hsl/var/named) — teach readLayerBackground the new form`,
-  );
+  return null;
 }
 
 type RgbChannels = { red: number; green: number; blue: number };
@@ -371,43 +379,45 @@ function readLayerBackground(element: Element): ResolvedLayer {
   return classBackground(classes);
 }
 
+// A token's variant prefix marks it conditional (`hover:`, `dark:`) — it doesn't
+// paint the default surface, so it's climbed past rather than read or throwing.
+const VARIANT_PREFIXED = /(?:^|\s)[a-z][\w-]*:/;
+
 // Resolve an element's background from its `bg-*` classes. Every token is
 // considered, so a non-color utility (`bg-no-repeat`) never masks a real fill
-// (`bg-panel`) that follows it. Token fills win over a same-element overlay (a
-// `hover:` state doesn't change the default surface); a translucent overlay
-// composites; a class that paints something the resolver can't read fails loud.
+// (`bg-panel`) that follows it. An unconditional token fill wins over a
+// same-element overlay (a `hover:` state doesn't change the default surface); a
+// translucent overlay composites; an unconditional fill the resolver can't read
+// (an unmapped color) fails loud. Conditional fills are climbed past.
 function classBackground(classes: string): ResolvedLayer {
   const tokens = classes.match(ALL_BACKGROUND_TOKENS) ?? [];
-  for (const token of tokens) {
-    const name = backgroundTokenName(token);
-    const hex = name ? tokenHex(name) : null;
-    if (hex) {
-      return hex;
-    }
+  const tokenFill = tokens
+    .map((token) =>
+      VARIANT_PREFIXED.test(token) ? null : backgroundTokenName(token),
+    )
+    .map((name) => (name ? tokenHex(name) : null))
+    .find((hex) => hex !== null);
+  if (tokenFill) {
+    return tokenFill;
   }
   const overlay = classOverlay(classes);
   if (overlay) {
     return overlay;
   }
-  if (TRANSLUCENT_BACKGROUND_CLASS.test(classes)) {
-    return null;
-  }
+  // An unconditional fill that's neither a resolvable color, a non-color utility,
+  // nor a translucent overlay is a surface the resolver can't read.
   const unreadable = tokens.filter(
-    (token) => !NON_COLOR_BACKGROUND_CLASS.test(token),
+    (token) =>
+      !VARIANT_PREFIXED.test(token) &&
+      !NON_COLOR_BACKGROUND_CLASS.test(token) &&
+      !TRANSLUCENT_BACKGROUND_CLASS.test(token),
   );
-  if (!unreadable.length) {
-    // A `bg-[…]` an arbitrary-selector variant or `!important` kept out of the
-    // token list still paints; don't let it climb silently.
-    if (occurrenceCount(classes, ARBITRARY_BACKGROUND_LITERAL) > 0) {
-      throw new Error(
-        "wcag-text-contrast: a bg-[…] fill escaped the resolver (arbitrary-selector variant or !important) — teach readLayerBackground the new form",
-      );
-    }
-    return null;
+  if (unreadable.length) {
+    throw new Error(
+      `wcag-text-contrast: background class "${unreadable[0].trim()}" this resolver can't read (unmapped color) — teach readLayerBackground the new form`,
+    );
   }
-  throw new Error(
-    `wcag-text-contrast: background class "${unreadable[0].trim()}" this resolver can't read (unmapped color/variant/arbitrary-selector) — teach readLayerBackground the new form`,
-  );
+  return null;
 }
 
 // Climb ancestors to the surface the element renders on: the nearest opaque
@@ -447,39 +457,30 @@ function resolvedBackgroundOf(element: Element): string {
   return climbForBackground(element) ?? pageBackgroundHex();
 }
 
-// The opaque hex ink of an arbitrary `text-[...]` class, or null when the
-// element carries no arbitrary text color or a non-color one (`text-[15px]`).
-// Fails loud on a color it can't read (a shorthand hex, an opacity modifier, a
-// variant prefix, an rgb()/var() ink), or on an arbitrary text value a variant
-// form hid from the matcher, so the scan can't silently skip a failing label.
+// The unconditional opaque hex ink of an arbitrary `text-[#hex]` class, or null
+// when the element sets no such color in its default state. Conditional inks (a
+// `dark:`/`hover:` variant, or a `[&…]:` arbitrary-selector one that targets
+// something else) are out of scope, like conditional backgrounds — the resolver
+// models the default state only. An *unconditional* ink that isn't a clean
+// opaque hex (a shorthand, an opacity modifier, an rgb()/var()/named color)
+// fails loud so the scan can't silently skip a failing label.
 function foregroundHexOf(element: Element): string | null {
   const classes = element.getAttribute("class") ?? "";
   // An element often carries a size `text-[15px]` alongside the color, so scan
-  // every arbitrary text value and keep the color one rather than the first.
-  const matches = [...classes.matchAll(ARBITRARY_TEXT_VALUE)];
-  if (matches.length < occurrenceCount(classes, ARBITRARY_TEXT_LITERAL)) {
-    throw new Error(
-      "wcag-text-contrast: a text-[…] color escaped the scan (arbitrary-selector variant or !important) — teach foregroundHexOf the new form",
-    );
-  }
-  const colorMatches = matches.filter((match) =>
-    COLOR_LIKE_VALUE.test(match[2]),
-  );
-  if (!colorMatches.length) {
-    return null;
-  }
-  // Every color ink must be readable: a conditional or non-hex one (e.g. a
-  // `hover:text-[#5a5a5a]` beside the base) can't silently ride along.
-  const unreadable = colorMatches.find(
+  // every arbitrary text value and keep the unconditional color inks.
+  const colorInks = [...classes.matchAll(ARBITRARY_TEXT_VALUE)].filter(
     ([, variant, value, opacity]) =>
-      !OPAQUE_TEXT_HEX.test(value) || variant || opacity,
+      !variant && !opacity && !NON_COLOR_TEXT_VALUE.test(value),
+  );
+  const unreadable = colorInks.find(
+    ([, , value]) => !OPAQUE_TEXT_HEX.test(value),
   );
   if (unreadable) {
     throw new Error(
-      `wcag-text-contrast: text color "${unreadable[0].trim()}" is a color this scan can't read (shorthand/alpha/variant/rgb/var) — teach foregroundHexOf the new form`,
+      `wcag-text-contrast: text color "${unreadable[0].trim()}" is a color this scan can't read (shorthand/rgb/var/named) — teach foregroundHexOf the new form`,
     );
   }
-  return colorMatches[0][2];
+  return colorInks.length ? colorInks[0][2] : null;
 }
 
 // Per-project stat-block micro-labels (issue #38 lifted the two hardcoded
@@ -708,11 +709,18 @@ describe("background resolver", () => {
     expect(() => resolvedBackgroundOf(leaf)).toThrow(/opaque but unreadable/);
   });
 
-  it("fails loud on a bg-[…] fill an arbitrary-selector variant hides", () => {
+  it("climbs past a child-targeting arbitrary fill (paints no default surface)", () => {
     const leaf = fixtureLeaf(
       '<div class="[&>a]:bg-[#000000]"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
     );
-    expect(() => resolvedBackgroundOf(leaf)).toThrow(/escaped the resolver/);
+    expect(resolvedBackgroundOf(leaf)).toBe(pageBackgroundHex());
+  });
+
+  it("climbs past a conditional fill that paints no default surface", () => {
+    const leaf = fixtureLeaf(
+      '<div class="hover:bg-panel"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe(pageBackgroundHex());
   });
 
   it("fails loud on an unmapped opaque color fill", () => {
@@ -734,18 +742,23 @@ describe("background resolver", () => {
     expect(() => foregroundHexOf(leaf)).toThrow(/can't read/);
   });
 
-  it("fails loud on a variant-prefixed text color", () => {
-    const leaf = fixtureLeaf(
-      '<span data-leaf class="dark:text-[#333333]">x</span>',
-    );
+  it("fails loud on a named arbitrary text color", () => {
+    const leaf = fixtureLeaf('<span data-leaf class="text-[red]">x</span>');
     expect(() => foregroundHexOf(leaf)).toThrow(/can't read/);
   });
 
-  it("fails loud on a text-[…] color an arbitrary-selector variant hides", () => {
+  it("skips a conditional text color (out of scope, default state only)", () => {
+    const leaf = fixtureLeaf(
+      '<span data-leaf class="dark:text-[#333333]">x</span>',
+    );
+    expect(foregroundHexOf(leaf)).toBeNull();
+  });
+
+  it("skips a child-targeting arbitrary text color", () => {
     const leaf = fixtureLeaf(
       '<span data-leaf class="[&>a]:text-[#333333]">x</span>',
     );
-    expect(() => foregroundHexOf(leaf)).toThrow(/escaped the scan/);
+    expect(foregroundHexOf(leaf)).toBeNull();
   });
 
   it("ignores a non-color arbitrary text value", () => {
