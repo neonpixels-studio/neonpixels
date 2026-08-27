@@ -108,25 +108,25 @@ const PANEL_BACKGROUND_STYLE = /background(?:-color)?:\s*(#[0-9a-fA-F]{6})/;
 // label against a surface it doesn't render on, so fail loud instead.
 const PAINTS_BACKGROUND_STYLE = /background(?:-color|-image)?:/;
 
-// Tailwind `bg-*` utilities that set background-size/-position/-repeat/
-// -attachment/-clip/-origin rather than a background color. An ancestor carrying
-// only these paints no contrast surface, so it must not count as a background
-// paint. (Gradient/image utilities like `bg-gradient-to-r` *do* paint and are
-// deliberately absent — they trip the fail-loud, same as an inline
+// Exact Tailwind (v4) `bg-*` utilities that set background-size/-position/
+// -repeat/-attachment or an empty/transparent surface rather than a color. An
+// ancestor carrying only these paints no contrast surface, so it must not count
+// as a background paint. (Gradient/image utilities like `bg-linear-to-r` *do*
+// paint and are deliberately absent — they trip the fail-loud, same as an inline
 // `background-image`.)
 const NON_COLOR_BACKGROUND_UTILITIES = new Set([
   "bg-auto",
   "bg-cover",
   "bg-contain",
-  "bg-bottom",
-  "bg-center",
-  "bg-left",
-  "bg-left-bottom",
-  "bg-left-top",
-  "bg-right",
-  "bg-right-bottom",
-  "bg-right-top",
   "bg-top",
+  "bg-top-left",
+  "bg-top-right",
+  "bg-bottom",
+  "bg-bottom-left",
+  "bg-bottom-right",
+  "bg-left",
+  "bg-right",
+  "bg-center",
   "bg-repeat",
   "bg-no-repeat",
   "bg-repeat-x",
@@ -136,30 +136,35 @@ const NON_COLOR_BACKGROUND_UTILITIES = new Set([
   "bg-fixed",
   "bg-local",
   "bg-scroll",
-  "bg-clip-border",
-  "bg-clip-padding",
-  "bg-clip-content",
-  "bg-clip-text",
-  "bg-origin-border",
-  "bg-origin-padding",
-  "bg-origin-content",
+  "bg-none",
+  "bg-transparent",
 ]);
 
-// A single leading variant prefix (`md:`, `hover:`) is stripped before the
-// denylist check, matching the single-prefix scope of the extractors above.
+// Non-color `bg-*` families whose every value is a keyword, never a color:
+// background-clip, background-origin, background-blend-mode.
+const NON_COLOR_BACKGROUND_PREFIXES = ["bg-clip-", "bg-origin-", "bg-blend-"];
+
+// Strip every leading variant segment (`md:`, `2xl:`, stacked `md:hover:`) so the
+// base utility is classified, stopping at `[` so an arbitrary value's own colon
+// (`bg-[url(data:...)]`) isn't eaten.
 function isColorBackgroundUtility(utility: string): boolean {
-  const base = utility.replace(/^[a-z-]+:/, "");
+  const base = utility.replace(/^(?:[^\s:[\]]+:)+/, "");
   if (!base.startsWith("bg-")) {
     return false;
   }
-  return !NON_COLOR_BACKGROUND_UTILITIES.has(base);
+  if (NON_COLOR_BACKGROUND_UTILITIES.has(base)) {
+    return false;
+  }
+  return !NON_COLOR_BACKGROUND_PREFIXES.some((prefix) =>
+    base.startsWith(prefix),
+  );
 }
 
 function classesPaintColorBackground(classes: string): boolean {
   return classes.split(/\s+/).some(isColorBackgroundUtility);
 }
 
-export function readPanelBackground(element: Element): string | null {
+function readPanelBackground(element: Element): string | null {
   const classes = element.getAttribute("class") ?? "";
   const style = element.getAttribute("style") ?? "";
   const hex =
@@ -230,7 +235,7 @@ describe("readPanelBackground background detection", () => {
   });
 
   it("fails loud on a gradient background-image utility", () => {
-    const element = elementWith({ class: "bg-gradient-to-r from-black" });
+    const element = elementWith({ class: "bg-linear-to-r from-black" });
     expect(() => readPanelBackground(element)).toThrow(
       UNREADABLE_BACKGROUND_MESSAGE,
     );
@@ -244,10 +249,35 @@ describe("readPanelBackground background detection", () => {
     },
   );
 
+  it("ignores a variant-prefixed non-color utility", () => {
+    const element = elementWith({ class: "md:bg-cover" });
+    expect(readPanelBackground(element)).toBeNull();
+  });
+
+  it.each(["md:bg-slate-900", "2xl:bg-slate-900"])(
+    "still fails loud on a variant-prefixed color utility %s",
+    (utility) => {
+      const element = elementWith({ class: utility });
+      expect(() => readPanelBackground(element)).toThrow(
+        UNREADABLE_BACKGROUND_MESSAGE,
+      );
+    },
+  );
+
   it("still fails loud on a color bg-* utility it can't read", () => {
     const element = elementWith({ class: "bg-slate-900" });
     expect(() => readPanelBackground(element)).toThrow(
       UNREADABLE_BACKGROUND_MESSAGE,
     );
+  });
+
+  it("reads an opaque bg-[#rrggbb] utility without failing loud", () => {
+    const element = elementWith({ class: "bg-[#1a1a1a]" });
+    expect(readPanelBackground(element)).toBe("#1a1a1a");
+  });
+
+  it("reads an inline background-color hex without failing loud", () => {
+    const element = elementWith({ style: "background-color: #1a1a1a;" });
+    expect(readPanelBackground(element)).toBe("#1a1a1a");
   });
 });
