@@ -101,74 +101,138 @@ describe("muted text tokens meet WCAG AA", () => {
 // can't read (a new rgb()/variable/utility form) rather than silently asserting
 // against the wrong color — that failure is the signal to teach it the new form.
 
-// An arbitrary Tailwind text color: `text-[<value>]`, with an optional variant
+// One definition of a Tailwind class token's boundaries, shared by every
+// class matcher so they agree on what a variant and a word boundary are: a left
+// edge (start or whitespace), optional stacked standard variants (`dark:hover:`),
+// the token body, then a right edge. `variants: false` (default) refuses a
+// variant prefix — a fill read as unconditional must not actually be one.
+// Arbitrary-selector variants (`[&>a]:`) aren't standard segments; the
+// occurrence guards below catch a bracketed class those let slip.
+const STACKED_VARIANT_PREFIX = "(?:[a-z][\\w-]*:)*";
+function classTokenPattern(
+  body: string,
+  { variants = false, flags = "" }: { variants?: boolean; flags?: string } = {},
+): RegExp {
+  const prefix = variants ? STACKED_VARIANT_PREFIX : "";
+  return new RegExp(`(?:^|\\s)${prefix}${body}(?=\\s|$)`, flags);
+}
+
+// An arbitrary Tailwind text color: `text-[<value>]`, with any stacked variant
 // prefix and opacity modifier captured so the scan can tell an opaque hex ink
 // apart from a conditional or translucent one, and from a non-color arbitrary
 // value like `text-[15px]`.
-const ARBITRARY_TEXT_VALUE =
-  /(?:^|\s)((?:[a-z-]+:)?)text-\[([^\]]+)\](\/\S+)?(?=\s|$)/g;
+const ARBITRARY_TEXT_VALUE = new RegExp(
+  `(?:^|\\s)(${STACKED_VARIANT_PREFIX})text-\\[([^\\]]+)\\](\\/\\S+)?(?=\\s|$)`,
+  "g",
+);
 // A bracket value that names a color (vs. a length like `15px`): the fail-loud
 // trigger on the foreground side, mirroring readLayerBackground.
-const COLOR_LIKE_VALUE = /^(?:#|rgb|hsl|oklch|oklab|lab|lch|color|var\()/i;
+const COLOR_LIKE_VALUE = /^(?:#|--|rgb|hsl|oklch|oklab|lab|lch|color|var\()/i;
 const OPAQUE_TEXT_HEX = /^#[0-9a-fA-F]{6}$/;
 
 // Opaque `bg-[#rrggbb]` fill. Tail-anchored so an opacity modifier
 // (`bg-[#150610]/60`) isn't read as opaque, unprefixed so a responsive
 // `md:bg-[...]` (conditional above a breakpoint) isn't asserted unconditionally.
-const OPAQUE_BACKGROUND_CLASS = /(?:^|\s)bg-\[(#[0-9a-fA-F]{6})\](?=\s|$)/;
+const OPAQUE_BACKGROUND_CLASS = classTokenPattern("bg-\\[(#[0-9a-fA-F]{6})\\]");
 
 // A theme-token fill: `bg-panel`, `bg-bg`, … → the `--color-<name>` variable.
 // Unprefixed and bracket/slash-free so arbitrary and opacity-modified fills fall
 // to their own branches, and a variant-prefixed token stays conditional.
-const TOKEN_BACKGROUND_CLASS = /(?:^|\s)bg-([a-z][a-z-]*)(?=\s|$)/;
+const TOKEN_BACKGROUND_CLASS = classTokenPattern("bg-([a-z][a-z-]*)");
 
-// A background carried at reduced opacity — the surface behind shows through, so
-// it does not define the contrast surface and the resolver climbs past it:
-// `bg-white/[0.02]`, `bg-[#150610]/60`, `bg-lime/40`.
-const TRANSLUCENT_BACKGROUND_CLASS = /(?:^|\s)(?:[a-z-]+:)?bg-\S*\/(?:\[|\d)/;
+// A background carried at reduced opacity: `bg-white/[0.02]`, `bg-[#150610]/60`,
+// `bg-lime/40`. Composited over the surface behind (or, when its base color
+// can't be resolved, climbed past).
+const CLASS_OVERLAY = new RegExp(
+  `(?:^|\\s)bg-(?:\\[(#[0-9a-fA-F]{6})\\]|([a-z][a-z-]*))\\/(?:\\[([\\d.]+)\\]|(\\d{1,3}))(?=\\s|$)`,
+);
+const TRANSLUCENT_BACKGROUND_CLASS = classTokenPattern(
+  "bg-\\S*\\/(?:\\[|\\d)",
+  {
+    variants: true,
+  },
+);
 
-// `bg-*` utilities that paint no surface color — the element clips its
-// background to the text (a gradient wordmark), or the utility governs
-// image/position/repeat/attachment/reset rather than a fill. These are climbed
-// past, not read as a surface and not treated as an unreadable fill.
-const NON_COLOR_BACKGROUND_CLASS =
-  /(?:^|\s)(?:[a-z-]+:)?bg-(?:clip-\w+|origin-\w+|blend-\w+|(?:fixed|local|scroll)|(?:cover|contain|auto)|(?:repeat(?:-x|-y|-round|-space)?|no-repeat)|(?:top|bottom|left|right|center)|(?:none|transparent|current|inherit))(?=\s|$)/;
+// `bg-*` utilities that paint no surface color — the utility governs
+// image/position/repeat/attachment/reset rather than a fill. Climbed past, not
+// read as a surface and not treated as an unreadable fill.
+const NON_COLOR_BACKGROUND_CLASS = classTokenPattern(
+  "bg-(?:clip-\\w+|origin-\\w+|blend-\\w+|fixed|local|scroll|cover|contain|auto|repeat(?:-x|-y|-round|-space)?|no-repeat|top|bottom|left|right|center|none|transparent|current|inherit)",
+  { variants: true },
+);
 
 // Any `bg-*` utility (any variant prefix) — the fail-loud trigger for a painted
 // class the branches above didn't resolve (an unmapped color fill).
-const PAINTS_BACKGROUND_CLASS = /(?:^|\s)(?:[a-z-]+:)?bg-\S/;
+const PAINTS_BACKGROUND_CLASS = classTokenPattern("bg-\\S", { variants: true });
 
-// The value of an inline `background`/`background-color`/`background-image`
-// declaration. `background-image` counts because it can be a real fill (the
-// NotFound CTA), unless the element clips it to its text (handled separately).
-// The `-color|-image`-only alternation keeps `background-size`/`-position` out.
+// An element that clips its background to its text: the background is foreground
+// ink, not a contrast surface, so climb to what the text actually sits on.
+const CLIPS_TO_TEXT = classTokenPattern("bg-clip-text", { variants: true });
+
+// The property and value of an inline `background`/`background-color`/
+// `background-image` declaration. `background-image` counts because it can be a
+// real fill (the NotFound CTA), unless the element clips it to its text (handled
+// separately). The `-color|-image`-only alternation keeps `background-size`/
+// `-position` out.
 const BACKGROUND_DECLARATION =
-  /(?:^|;)\s*background(?:-color|-image)?\s*:\s*([^;]*)/gi;
+  /(?:^|;)\s*(background(?:-color|-image)?)\s*:\s*([^;]*)/gi;
 
 // A fully opaque six-digit hex stop, rejecting an eight-digit `#rrggbbaa`
 // (alpha) via the trailing-hex guard.
 const OPAQUE_HEX_STOP = /#[0-9a-fA-F]{6}(?![0-9a-fA-F])/g;
 
-// Forms that mean a background value is not a fully opaque surface, so the
-// resolver climbs past it: `#rrggbbaa`, `rgba()`, `hsla()`, or a `transparent`
-// stop (bare, or fading a gradient over the surface behind).
-const TRANSLUCENT_BACKGROUND_VALUE =
-  /#[0-9a-fA-F]{8}\b|rgba\(|hsla\(|\btransparent\b/;
+// An eight-digit `#rrggbbaa` (base + alpha) as a whole inline value.
+const HEX_WITH_ALPHA = /^#([0-9a-fA-F]{6})([0-9a-fA-F]{2})$/;
+
+// The first `rgb()`/`rgba()` in a value, capturing channels and optional alpha.
+const RGBA_VALUE =
+  /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+%?))?\s*\)/i;
 
 // Keywords that paint nothing at all (bare, no hex present) — climbed past.
 const NON_PAINTING_VALUE = /^(?:none|inherit|initial|unset|revert)$/i;
 
-// An element that clips its background to its text: the background is foreground
-// ink, not a contrast surface, so climb to what the text actually sits on.
-const CLIPS_TO_TEXT = /(?:^|\s)bg-clip-text(?=\s|$)/;
+// Raw occurrences of an arbitrary bracket utility, to fail loud when a variant
+// form (`[&>a]:`, `!important`) hides one from the matchers above.
+const ARBITRARY_TEXT_LITERAL = /text-\[/g;
+const ARBITRARY_BACKGROUND_LITERAL = /bg-\[/g;
 
+function occurrenceCount(haystack: string, pattern: RegExp): number {
+  return (haystack.match(pattern) ?? []).length;
+}
+
+// A translucent layer to composite: an opaque base color and its alpha (0–1).
+type Overlay = { base: string; alpha: number };
+// What one element's background contributes: an opaque hex, a translucent
+// overlay to composite over the surface behind, or null (paints nothing / climb).
+type ResolvedLayer = string | Overlay | null;
+
+// `background-image` (and the `background` shorthand) paint over
+// `background-color` regardless of source order, so prefer the last of those and
+// fall back to `background-color` only when no image/shorthand layer exists.
 function lastBackgroundValue(style: string): string | null {
   const declarations = [...style.matchAll(BACKGROUND_DECLARATION)];
   if (!declarations.length) {
     return null;
   }
-  // Last declaration wins per the cascade.
-  return declarations[declarations.length - 1][1].trim();
+  const painting = declarations.filter(
+    ([, property]) => !/-color$/i.test(property),
+  );
+  const chosen = (painting.length ? painting : declarations).at(-1);
+  return chosen ? chosen[2].trim() : null;
+}
+
+function namedColorHex(name: string): string | null {
+  const values = tokenValues(`--color-${name}`);
+  if (values.length) {
+    return lightestHex(values);
+  }
+  if (name === "white") {
+    return "#ffffff";
+  }
+  if (name === "black") {
+    return "#000000";
+  }
+  return null;
 }
 
 function tokenBackgroundHex(classes: string): string | null {
@@ -183,19 +247,59 @@ function tokenBackgroundHex(classes: string): string | null {
   return lightestHex(values);
 }
 
-// The opaque hex a background value resolves to, null for a value to climb past
-// (translucent, transparent, or non-painting), or a throw when it is opaque in a
-// form the resolver can't read. Translucency is checked before the hex stops so
-// a gradient fading to `transparent` over a hex stop still climbs.
-function opaqueHexFromValue(value: string): string | null {
-  if (TRANSLUCENT_BACKGROUND_VALUE.test(value)) {
+function parseAlpha(raw: string): number {
+  return raw.endsWith("%") ? parseFloat(raw) / 100 : parseFloat(raw);
+}
+
+// A `bg-…/opacity` fill as an overlay, or null when its base color can't be
+// resolved (climb and approximate rather than assert on a guess).
+function classOverlay(classes: string): Overlay | null {
+  const match = classes.match(CLASS_OVERLAY);
+  if (!match) {
     return null;
   }
-  const opaqueStops = value.match(OPAQUE_HEX_STOP);
+  const [, hex, name, bracketOpacity, numericOpacity] = match;
+  const base = hex ?? namedColorHex(name);
+  if (!base) {
+    return null;
+  }
+  const alpha = bracketOpacity
+    ? parseFloat(bracketOpacity)
+    : parseInt(numericOpacity, 10) / 100;
+  return { base, alpha };
+}
+
+// What an inline background value contributes. Alpha forms become overlays;
+// `transparent` (bare or a gradient stop) and non-painting keywords climb; a
+// gradient's opaque stops resolve to the lightest (worst-case) surface; anything
+// else opaque but unreadable fails loud.
+function layerFromValue(value: string): ResolvedLayer {
+  const trimmed = value.trim();
+  const withAlpha = trimmed.match(HEX_WITH_ALPHA);
+  if (withAlpha) {
+    return {
+      base: `#${withAlpha[1]}`,
+      alpha: parseInt(withAlpha[2], 16) / 255,
+    };
+  }
+  const rgba = trimmed.match(RGBA_VALUE);
+  if (rgba) {
+    const base = channelsToHex({
+      red: Number(rgba[1]),
+      green: Number(rgba[2]),
+      blue: Number(rgba[3]),
+    });
+    const alpha = rgba[4] === undefined ? 1 : parseAlpha(rgba[4]);
+    return alpha >= 1 ? base : { base, alpha };
+  }
+  if (/\btransparent\b/i.test(trimmed)) {
+    return null;
+  }
+  const opaqueStops = trimmed.match(OPAQUE_HEX_STOP);
   if (opaqueStops) {
     return lightestHex(opaqueStops);
   }
-  if (NON_PAINTING_VALUE.test(value.trim())) {
+  if (NON_PAINTING_VALUE.test(trimmed)) {
     return null;
   }
   throw new Error(
@@ -203,11 +307,46 @@ function opaqueHexFromValue(value: string): string | null {
   );
 }
 
-// The opaque background this one element paints, or null when it paints nothing
-// opaque (transparent, or a translucent overlay to climb past). Throws when an
+type RgbChannels = { red: number; green: number; blue: number };
+
+function hexToChannels(hex: string): RgbChannels {
+  const digits = hex.replace("#", "");
+  return {
+    red: parseInt(digits.slice(0, 2), 16),
+    green: parseInt(digits.slice(2, 4), 16),
+    blue: parseInt(digits.slice(4, 6), 16),
+  };
+}
+
+function channelsToHex({ red, green, blue }: RgbChannels): string {
+  const toHex = (channel: number) =>
+    Math.round(channel).toString(16).padStart(2, "0");
+  return `#${toHex(red)}${toHex(green)}${toHex(blue)}`;
+}
+
+// Alpha-composite an overlay over the surface behind it, so a translucent layer
+// is measured against the color it actually produces rather than dropped.
+function compositeOver(overlay: Overlay, backdrop: string): string {
+  const top = hexToChannels(overlay.base);
+  const under = hexToChannels(backdrop);
+  const mix = (a: number, b: number) =>
+    a * overlay.alpha + b * (1 - overlay.alpha);
+  return channelsToHex({
+    red: mix(top.red, under.red),
+    green: mix(top.green, under.green),
+    blue: mix(top.blue, under.blue),
+  });
+}
+
+function pageBackgroundHex(): string {
+  return lightestHex(readTokenValues(PAGE_BACKGROUND_TOKEN));
+}
+
+// What one element's background contributes: an opaque hex, a translucent
+// overlay to composite, or null (paints nothing / climb). Throws when the
 // element paints a background the resolver can't read, so a new idiom fails loud
 // instead of asserting against the wrong surface.
-function readLayerBackground(element: Element): string | null {
+function readLayerBackground(element: Element): ResolvedLayer {
   // getAttribute (not `.className`) keeps SVG ancestors, whose className is an
   // SVGAnimatedString, from throwing.
   const classes = element.getAttribute("class") ?? "";
@@ -215,24 +354,29 @@ function readLayerBackground(element: Element): string | null {
   if (CLIPS_TO_TEXT.test(classes)) {
     return null;
   }
-  const style = element.getAttribute("style") ?? "";
-  // Inline styles win the cascade, so an inline background decides this layer
-  // outright — a translucent one climbs past (null) rather than falling through
-  // to a class fill it overrides.
-  const inlineBackground = lastBackgroundValue(style);
+  // Inline styles win the cascade, so an inline background decides this layer.
+  const inlineBackground = lastBackgroundValue(
+    element.getAttribute("style") ?? "",
+  );
   if (inlineBackground) {
-    return opaqueHexFromValue(inlineBackground);
+    return layerFromValue(inlineBackground);
   }
   const opaqueClass = classes.match(OPAQUE_BACKGROUND_CLASS);
   if (opaqueClass) {
     return opaqueClass[1];
   }
-  if (TRANSLUCENT_BACKGROUND_CLASS.test(classes)) {
-    return null;
-  }
+  // Token fills before translucency: an opaque `bg-panel` decides the surface
+  // even when a state utility like `hover:bg-white/5` sits beside it.
   const tokenHex = tokenBackgroundHex(classes);
   if (tokenHex) {
     return tokenHex;
+  }
+  const overlay = classOverlay(classes);
+  if (overlay) {
+    return overlay;
+  }
+  if (TRANSLUCENT_BACKGROUND_CLASS.test(classes)) {
+    return null;
   }
   if (NON_COLOR_BACKGROUND_CLASS.test(classes)) {
     return null;
@@ -242,16 +386,28 @@ function readLayerBackground(element: Element): string | null {
       "wcag-text-contrast: background class this resolver can't read (rgb/var/unknown utility/variant) — teach readLayerBackground the new form",
     );
   }
+  if (occurrenceCount(classes, ARBITRARY_BACKGROUND_LITERAL) > 0) {
+    throw new Error(
+      "wcag-text-contrast: a bg-[…] fill escaped the resolver (arbitrary-selector variant or !important) — teach readLayerBackground the new form",
+    );
+  }
   return null;
 }
 
-// Climb ancestors to the nearest opaque background, or null if none paints one.
-function climbForBackground(element: Element): string | null {
-  let ancestor: Element | null = element;
+// Climb ancestors to the surface the element renders on: the nearest opaque
+// background, compositing any translucent overlays met on the way, or null if
+// nothing paints. Recurses so a stack of overlays composites bottom-up.
+function climbForBackground(element: Element | null): string | null {
+  let ancestor = element;
   while (ancestor) {
-    const background = readLayerBackground(ancestor);
-    if (background) {
-      return background;
+    const layer = readLayerBackground(ancestor);
+    if (typeof layer === "string") {
+      return layer;
+    }
+    if (layer) {
+      const backdrop =
+        climbForBackground(ancestor.parentElement) ?? pageBackgroundHex();
+      return compositeOver(layer, backdrop);
     }
     ancestor = ancestor.parentElement;
   }
@@ -272,23 +428,25 @@ function panelBackgroundOf(element: Element): string {
 // Arbitrary hex text can live anywhere, so an element with no opaque ancestor
 // falls back to the page background it renders on.
 function resolvedBackgroundOf(element: Element): string {
-  return (
-    climbForBackground(element) ??
-    lightestHex(readTokenValues(PAGE_BACKGROUND_TOKEN))
-  );
+  return climbForBackground(element) ?? pageBackgroundHex();
 }
 
 // The opaque hex ink of an arbitrary `text-[...]` class, or null when the
 // element carries no arbitrary text color or a non-color one (`text-[15px]`).
 // Fails loud on a color it can't read (a shorthand hex, an opacity modifier, a
-// variant prefix, an rgb()/var() ink) so the scan can't silently skip it.
+// variant prefix, an rgb()/var() ink), or on an arbitrary text value a variant
+// form hid from the matcher, so the scan can't silently skip a failing label.
 function foregroundHexOf(element: Element): string | null {
   const classes = element.getAttribute("class") ?? "";
   // An element often carries a size `text-[15px]` alongside the color, so scan
   // every arbitrary text value and keep the color one rather than the first.
-  const colorMatch = [...classes.matchAll(ARBITRARY_TEXT_VALUE)].find((match) =>
-    COLOR_LIKE_VALUE.test(match[2]),
-  );
+  const matches = [...classes.matchAll(ARBITRARY_TEXT_VALUE)];
+  if (matches.length < occurrenceCount(classes, ARBITRARY_TEXT_LITERAL)) {
+    throw new Error(
+      "wcag-text-contrast: a text-[…] color escaped the scan (arbitrary-selector variant or !important) — teach foregroundHexOf the new form",
+    );
+  }
+  const colorMatch = matches.find((match) => COLOR_LIKE_VALUE.test(match[2]));
   if (!colorMatch) {
     return null;
   }
@@ -356,23 +514,24 @@ type ContrastEntry = {
   ratio: number;
 };
 
-function hexTextElements(root: Element): Element[] {
+function resolvedContrastEntries(root: Element): ContrastEntry[] {
   // querySelectorAll never returns the root itself, so include it explicitly or
   // a hex color on a component's outermost element escapes the scan.
   const candidates = [root, ...root.querySelectorAll('[class*="text-["]')];
-  return candidates.filter((element) => foregroundHexOf(element) !== null);
-}
-
-function resolvedContrastEntries(root: Element): ContrastEntry[] {
-  return hexTextElements(root).map((element) => {
-    const foreground = foregroundHexOf(element) as string;
+  return candidates.flatMap((element) => {
+    const foreground = foregroundHexOf(element);
+    if (!foreground) {
+      return [];
+    }
     const background = resolvedBackgroundOf(element);
-    return {
-      className: element.getAttribute("class"),
-      foreground,
-      background,
-      ratio: contrastRatio(foreground, background),
-    };
+    return [
+      {
+        className: element.getAttribute("class"),
+        foreground,
+        background,
+        ratio: contrastRatio(foreground, background),
+      },
+    ];
   });
 }
 
@@ -397,7 +556,7 @@ describe("arbitrary text-[#hex] elements meet WCAG AA", () => {
           resolvedBackgroundSample,
         );
       }
-      expect(entries.filter(belowAA)).toEqual([]);
+      expect(contrastFailures(wrapper.element)).toEqual([]);
     },
   );
 });
@@ -444,9 +603,32 @@ describe("background resolver", () => {
     expect(resolvedBackgroundOf(leaf)).toBe("#0b0b0e");
   });
 
-  it("climbs past a translucent overlay to the surface behind", () => {
+  it("composites a translucent inline overlay over the surface behind", () => {
+    // #08080ae6 (≈90% opaque #08080a) over the panel resolves to ≈#08080a.
     const leaf = fixtureLeaf(
       '<div class="bg-panel"><header style="background: #08080ae6"><span data-leaf class="text-[#f2f2f4]">x</span></header></div>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe("#08080a");
+  });
+
+  it("composites a translucent overlay class over its backdrop", () => {
+    // white at 50% over black is mid-grey — climbing past would report black.
+    const leaf = fixtureLeaf(
+      '<div class="bg-[#000000]"><span data-leaf class="text-[#ffffff] bg-white/[0.5]">x</span></div>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe("#808080");
+  });
+
+  it("reads a token fill even when a state overlay sits beside it", () => {
+    const leaf = fixtureLeaf(
+      '<div class="bg-panel hover:bg-white/5"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe("#0b0b0e");
+  });
+
+  it("prefers background-image over background-color regardless of order", () => {
+    const leaf = fixtureLeaf(
+      '<div style="background-image: linear-gradient(#0b0b0e, #0b0b0e); background-color: #ffffff"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
     );
     expect(resolvedBackgroundOf(leaf)).toBe("#0b0b0e");
   });
@@ -455,9 +637,7 @@ describe("background resolver", () => {
     const leaf = fixtureLeaf(
       '<div><span data-leaf class="text-[#f2f2f4]">x</span></div>',
     );
-    expect(resolvedBackgroundOf(leaf)).toBe(
-      lightestHex(readTokenValues(PAGE_BACKGROUND_TOKEN)),
-    );
+    expect(resolvedBackgroundOf(leaf)).toBe(pageBackgroundHex());
   });
 
   it("reports a text-[#hex] label too dim for its surface as a scan failure", () => {
@@ -478,14 +658,35 @@ describe("background resolver", () => {
 
   it("fails loud on an opaque background it cannot read", () => {
     const leaf = fixtureLeaf(
-      '<div style="background: rgb(20, 20, 20)"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
+      '<div style="background: hsl(240, 20%, 8%)"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
     );
     expect(() => resolvedBackgroundOf(leaf)).toThrow(/opaque but unreadable/);
   });
 
-  it("fails loud on an arbitrary text color it cannot read", () => {
+  it("fails loud on a bg-[…] fill an arbitrary-selector variant hides", () => {
+    const leaf = fixtureLeaf(
+      '<div class="[&>a]:bg-[#000000]"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
+    );
+    expect(() => resolvedBackgroundOf(leaf)).toThrow(/escaped the resolver/);
+  });
+
+  it("fails loud on a shorthand arbitrary text color", () => {
     const leaf = fixtureLeaf('<span data-leaf class="text-[#eee]">x</span>');
     expect(() => foregroundHexOf(leaf)).toThrow(/can't read/);
+  });
+
+  it("fails loud on a variant-prefixed text color", () => {
+    const leaf = fixtureLeaf(
+      '<span data-leaf class="dark:text-[#333333]">x</span>',
+    );
+    expect(() => foregroundHexOf(leaf)).toThrow(/can't read/);
+  });
+
+  it("fails loud on a text-[…] color an arbitrary-selector variant hides", () => {
+    const leaf = fixtureLeaf(
+      '<span data-leaf class="[&>a]:text-[#333333]">x</span>',
+    );
+    expect(() => foregroundHexOf(leaf)).toThrow(/escaped the scan/);
   });
 
   it("ignores a non-color arbitrary text value", () => {
