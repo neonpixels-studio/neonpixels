@@ -651,3 +651,18 @@ describe("generated CSP Report-Only header", () => {
     expect(netlifyConfig).toContain(ENFORCING_SCRIPT_SRC);
   });
 });
+
+describe("shipped immutable asset caching", () => {
+  it("ships the hand-written /assets/* immutable Cache-Control rule", () => {
+    expect(generatedHeaders).toMatch(
+      /^\/assets\/\*\n\s+Cache-Control: public, max-age=31536000, immutable$/m,
+    );
+  });
+
+  it("keeps the immutable rule above the generated Report-Only block so it composes", () => {
+    expect(generatedHeaders).toContain(REPORT_ONLY_HEADER_NAME);
+    expect(generatedHeaders.indexOf("/assets/*")).toBeLessThan(
+      generatedHeaders.indexOf(REPORT_ONLY_HEADER_NAME),
+    );
+  });
+});

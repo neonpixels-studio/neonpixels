@@ -17,6 +17,9 @@ const ENFORCING_CSP =
   "default-src 'self'; style-src 'self' 'unsafe-inline'; " +
   "script-src 'self' 'unsafe-inline'";
 const INLINE_SCRIPT = `<script id="boot">boot()</script>`;
+// Mirrors the shipped public/_headers rule for content-hashed build assets.
+const IMMUTABLE_ASSET_RULE =
+  "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n";
 const NETLIFY_WITH_CSP = `[[headers]]\n  for = "/*"\n  [headers.values]\n    Content-Security-Policy = "${ENFORCING_CSP}"\n`;
 
 let workDir = "";
@@ -59,19 +62,24 @@ describe("writeReportOnlyHeaders", () => {
     expect(headers).not.toContain("script-src 'self' 'unsafe-inline'");
   });
 
-  it("preserves a hand-written _headers file instead of clobbering it", async () => {
+  it("preserves the hand-written immutable /assets/* rule alongside the generated block", async () => {
     writeOutFile("index.html", INLINE_SCRIPT);
-    writeOutFile(
-      HEADERS_FILE,
-      "/assets/*\n  Cache-Control: max-age=31536000\n",
-    );
+    writeOutFile(HEADERS_FILE, IMMUTABLE_ASSET_RULE);
     writeNetlifyConfig(NETLIFY_WITH_CSP);
 
     await writeReportOnlyHeaders(outDir, netlifyConfigPath);
 
     const headers = readGeneratedHeaders();
-    expect(headers).toContain("Cache-Control: max-age=31536000");
+    expect(headers).toContain(
+      "Cache-Control: public, max-age=31536000, immutable",
+    );
+    expect(headers).toContain("/assets/*");
     expect(headers).toContain(`${REPORT_ONLY_HEADER_NAME}:`);
+    // The hand-written rule must land above the generated Report-Only block so
+    // Netlify applies the specific /assets/* rule, not just the /* fallback.
+    expect(headers.indexOf("/assets/*")).toBeLessThan(
+      headers.indexOf(REPORT_ONLY_HEADER_NAME),
+    );
   });
 
   it("replaces its own previous block rather than stacking a second on rebuild", async () => {
