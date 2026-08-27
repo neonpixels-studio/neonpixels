@@ -140,15 +140,28 @@ const NON_COLOR_BACKGROUND_UTILITIES = new Set([
   "bg-transparent",
 ]);
 
-// Non-color `bg-*` families whose every value is a keyword, never a color:
-// background-clip, background-origin, background-blend-mode.
-const NON_COLOR_BACKGROUND_PREFIXES = ["bg-clip-", "bg-origin-", "bg-blend-"];
+// Non-color `bg-*` families whose every value is a keyword or arbitrary size/
+// position, never a color: background-clip/-origin/-blend-mode and v4.1's
+// arbitrary background-size/-position.
+const NON_COLOR_BACKGROUND_PREFIXES = [
+  "bg-clip-",
+  "bg-origin-",
+  "bg-blend-",
+  "bg-size-",
+  "bg-position-",
+];
 
-// Strip every leading variant segment (`md:`, `2xl:`, stacked `md:hover:`) so the
-// base utility is classified, stopping at `[` so an arbitrary value's own colon
-// (`bg-[url(data:...)]`) isn't eaten.
+// A Tailwind arbitrary-value group; stripped first so its inner punctuation
+// (an arbitrary variant's `:`, an arbitrary value's) can't confuse prefix
+// stripping — `data-[state=open]:bg-black` → `data-:bg-black` → `bg-black`.
+const ARBITRARY_VALUE_GROUP = /\[[^\]]*\]/g;
+// One or more leading variant segments (`md:`, `2xl:`, stacked `dark:md:`).
+const VARIANT_PREFIXES = /^(?:[^\s:]+:)+/;
+
 function isColorBackgroundUtility(utility: string): boolean {
-  const base = utility.replace(/^(?:[^\s:[\]]+:)+/, "");
+  const base = utility
+    .replace(ARBITRARY_VALUE_GROUP, "")
+    .replace(VARIANT_PREFIXES, "");
   if (!base.startsWith("bg-")) {
     return false;
   }
@@ -249,12 +262,20 @@ describe("readPanelBackground background detection", () => {
     },
   );
 
+  it.each(["bg-transparent", "bg-none"])(
+    "does not count no-surface utility %s as a background paint",
+    (utility) => {
+      const element = elementWith({ class: utility });
+      expect(readPanelBackground(element)).toBeNull();
+    },
+  );
+
   it("ignores a variant-prefixed non-color utility", () => {
     const element = elementWith({ class: "md:bg-cover" });
     expect(readPanelBackground(element)).toBeNull();
   });
 
-  it.each(["md:bg-slate-900", "2xl:bg-slate-900"])(
+  it.each(["md:bg-slate-900", "2xl:bg-slate-900", "dark:md:bg-slate-900"])(
     "still fails loud on a variant-prefixed color utility %s",
     (utility) => {
       const element = elementWith({ class: utility });
@@ -263,6 +284,15 @@ describe("readPanelBackground background detection", () => {
       );
     },
   );
+
+  it("fails loud on an unreadable arbitrary-value background utility", () => {
+    const element = elementWith({
+      class: "bg-[url(data:image/png;base64,AAAA)]",
+    });
+    expect(() => readPanelBackground(element)).toThrow(
+      UNREADABLE_BACKGROUND_MESSAGE,
+    );
+  });
 
   it("still fails loud on a color bg-* utility it can't read", () => {
     const element = elementWith({ class: "bg-slate-900" });
