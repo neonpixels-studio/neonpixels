@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
-import { PROJECTS } from "@theme/data/projects";
+import { PROJECTS, type Project } from "@theme/data/projects";
 
 // happy-dom evaluates no computed CSS, so the skip link's "hidden until focused"
 // styling can't be asserted on the mounted DOM — scan the component source
@@ -39,6 +39,11 @@ function isExternalHref(href: string) {
   return EXTERNAL_HREF_PATTERN.test(href);
 }
 
+// The one project visual that carries real information (trip-scale stats) and
+// so is exposed to assistive tech as a labelled image instead of hidden. Every
+// other visual stays decorative and aria-hidden.
+const EXPOSED_VISUAL_PROJECT_ID = "wanderist";
+
 // The four projects each get an external CTA and an external footer link.
 const PROJECT_URLS = [
   "https://grimicorn.dev",
@@ -58,6 +63,23 @@ const PROJECT_SECTION_IDS = PROJECTS.map((project) => project.id);
 // needs no CSS escaping, so it stays correct whatever an id turns out to be.
 const gridFor = (wrapper: VueWrapper, id: string) =>
   wrapper.get(`section[id="${id}"] > .grid`);
+
+// A section's grid holds exactly two columns: the summary (the one carrying
+// this project's CTA link) and the bespoke visual (the other one). Derive both
+// here so the assistive-technology tests don't each re-derive the pair, and so
+// the 2-column shape and the summary's presence are asserted in one place — a
+// missing CTA or a third column fails loudly here rather than silently
+// mis-identifying the visual downstream.
+function columnsFor(wrapper: VueWrapper, project: Project) {
+  const columns = Array.from(gridFor(wrapper, project.id).element.children);
+  expect(columns).toHaveLength(2);
+  const summaryColumn = columns.find((column) =>
+    column.querySelector(`a[href="${project.url}"]`),
+  );
+  expect(summaryColumn).toBeDefined();
+  const visualColumn = columns.find((column) => column !== summaryColumn);
+  return { summaryColumn, visualColumn };
+}
 
 describe("NeonPixelsPage", () => {
   it("renders correctly", () => {
@@ -173,40 +195,83 @@ describe("NeonPixelsPage", () => {
     wrapper.unmount();
   });
 
-  it("hides each decorative project visual from assistive technology", () => {
+  it("applies the correct assistive-technology treatment to each project visual", () => {
     const wrapper = mount(NeonPixelsPage);
     // Each section grid holds a summary column and a bespoke visual column.
-    // The visuals are fabricated product mockups (a terminal, a heatmap, a
-    // feed, in/out panels) whose text is illustrative chrome, not information
-    // the page commits to — so the visual container must carry aria-hidden
-    // while the summary (the real prose and CTA) must not. Identify the summary
-    // by content — it's the column holding this project's CTA link — so this
-    // survives the per-section layout flip without re-deriving the parity rule
-    // (that lives solely in the alternation test below).
+    // Most visuals are fabricated product mockups (a terminal, a feed, in/out
+    // panels) whose text is illustrative chrome, not information the page
+    // commits to — so those containers must carry aria-hidden while the summary
+    // (the real prose and CTA) must not. The wanderist visual is the sole
+    // exception: its trip-scale figures are real content, so it's exposed as a
+    // labelled image (asserted in its own test) rather than hidden.
     PROJECTS.forEach((project) => {
-      const columns = Array.from(gridFor(wrapper, project.id).element.children);
-      expect(columns).toHaveLength(2);
-      const summaryColumn = columns.find((column) =>
-        column.querySelector(`a[href="${project.url}"]`),
-      );
-      expect(summaryColumn).toBeDefined();
-      const visualColumn = columns.find((column) => column !== summaryColumn);
-      expect(visualColumn?.getAttribute("aria-hidden")).toBe("true");
+      const { summaryColumn, visualColumn } = columnsFor(wrapper, project);
       expect(summaryColumn?.getAttribute("aria-hidden")).toBeNull();
-      // aria-hidden on a container with a focusable descendant is itself an
-      // ARIA violation (the control stays tabbable but has no accessible
-      // name), so a future mockup must not introduce one — checked on the
-      // column root and its descendants. This also keeps the summary-detection
-      // above honest: it relies on the visuals carrying no anchors.
+      // Every decorative visual is aria-hidden; the exposed wanderist one must
+      // NOT be (it's a labelled image instead) — pinning both cases here means
+      // re-hiding wanderist fails this test as well as its dedicated one.
+      const expectedAriaHidden =
+        project.id === EXPOSED_VISUAL_PROJECT_ID ? null : "true";
+      expect(visualColumn?.getAttribute("aria-hidden")).toBe(
+        expectedAriaHidden,
+      );
+      // aria-hidden (or the exposed role="img") on a container with a focusable
+      // descendant is itself an ARIA violation (the control stays tabbable but
+      // has no accessible name), so a future mockup must not introduce one —
+      // checked on the column root and its descendants. This also keeps the
+      // summary-detection above honest: it relies on the visuals carrying no
+      // anchors.
       expect(visualColumn?.matches(TABBABLE_SELECTOR)).toBe(false);
       expect(visualColumn?.querySelector(TABBABLE_SELECTOR)).toBeNull();
     });
     wrapper.unmount();
   });
 
+  it("exposes the wanderist trip stats to assistive technology as a labelled image", () => {
+    const wrapper = mount(NeonPixelsPage);
+    const wanderist = PROJECTS.find(
+      (project) => project.id === EXPOSED_VISUAL_PROJECT_ID,
+    );
+    expect(wanderist).toBeDefined();
+    const { visualColumn } = columnsFor(wrapper, wanderist!);
+    expect(visualColumn).toBeDefined();
+    // Real content, so it must be reachable — a summarizing role="img" label,
+    // not aria-hidden, or screen-reader users lose the stats entirely.
+    expect(visualColumn?.getAttribute("aria-hidden")).toBeNull();
+    expect(visualColumn?.getAttribute("role")).toBe("img");
+    const label = visualColumn?.getAttribute("aria-label") ?? "";
+    expect(label).toContain("47 of 50 US states");
+    expect(label).toContain("60,000+ miles");
+    expect(label).toContain("3 countries");
+    // The label must not drift from the visible mockup, so assert every figure
+    // it announces also renders on screen (the drift that produced 26 vs 47).
+    const visualText = visualColumn?.textContent ?? "";
+    expect(visualText).toContain("47 / 50 states");
+    expect(visualText).toContain("60k+ miles");
+    expect(visualText).toContain("3 countries");
+    // Pin the complete set of numbers in the two stat rows (caption + footer)
+    // in order — "47 / 50", then "60k+ miles", "47 states", "3 countries" — so
+    // re-hardcoding any figure (like the old contradictory 26) fails here.
+    // Scoped to the .text-wanderist-label rows so unrelated future digits (a
+    // year, a badge) don't misreport as an accessibility regression.
+    const statRowText = Array.from(
+      visualColumn?.querySelectorAll(".text-wanderist-label") ?? [],
+    )
+      .map((row) => row.textContent)
+      .join(" ");
+    expect(statRowText.match(/\d[\d,]*/g)).toEqual([
+      "47",
+      "50",
+      "60",
+      "47",
+      "3",
+    ]);
+    wrapper.unmount();
+  });
+
   it("alternates the section layout down the page", () => {
     const wrapper = mount(NeonPixelsPage);
-    const columnsFor = (id: string) => gridFor(wrapper, id).element.className;
+    const gridClassFor = (id: string) => gridFor(wrapper, id).element.className;
     // Odd-indexed sections flip the visual to the left; a broken parity check
     // would still pass every other assertion, so pin the alternation here — the
     // single owner of the visual/summary ordering rule. Driven off the data so
@@ -216,7 +281,7 @@ describe("NeonPixelsPage", () => {
         projectIndex % 2 === 1
           ? "1fr)_minmax(0,0.72fr)"
           : "0.72fr)_minmax(0,1fr)";
-      expect(columnsFor(project.id)).toContain(expected);
+      expect(gridClassFor(project.id)).toContain(expected);
     });
     wrapper.unmount();
   });
