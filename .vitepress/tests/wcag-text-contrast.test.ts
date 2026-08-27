@@ -106,7 +106,9 @@ const PANEL_BACKGROUND_STYLE = /background(?:-color)?:\s*(#[0-9a-fA-F]{6})/;
 // extractors above understand — a token class, rgb()/alpha/shorthand hex, a
 // gradient/image, a variant prefix. Climbing past it would silently assert the
 // label against a surface it doesn't render on, so fail loud instead.
-const PAINTS_BACKGROUND_STYLE = /background(?:-color|-image)?:/;
+// Anchored to a declaration boundary so a custom property whose name merely ends
+// in `background-image` (`--x-background-image:`) isn't mistaken for a paint.
+const PAINTS_BACKGROUND_STYLE = /(?:^|;)\s*background(?:-color|-image)?:/;
 
 // Exact Tailwind (v4) `bg-*` utilities that set background-size/-position/
 // -repeat/-attachment or an empty/transparent surface rather than a color. An
@@ -127,6 +129,11 @@ const NON_COLOR_BACKGROUND_UTILITIES = new Set([
   "bg-left",
   "bg-right",
   "bg-center",
+  // Pre-v4.1 position names: deprecated but still functional, so still non-color.
+  "bg-left-top",
+  "bg-left-bottom",
+  "bg-right-top",
+  "bg-right-bottom",
   "bg-repeat",
   "bg-no-repeat",
   "bg-repeat-x",
@@ -296,6 +303,13 @@ describe("readPanelBackground background detection", () => {
 
   it("still fails loud on a color bg-* utility it can't read", () => {
     const element = elementWith({ class: "bg-slate-900" });
+    expect(() => readPanelBackground(element)).toThrow(
+      UNREADABLE_BACKGROUND_MESSAGE,
+    );
+  });
+
+  it("fails loud when a color utility sits alongside a non-color one", () => {
+    const element = elementWith({ class: "bg-cover bg-slate-900" });
     expect(() => readPanelBackground(element)).toThrow(
       UNREADABLE_BACKGROUND_MESSAGE,
     );
