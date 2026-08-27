@@ -76,6 +76,20 @@ describe("writeReportOnlyHeaders", () => {
     expect(headers).toContain(`${REPORT_ONLY_HEADER_NAME}:`);
   });
 
+  it("appends cleanly when the hand-written file has no trailing newline", async () => {
+    writeOutFile("index.html", INLINE_SCRIPT);
+    writeOutFile(HEADERS_FILE, IMMUTABLE_ASSET_RULE.trimEnd());
+    writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+    await writeReportOnlyHeaders(outDir, netlifyConfigPath);
+
+    const headers = readGeneratedHeaders();
+    expect(headers).toMatch(
+      new RegExp(`^ {2}${IMMUTABLE_ASSET_CACHE_CONTROL}$`, "m"),
+    );
+    expect(headers).toContain(`${REPORT_ONLY_HEADER_NAME}:`);
+  });
+
   it("preserves the hand-written immutable rule on rebuild without stacking or clobbering it", async () => {
     writeOutFile("index.html", INLINE_SCRIPT);
     writeOutFile(HEADERS_FILE, IMMUTABLE_ASSET_RULE);

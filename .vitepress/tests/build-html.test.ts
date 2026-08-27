@@ -674,6 +674,12 @@ describe("shipped immutable asset caching", () => {
   // un-hashed file there, this rule would pin a stale copy for a year — guard the
   // invariant the header depends on rather than trusting the comment.
   it("only ships content-hashed filenames under /assets/", () => {
+    // Prove the matcher actually discriminates, so it can't silently rot into a
+    // regex that greens on un-hashed names.
+    expect("app.js").not.toMatch(CONTENT_HASH_FILENAME);
+    expect("style.css").not.toMatch(CONTENT_HASH_FILENAME);
+    expect("app.C3xK9-aQ.js").toMatch(CONTENT_HASH_FILENAME);
+
     const assetsDir = resolve(buildOutDir, ASSETS_DIR);
     const assetFiles = readdirSync(assetsDir, {
       recursive: true,
