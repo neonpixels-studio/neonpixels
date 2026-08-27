@@ -40,6 +40,13 @@ const REUSE_BUILD_DIR_ENV = SMOKE_BUILD_REUSE_DIR_ENV;
 const HTML_EXTENSION = ".html";
 const HEADERS_FILE = "_headers";
 const NETLIFY_CONFIG_FILE = "netlify.toml";
+const ASSETS_DIR = "assets";
+// VitePress/Rollup stamp a base64url content hash segment (>= 8 chars, dot
+// delimited) into every emitted asset filename, e.g. app.C3xK9-aQ.js or
+// index.md.CdYTxh9z.lean.js. That hash is the property that makes /assets/*
+// safe to cache immutably for a year, so match it anywhere in the name rather
+// than only immediately before the final extension.
+const CONTENT_HASH_FILENAME = /\.[A-Za-z0-9_-]{8,}\./;
 const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
 const REPORT_ONLY_HEADER_LINE = new RegExp(
   `^\\s*${REPORT_ONLY_HEADER_NAME}:\\s*(.+)$`,
@@ -662,8 +669,30 @@ describe("shipped immutable asset caching", () => {
     );
   });
 
-  it("ships the immutable rule and the generated Report-Only block together", () => {
-    expect(generatedHeaders).toContain("/assets/*");
-    expect(generatedHeaders).toContain(REPORT_ONLY_HEADER_NAME);
+  // The year-long immutable cache is only safe because every /assets/ file is
+  // content-hashed, so its URL's bytes never change. If VitePress ever emitted an
+  // un-hashed file there, this rule would pin a stale copy for a year — guard the
+  // invariant the header depends on rather than trusting the comment.
+  it("only ships content-hashed filenames under /assets/", () => {
+    const assetsDir = resolve(buildOutDir, ASSETS_DIR);
+    const assetFiles = readdirSync(assetsDir, {
+      recursive: true,
+      withFileTypes: true,
+    }).filter((entry) => entry.isFile());
+    expect(assetFiles.length).toBeGreaterThan(0);
+    for (const assetFile of assetFiles) {
+      expect(assetFile.name).toMatch(CONTENT_HASH_FILENAME);
+    }
+  });
+
+  // netlify.toml and _headers are merged, and for a header both set on overlapping
+  // paths netlify.toml wins. A Cache-Control added to its /* block would silently
+  // override this /assets/* rule while every _headers assertion still passed.
+  it("does not let netlify.toml override the immutable asset cache", () => {
+    const netlifyConfig = readFileSync(
+      resolve(PROJECT_ROOT, NETLIFY_CONFIG_FILE),
+      "utf8",
+    );
+    expect(netlifyConfig).not.toMatch(/Cache-Control/);
   });
 });

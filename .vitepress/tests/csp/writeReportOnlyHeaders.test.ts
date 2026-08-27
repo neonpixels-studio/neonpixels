@@ -85,10 +85,8 @@ describe("writeReportOnlyHeaders", () => {
     await writeReportOnlyHeaders(outDir, netlifyConfigPath);
 
     const headers = readGeneratedHeaders();
-    expect(headers.match(/\/assets\/\*/g)).toHaveLength(1);
-    expect(
-      headers.match(new RegExp(REPORT_ONLY_HEADER_NAME, "g")),
-    ).toHaveLength(1);
+    expect(headers.split("/assets/*").length - 1).toBe(1);
+    expect(headers.split(REPORT_ONLY_HEADER_NAME).length - 1).toBe(1);
     expect(headers).toContain(IMMUTABLE_ASSET_CACHE_CONTROL);
   });
 
