@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 import { BRAND_ACCENTS } from "@theme/brand";
-import { STATES_TOTAL, STATES_VISITED } from "@theme/data/states";
+import { STATES_TOTAL, STATES_VISITED, STATE_VISITS } from "@theme/data/states";
 
 // The Wanderist trip-log heatmap must render one cell per state (STATES_TOTAL)
 // with exactly the visited count lit (STATES_VISITED), so the picture matches
@@ -42,9 +42,30 @@ describe("NeonPixelsPage trip-log heatmap", () => {
     expect(litCells).toHaveLength(STATES_VISITED);
   });
 
+  it("lights the cells the states figure marks visited, in order", () => {
+    const cells = wrapper.get(HEATMAP_SELECTOR).findAll(CELL_SELECTOR);
+    expect(cells.map((cell) => isLitCell(cell))).toEqual([...STATE_VISITS]);
+  });
+
   it("captions the heatmap with the same states figure", () => {
     expect(wrapper.text()).toContain(
       `${STATES_VISITED} / ${STATES_TOTAL} states`,
+    );
+  });
+
+  // The historical bug was the footer total and the aria-label disagreeing with
+  // the caption (a footer reading 26 under a 47/50 caption). Assert both against
+  // the states figure directly so the snapshot isn't the only thing standing
+  // between a regenerated 26 and a shipped contradiction.
+  it("labels the mockup image with the same states figure", () => {
+    expect(wrapper.get('[role="img"]').attributes("aria-label")).toContain(
+      `${STATES_VISITED} of ${STATES_TOTAL} US states`,
+    );
+  });
+
+  it("footers the same visited total as the caption", () => {
+    expect(wrapper.get('[role="img"]').text()).toContain(
+      `${STATES_VISITED} states`,
     );
   });
 });
