@@ -85,8 +85,10 @@ describe("writeReportOnlyHeaders", () => {
     await writeReportOnlyHeaders(outDir, netlifyConfigPath);
 
     const headers = readGeneratedHeaders();
-    expect(headers).toContain(IMMUTABLE_ASSET_CACHE_CONTROL);
-    expect(headers).toContain("/assets/*");
+    // Assert the whole rule block, not just its two substrings: this pins the
+    // path, the two-space indent, and their adjacency, so a normalized indent
+    // or a reordered/split block can't green a rule Netlify would ignore.
+    expect(headers).toContain(IMMUTABLE_ASSET_RULE.trimEnd());
     expect(headers).toContain(`${REPORT_ONLY_HEADER_NAME}:`);
   });
 
