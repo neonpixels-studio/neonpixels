@@ -13,7 +13,7 @@ import {
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { build } from "vitepress";
@@ -135,20 +135,99 @@ function resolveReuseDir() {
   );
 }
 
-async function prepareBuildDir() {
+// Resolved once so the containment guard compares against a normalized absolute
+// path. resolve() collapses `.`/`..` and trailing separators; it does not follow
+// symlinks, but every dir this suite deletes is built from this same tmpdir()
+// string, so the two sides can't disagree on a symlinked temp root.
+const OS_TMPDIR = resolve(tmpdir());
+// mkdtempSync stamps this onto every build dir the suite creates; cleanupBuildDir
+// requires it, so the two can't drift and a foreign dir is never a delete target.
+const BUILD_DIR_PREFIX = "neonpixels-build-html-";
+
+// True only when `candidate` resolves to a path strictly inside the OS temp dir.
+// Segment-aware: a sibling like `<tmpdir>..foo` yields a relative path starting
+// `..` and is correctly rejected, while a real child is kept. The tmpdir root
+// itself returns false.
+function isWithinTmpdir(candidate: string) {
+  if (!candidate) {
+    return false;
+  }
+  const relativePath = relative(OS_TMPDIR, resolve(candidate));
+  if (!relativePath) {
+    return false;
+  }
+  if (relativePath === "..") {
+    return false;
+  }
+  if (relativePath.startsWith(`..${sep}`)) {
+    return false;
+  }
+  // An absolute relative-path only arises on Windows across drive letters; a
+  // cross-volume path is outside the temp root.
+  return !isAbsolute(relativePath);
+}
+
+// True only for a dir this suite created: inside the OS temp dir and carrying the
+// build-dir prefix. This is the verifiable form of "we own it" — independent of
+// the caller-passed flag — so a reused Netlify publish dir can never satisfy it.
+function isOwnedBuildDir(dir: string) {
+  if (!isWithinTmpdir(dir)) {
+    return false;
+  }
+  return basename(resolve(dir)).startsWith(BUILD_DIR_PREFIX);
+}
+
+// Removes a build tree only when the caller claims ownership AND the dir is one
+// this suite actually created. The structural check is the backstop that keeps a
+// refactor which mislabels a reused deploy build as owned from ever rmSync-ing a
+// real dist directory. Returns whether the guard allowed the delete (assertable
+// without inspecting the filesystem), not whether a dir was physically present.
+function cleanupBuildDir(dir: string, owned: boolean) {
+  if (!owned) {
+    return false;
+  }
+  if (!isOwnedBuildDir(dir)) {
+    return false;
+  }
+  rmSync(dir, { recursive: true, force: true });
+  return true;
+}
+
+// Runs the guarded delete and fails loud if an owned dir survives it: that means
+// the prefix/containment invariant drifted from what mkdtempSync stamped, leaking
+// a temp tree. afterAll and the guard tests both drive this, so the loud path is
+// covered rather than asserted by comment alone.
+function finalizeBuildDir(dir: string, owned: boolean) {
+  if (cleanupBuildDir(dir, owned)) {
+    return;
+  }
+  if (!owned) {
+    return;
+  }
+  throw new Error(`Owned build dir left in place by cleanup guard: ${dir}`);
+}
+
+// Returns the build dir plus whether the suite owns it (created it and may delete
+// it) — an explicit value, not a hidden module-level side effect. A reused deploy
+// build is not owned; a fresh throwaway dir is. It does not build: beforeAll
+// records ownership from this return before awaiting the build, so a build that
+// throws or times out still leaves afterAll able to clean an owned temp tree.
+function resolveBuildDir() {
   const reuseDir = resolveReuseDir();
   if (reuseDir) {
-    return reuseDir;
+    return { dir: reuseDir, owned: false };
   }
-  // Build into a throwaway dir so the suite never clobbers the real dist output.
-  const freshDir = mkdtempSync(join(tmpdir(), "neonpixels-build-html-"));
-  // Record ownership before building so afterAll still cleans up the temp tree
-  // if build() or the settle wait throws partway through.
-  buildOutDir = freshDir;
-  ownsBuildDir = true;
-  await build(PROJECT_ROOT, { outDir: freshDir });
-  await waitForBuildToSettle(freshDir);
-  return freshDir;
+  // A throwaway dir under the same temp root the containment guard checks against,
+  // so the suite never clobbers the real dist output.
+  return { dir: mkdtempSync(join(OS_TMPDIR, BUILD_DIR_PREFIX)), owned: true };
+}
+
+// Compiles the site into an owned build dir, then waits for it to settle. Kept
+// separate from resolveBuildDir so the external build tool sits behind its own
+// seam and ownership is recorded before this await runs.
+async function buildInto(outDir: string) {
+  await build(PROJECT_ROOT, { outDir });
+  await waitForBuildToSettle(outDir);
 }
 
 // Independent oracle: the exact textContent of every executable inline script the
@@ -285,16 +364,21 @@ async function waitForBuildToSettle(outDir: string) {
 }
 
 beforeAll(async () => {
-  buildOutDir = await prepareBuildDir();
+  const prepared = resolveBuildDir();
+  // Record ownership before the await so afterAll cleans the temp tree even if the
+  // build below throws or the hook times out.
+  buildOutDir = prepared.dir;
+  ownsBuildDir = prepared.owned;
+  if (prepared.owned) {
+    await buildInto(buildOutDir);
+  }
   const indexHtml = readFileSync(resolve(buildOutDir, INDEX_HTML_FILE), "utf8");
   builtHead = extractHead(indexHtml);
   generatedHeaders = readFileSync(resolve(buildOutDir, HEADERS_FILE), "utf8");
 }, BUILD_TIMEOUT_MS);
 
 afterAll(() => {
-  if (buildOutDir && ownsBuildDir) {
-    rmSync(buildOutDir, { recursive: true, force: true });
-  }
+  finalizeBuildDir(buildOutDir, ownsBuildDir);
 });
 
 describe("built index.html head", () => {
@@ -341,7 +425,7 @@ function withStubBuildDir(
   artifacts: readonly string[],
   assertion: (_dir: string) => void,
 ) {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const dir = mkdtempSync(join(OS_TMPDIR, prefix));
   try {
     artifacts.forEach((artifact) => {
       writeFileSync(resolve(dir, artifact), "<stub/>");
@@ -413,6 +497,117 @@ describe("reuse-dir resolution", () => {
         process.env[REUSE_BUILD_DIR_ENV] = partialDir;
         expect(() => resolveReuseDir()).toThrow(REUSE_BUILD_DIR_ENV);
       },
+    );
+  });
+
+  // Not-owned is what keeps afterAll from deleting Netlify's publish dir.
+  it("reports a reused build dir as not owned", () => {
+    withStubBuildDir(
+      "neonpixels-reuse-owned-",
+      REQUIRED_BUILD_ARTIFACTS,
+      (completeDir) => {
+        process.env[REUSE_BUILD_DIR_ENV] = completeDir;
+        expect(resolveBuildDir()).toEqual({ dir: completeDir, owned: false });
+      },
+    );
+  });
+
+  it("reports a fresh build dir as owned and guard-recognized", () => {
+    delete process.env[REUSE_BUILD_DIR_ENV];
+    const { dir, owned } = resolveBuildDir();
+    try {
+      expect(owned).toBe(true);
+      expect(isOwnedBuildDir(dir)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// The delete in afterAll is a footgun: point buildOutDir at the Netlify publish
+// dir and a naive rmSync wipes the deploy. These cases pin the guard so ownership
+// is explicit and a non-tmpdir path is never removed, even when flagged owned.
+describe("build-dir cleanup guard", () => {
+  // Siblings of the temp root: outside it by construction, so these hold on any
+  // machine regardless of where HOME or the repo tree live, and nothing is
+  // created on disk. The prefixed one models a reused dist dir mislabeled owned.
+  const OUTSIDE_TMPDIR = resolve(OS_TMPDIR, "..", "neonpixels-outside-tmp");
+  const PREFIXED_OUTSIDE_TMPDIR = resolve(
+    OS_TMPDIR,
+    "..",
+    `${BUILD_DIR_PREFIX}dist`,
+  );
+
+  it("treats a child of the OS tmpdir as contained", () => {
+    withStubBuildDir(BUILD_DIR_PREFIX, [], (dir) => {
+      expect(isWithinTmpdir(dir)).toBe(true);
+    });
+  });
+
+  it("does not treat the OS tmpdir root itself as contained", () => {
+    expect(isWithinTmpdir(tmpdir())).toBe(false);
+  });
+
+  // The most destructive input: the direct parent of tmpdir (e.g. /var/folders/ab
+  // or `/`). Drop the `=== ".."` check and this is what the guard would rmSync.
+  it("does not treat the parent of the OS tmpdir as contained", () => {
+    expect(isWithinTmpdir(resolve(OS_TMPDIR, ".."))).toBe(false);
+  });
+
+  it("does not treat a path outside the OS tmpdir as contained", () => {
+    expect(isWithinTmpdir(OUTSIDE_TMPDIR)).toBe(false);
+  });
+
+  // An empty path must not resolve to cwd (which can itself sit under tmpdir when
+  // the suite runs from a temp checkout) and become deletable.
+  it("treats an empty path as neither contained nor deletable", () => {
+    expect(isWithinTmpdir("")).toBe(false);
+    expect(cleanupBuildDir("", true)).toBe(false);
+  });
+
+  it("removes an owned build dir inside the OS tmpdir", () => {
+    withStubBuildDir(BUILD_DIR_PREFIX, [], (dir) => {
+      expect(cleanupBuildDir(dir, true)).toBe(true);
+      expect(existsSync(dir)).toBe(false);
+    });
+  });
+
+  it("leaves a build dir the caller does not own in place", () => {
+    withStubBuildDir(BUILD_DIR_PREFIX, [], (dir) => {
+      expect(cleanupBuildDir(dir, false)).toBe(false);
+      expect(existsSync(dir)).toBe(true);
+    });
+  });
+
+  // Prefix branch (as opposed to the containment branch tested next).
+  it("never deletes a foreign dir even when the caller claims ownership", () => {
+    withStubBuildDir("neonpixels-foreign-", [], (dir) => {
+      expect(cleanupBuildDir(dir, true)).toBe(false);
+      expect(existsSync(dir)).toBe(true);
+    });
+  });
+
+  // Containment branch (the literal footgun): a build-prefixed path outside the
+  // temp tree — the shape a reused Netlify publish dir takes — is never deleted
+  // even when flagged owned. Drop the tmpdir check and only this case fails.
+  it("never deletes a build-prefixed dir outside the OS tmpdir when owned", () => {
+    expect(cleanupBuildDir(PREFIXED_OUTSIDE_TMPDIR, true)).toBe(false);
+  });
+
+  it("finalizes an owned build dir by removing it", () => {
+    withStubBuildDir(BUILD_DIR_PREFIX, [], (dir) => {
+      finalizeBuildDir(dir, true);
+      expect(existsSync(dir)).toBe(false);
+    });
+  });
+
+  it("does not throw when finalizing an unowned dir", () => {
+    expect(() => finalizeBuildDir(OUTSIDE_TMPDIR, false)).not.toThrow();
+  });
+
+  it("throws loud when an owned dir escapes the cleanup guard", () => {
+    expect(() => finalizeBuildDir(PREFIXED_OUTSIDE_TMPDIR, true)).toThrow(
+      PREFIXED_OUTSIDE_TMPDIR,
     );
   });
 });

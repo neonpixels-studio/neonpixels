@@ -1,7 +1,12 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { buildReportOnlyCsp, collectInlineScriptHashes } from "./reportOnlyCsp";
+import {
+  buildReportOnlyCsp,
+  collectInlineScriptHashes,
+  withReportingDirectives,
+} from "./reportOnlyCsp";
+import { CSP_REPORT_PATH, CSP_REPORTING_GROUP } from "./cspReportCollector";
 
 // Build-time glue: reads the emitted HTML, hashes its inline scripts, and writes
 // a Netlify `_headers` file carrying a Content-Security-Policy-Report-Only header
@@ -21,11 +26,19 @@ const HTML_EXTENSION = ".html";
 const HEADERS_FILE_NAME = "_headers";
 const HEADERS_PATH_GLOB = "/*";
 const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
-// Matches the header only as its own `_headers` line, so the name appearing in a
-// comment in a hand-written file doesn't trip the conflict guard.
-const REPORT_ONLY_HEADER_LINE = new RegExp(
-  `^\\s*${REPORT_ONLY_HEADER_NAME}\\s*:`,
-  "m",
+// Names the collector the `report-to` directive delivers to (Reporting API).
+const REPORTING_ENDPOINTS_HEADER_NAME = "Reporting-Endpoints";
+// Both headers this script generates. A hand-written copy of either would ship a
+// second, conflicting value for the same path, so guard against both.
+const GENERATED_HEADER_NAMES = [
+  REPORT_ONLY_HEADER_NAME,
+  REPORTING_ENDPOINTS_HEADER_NAME,
+];
+// Matches a generated header only as its own `_headers` line, so the name
+// appearing in a comment in a hand-written file doesn't trip the conflict guard.
+const GENERATED_HEADER_LINE = new RegExp(
+  `^\\s*(?:${GENERATED_HEADER_NAMES.join("|")})\\s*:`,
+  "im",
 );
 
 // A single header comfortably under the ~8 KB limit CDNs and origins enforce; the
@@ -90,23 +103,35 @@ async function readExistingHeaders(headersPath: string) {
 
 // Strip this script's own previous block, then keep any remaining hand-written
 // `_headers` (VitePress copies public/_headers into the publish dir). A leftover
-// Report-Only header from a hand-written file would ship two conflicting
-// policies, so fail loud rather than merge it.
+// copy of either generated header from a hand-written file would ship two
+// conflicting values, so fail loud rather than merge it.
 function handWrittenHeaders(existingHeaders: string) {
   const markerIndex = existingHeaders.indexOf(GENERATED_MARKER);
   const withoutGenerated = (
     markerIndex === -1 ? existingHeaders : existingHeaders.slice(0, markerIndex)
   ).trim();
-  if (REPORT_ONLY_HEADER_LINE.test(withoutGenerated)) {
+  if (GENERATED_HEADER_LINE.test(withoutGenerated)) {
     throw new Error(
-      `CSP Report-Only: ${HEADERS_FILE_NAME} already defines a ${REPORT_ONLY_HEADER_NAME} header; refusing to ship two conflicting policies`,
+      `CSP Report-Only: ${HEADERS_FILE_NAME} already defines one of ${GENERATED_HEADER_NAMES.join(", ")}; refusing to ship two conflicting policies`,
     );
   }
   return withoutGenerated;
 }
 
+// The `report-to` group in the CSP resolves through this header, so the two
+// ship together under the same path glob.
+function reportingEndpointsHeaderValue() {
+  return `${CSP_REPORTING_GROUP}="${CSP_REPORT_PATH}"`;
+}
+
 function formatGeneratedBlock(reportOnlyCsp: string) {
-  return `${GENERATED_MARKER}\n${HEADERS_PATH_GLOB}\n  ${REPORT_ONLY_HEADER_NAME}: ${reportOnlyCsp}\n`;
+  return [
+    GENERATED_MARKER,
+    HEADERS_PATH_GLOB,
+    `  ${REPORT_ONLY_HEADER_NAME}: ${reportOnlyCsp}`,
+    `  ${REPORTING_ENDPOINTS_HEADER_NAME}: ${reportingEndpointsHeaderValue()}`,
+    "",
+  ].join("\n");
 }
 
 function mergeHeaders(handWritten: string, generatedBlock: string) {
@@ -127,9 +152,10 @@ export async function writeReportOnlyHeaders(
       "CSP Report-Only: no executable inline scripts found in the build output; refusing to emit a script-src that would silently mismatch",
     );
   }
-  const reportOnlyCsp = buildReportOnlyCsp(
-    await readEnforcingCsp(netlifyConfigPath),
-    scriptHashes,
+  const reportOnlyCsp = withReportingDirectives(
+    buildReportOnlyCsp(await readEnforcingCsp(netlifyConfigPath), scriptHashes),
+    CSP_REPORTING_GROUP,
+    CSP_REPORT_PATH,
   );
   if (reportOnlyCsp.length > MAX_HEADER_BYTES) {
     throw new Error(
