@@ -153,8 +153,9 @@ describe("AppLayout", () => {
     // drop focus (asserting activeElement stays on document.body would pass for
     // a handler that focuses nothing at all).
     const skipLink = wrapper.get("a.skip-link");
-    skipLink.element.focus();
-    expect(document.activeElement).toBe(skipLink.element);
+    const skipLinkElement = skipLink.element as HTMLAnchorElement;
+    skipLinkElement.focus();
+    expect(document.activeElement).toBe(skipLinkElement);
     await skipLink.trigger("click");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(MAIN_CONTENT_ID));
     expect(document.activeElement).toBe(skipLink.element);
