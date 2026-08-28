@@ -61,6 +61,35 @@ const TRIP_CELLS: TripCellState[] = STATE_VISITS.map((visited, cellIndex) => {
   return LIT_CELL_STATES[cellIndex % LIT_CELL_STATES.length];
 });
 
+// The Wanderist visual carries trip-scale figures, so unlike the other
+// decorative mockups it is exposed to assistive tech as a single labelled
+// image rather than hidden. The caption "47 / 50 states" is the canonical
+// figure; the footer total is reconciled to the same 47 (it previously read a
+// contradictory 26). The states figure is owned by data/states.ts, so the
+// caption, this label, and the heatmap grid (one cell per state, exactly
+// STATES_VISITED lit — see TRIP_CELLS) all read from one source and can't drift
+// apart the way 26/47 did.
+const WANDERIST_STATES_VISITED = STATES_VISITED;
+const WANDERIST_STATES_TOTAL = STATES_TOTAL;
+const WANDERIST_MILES_TRAVELED = 60000;
+const WANDERIST_COUNTRIES = 3;
+
+// Group thousands without Intl: a module-scope toLocaleString would depend on
+// the build machine's ICU data and could surface as a hydration mismatch on the
+// static aria-label. This one regex formats the trip mileage for both display
+// forms below off the single numeric source.
+function groupThousands(value: number) {
+  return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+// Two display forms of the one mileage figure: the compact "60k+" the mockup
+// shows and the grouped "60,000+" the label announces. Both floor to thousands,
+// so the "+" is always truthful (the real value is at least what's shown), and
+// both derive from WANDERIST_MILES_TRAVELED so they can't drift.
+const WANDERIST_MILES_SHORT = `${Math.floor(WANDERIST_MILES_TRAVELED / 1000)}k+`;
+const WANDERIST_MILES_LABEL = `${groupThousands(WANDERIST_MILES_TRAVELED)}+`;
+const WANDERIST_MOCKUP_LABEL = `Wanderist trip log: ${WANDERIST_STATES_VISITED} of ${WANDERIST_STATES_TOTAL} US states visited, ${WANDERIST_MILES_LABEL} miles traveled across ${WANDERIST_COUNTRIES} countries.`;
+
 // Basin aggregates a mixed feed; opacity of the leading dot fades with recency
 // via descending alpha suffixes on the amber accent (88/55/33 hex). Only the
 // freshest item glows — `glow` states that intent on the data rather than
@@ -467,13 +496,17 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
             v-else-if="project.id === 'wanderist'"
             class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]"
             :style="{ boxShadow: WANDERIST_GLOW }"
-            aria-hidden="true"
+            role="img"
+            :aria-label="WANDERIST_MOCKUP_LABEL"
           >
             <div
               class="text-wanderist-label flex justify-between text-[11px] tracking-[0.16em] uppercase"
             >
               <span>trip log</span
-              ><span>{{ STATES_VISITED }} / {{ STATES_TOTAL }} states</span>
+              ><span
+                >{{ WANDERIST_STATES_VISITED }} /
+                {{ WANDERIST_STATES_TOTAL }} states</span
+              >
             </div>
             <!-- 10 columns lays the 50 state cells out as a clean 10x5 block;
                  the taller card (vs. the old 3-row strip) is deliberate now that
@@ -495,8 +528,9 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               />
             </div>
             <div class="text-wanderist-label flex gap-5 text-[11px]">
-              <span>60k+ miles</span><span>26 states</span
-              ><span>3 countries</span>
+              <span>{{ WANDERIST_MILES_SHORT }} miles</span
+              ><span>{{ WANDERIST_STATES_VISITED }} states</span
+              ><span>{{ WANDERIST_COUNTRIES }} countries</span>
             </div>
           </div>
 
