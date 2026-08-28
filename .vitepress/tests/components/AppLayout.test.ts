@@ -28,6 +28,13 @@ const LAYOUT_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../theme/AppLayout.vue",
 );
+// The skip link must out-stack the homepage's sticky header, whose z-index lives
+// in NeonPixelsPage. Read it here so the guard compares the two real values
+// instead of a hardcoded floor that a header bump could silently overtake.
+const PAGE_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../theme/components/NeonPixelsPage.vue",
+);
 
 // AppLayout is a multi-root (fragment) component and several tests attach it to
 // document.body to exercise real focus/Tab order. Unmount every wrapper and
@@ -178,11 +185,21 @@ describe("AppLayout", () => {
     expect(layoutSource).toMatch(
       /\.skip-link\s*\{[^}]*font-family:\s*var\(--font-mono\)/,
     );
-    expect(layoutSource).toMatch(
-      /\.skip-link\s*\{[^}]*z-index:\s*(?:[4-9]\d|\d{3,})/,
+    const headerZIndexMatch = readFileSync(PAGE_PATH, "utf8").match(
+      /sticky top-0 z-(\d+)/,
+    );
+    const skipLinkZIndexMatch = layoutSource.match(
+      /\.skip-link\s*\{[^}]*z-index:\s*(\d+)/,
+    );
+    expect(headerZIndexMatch).not.toBeNull();
+    expect(skipLinkZIndexMatch).not.toBeNull();
+    // Strictly greater — an equal z-index loses to the header, which paints
+    // later (it follows the skip link in DOM order), burying the revealed chip.
+    expect(Number(skipLinkZIndexMatch![1])).toBeGreaterThan(
+      Number(headerZIndexMatch![1]),
     );
     expect(layoutSource).toMatch(
-      /\.skip-link\s*\{[^}]*transform:\s*translateY\(-/,
+      /\.skip-link\s*\{[^}]*transform:\s*translateY\(calc\(-100% - 12px\)\)/,
     );
     expect(layoutSource).toMatch(
       /\.skip-link:focus\s*\{[^}]*transform:\s*translateY\(0/,

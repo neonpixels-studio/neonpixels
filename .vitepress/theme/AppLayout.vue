@@ -53,7 +53,10 @@ function skipToContent(event: MouseEvent) {
   z-index: 50;
   margin: 12px;
   padding: 10px 16px;
-  transform: translateY(-160%);
+  /* Lift it fully out of view: 100% of its own height plus the 12px top margin,
+     so it clears the viewport edge exactly regardless of padding/font-size (a
+     percentage-only shift depends on the box height and can leave it peeking). */
+  transform: translateY(calc(-100% - 12px));
   transition: transform 0.2s ease;
   background: var(--color-panel);
   /* lime edge so the revealed chip reads as a distinct landing target where it
