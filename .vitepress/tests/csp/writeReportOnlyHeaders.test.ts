@@ -63,6 +63,20 @@ describe("writeReportOnlyHeaders", () => {
     expect(headers).not.toContain("script-src 'self' 'unsafe-inline'");
   });
 
+  it("wires the Report-Only policy to the collector and emits Reporting-Endpoints", async () => {
+    writeOutFile("index.html", INLINE_SCRIPT);
+    writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+    await writeReportOnlyHeaders(outDir, netlifyConfigPath);
+
+    const headers = readGeneratedHeaders();
+    expect(headers).toContain("report-uri /csp-report");
+    expect(headers).toContain("report-to csp-endpoint");
+    expect(headers).toContain(
+      `Reporting-Endpoints: csp-endpoint="/csp-report"`,
+    );
+  });
+
   it("keeps the hand-written immutable /assets/* rule alongside the generated block", async () => {
     writeOutFile("index.html", INLINE_SCRIPT);
     writeOutFile(HEADERS_FILE, IMMUTABLE_ASSET_RULE);
@@ -116,11 +130,35 @@ describe("writeReportOnlyHeaders", () => {
     expect(occurrences).toBe(1);
   });
 
+  it("keeps a single Reporting-Endpoints line across rebuilds", async () => {
+    writeOutFile("index.html", INLINE_SCRIPT);
+    writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+    await writeReportOnlyHeaders(outDir, netlifyConfigPath);
+    await writeReportOnlyHeaders(outDir, netlifyConfigPath);
+
+    const headers = readGeneratedHeaders();
+    expect(headers.split("Reporting-Endpoints:").length - 1).toBe(1);
+  });
+
   it("throws when a hand-written file already declares a Report-Only header", async () => {
     writeOutFile("index.html", INLINE_SCRIPT);
     writeOutFile(
       HEADERS_FILE,
       `/*\n  ${REPORT_ONLY_HEADER_NAME}: default-src 'self'\n`,
+    );
+    writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+    await expect(
+      writeReportOnlyHeaders(outDir, netlifyConfigPath),
+    ).rejects.toThrow(/two conflicting policies/);
+  });
+
+  it("throws when a hand-written file already declares a Reporting-Endpoints header", async () => {
+    writeOutFile("index.html", INLINE_SCRIPT);
+    writeOutFile(
+      HEADERS_FILE,
+      `/*\n  Reporting-Endpoints: csp-endpoint="https://elsewhere.example"\n`,
     );
     writeNetlifyConfig(NETLIFY_WITH_CSP);
 

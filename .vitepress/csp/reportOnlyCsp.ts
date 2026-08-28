@@ -32,6 +32,8 @@ const INERT_SCRIPT_TYPES = new Set([
 ]);
 
 const SHA256_SOURCE_PREFIX = "sha256-";
+const REPORT_URI_DIRECTIVE = "report-uri";
+const REPORT_TO_DIRECTIVE = "report-to";
 const SCRIPT_SRC_DIRECTIVE = "script-src";
 const DEFAULT_SRC_DIRECTIVE = "default-src";
 const SELF_SOURCE = "'self'";
@@ -185,4 +187,37 @@ export function buildReportOnlyCsp(
     );
   }
   return rebuilt.join(DIRECTIVE_SEPARATOR);
+}
+
+// Point the Report-Only policy at the violation collector so reports are
+// delivered, not just console-logged. `report-to` is the modern Reporting API
+// path — it names a group defined by a companion Reporting-Endpoints header —
+// while `report-uri` is the deprecated directive Firefox and older engines still
+// require, pointing straight at the collector path. Both are appended so a
+// violation is gathered regardless of which the browser honours.
+const REPORTING_DIRECTIVE_NAMES = new Set([
+  REPORT_URI_DIRECTIVE,
+  REPORT_TO_DIRECTIVE,
+]);
+
+function isReportingDirective({ name }: Directive) {
+  return REPORTING_DIRECTIVE_NAMES.has(name.toLowerCase());
+}
+
+export function withReportingDirectives(
+  csp: string,
+  reportingGroup: string,
+  collectorPath: string,
+) {
+  // Drop any pre-existing report-uri/report-to first: a browser honours only the
+  // first occurrence of a repeated directive, so a duplicate would silently send
+  // reports somewhere other than the collector.
+  const withoutReporting = parseDirectives(csp)
+    .filter((directive) => !isReportingDirective(directive))
+    .map(formatDirective);
+  return [
+    ...withoutReporting,
+    `${REPORT_URI_DIRECTIVE} ${collectorPath}`,
+    `${REPORT_TO_DIRECTIVE} ${reportingGroup}`,
+  ].join(DIRECTIVE_SEPARATOR);
 }
