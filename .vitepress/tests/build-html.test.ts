@@ -694,15 +694,15 @@ describe("shipped immutable asset caching", () => {
   // netlify.toml and _headers are merged, and for a header both set on overlapping
   // paths netlify.toml wins. A Cache-Control added to its /* block would silently
   // override this /assets/* rule while every _headers assertion still passed.
-  // Comments are stripped first so a doc line that merely mentions Cache-Control
-  // can't false-trigger the guard; any real assignment (overlapping or not) still
+  // Match an actual Cache-Control assignment (bare or quoted key), not the bare
+  // string, so a comment mentioning Cache-Control — whole-line or trailing — can't
+  // false-trigger the guard. Any real assignment (overlapping path or not) still
   // fails, forcing a deliberate review of the _headers/netlify.toml interaction.
   it("does not let netlify.toml override the immutable asset cache", () => {
-    const TOML_COMMENT_LINE = /^\s*#.*$/gm;
     const netlifyConfig = readFileSync(
       resolve(PROJECT_ROOT, NETLIFY_CONFIG_FILE),
       "utf8",
-    ).replace(TOML_COMMENT_LINE, "");
-    expect(netlifyConfig).not.toMatch(/Cache-Control/);
+    );
+    expect(netlifyConfig).not.toMatch(/^\s*"?Cache-Control"?\s*=/m);
   });
 });
