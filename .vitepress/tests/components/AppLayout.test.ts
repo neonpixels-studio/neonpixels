@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount, shallowMount, enableAutoUnmount } from "@vue/test-utils";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { TABBABLE_SELECTOR } from "../utils/tabbable";
+import { stripComments } from "../utils/outlineGuard";
 
 const pageState = vi.hoisted(() => ({ isNotFound: false }));
 
@@ -34,11 +35,16 @@ const LAYOUT_PATH = path.resolve(
 // case can't leak a stale #main-content into the next (skipToContent resolves
 // the landmark document-wide by id).
 enableAutoUnmount(afterEach);
-afterEach(() => {
+// Reset in beforeEach so it's order-independent: an afterEach scrub races the
+// auto-unmount hook (reverse registration order), but beforeEach always runs
+// before the next mount regardless of hook sequencing.
+beforeEach(() => {
   pageState.isNotFound = false;
   document.body.innerHTML = "";
-  // Restore any console spy here too, so a failing assertion mid-test can't
-  // leave console.warn stubbed for the tests that follow.
+});
+afterEach(() => {
+  // Restore any console spy here, so a failing assertion mid-test can't leave
+  // console.warn stubbed for the tests that follow.
   vi.restoreAllMocks();
 });
 
@@ -113,6 +119,10 @@ describe("AppLayout", () => {
       await wrapper.vm.$nextTick();
       const main = wrapper.get("main");
       expect(main.attributes("id")).toBe(MAIN_CONTENT_ID);
+      // <main> is not natively focusable — without tabindex="-1" the view sets,
+      // landmark.focus() is a no-op in a real browser (happy-dom focuses it
+      // regardless, so pin the attribute here or the bypass silently dies).
+      expect(main.attributes("tabindex")).toBe("-1");
       await wrapper.get("a.skip-link").trigger("click");
       expect(document.activeElement).toBe(main.element);
     },
@@ -131,12 +141,16 @@ describe("AppLayout", () => {
         stubs: { NeonPixelsPage: { template: "<div>no landmark here</div>" } },
       },
     });
-    // Assert the handler moved no focus, not just that the fixture lacks a main:
-    // capture focus before the click and pin it unchanged after.
-    const focusBeforeClick = document.activeElement;
-    await wrapper.get("a.skip-link").trigger("click");
+    // Put focus on the link like a real keyboard user would before activating,
+    // so the post-click assertion is non-trivial: the guard must not steal or
+    // drop focus (asserting activeElement stays on document.body would pass for
+    // a handler that focuses nothing at all).
+    const skipLink = wrapper.get("a.skip-link");
+    skipLink.element.focus();
+    expect(document.activeElement).toBe(skipLink.element);
+    await skipLink.trigger("click");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(MAIN_CONTENT_ID));
-    expect(document.activeElement).toBe(focusBeforeClick);
+    expect(document.activeElement).toBe(skipLink.element);
   });
 
   it("hides the skip link off-canvas until it is focused", () => {
@@ -145,17 +159,25 @@ describe("AppLayout", () => {
     // translateY(0) on :focus; z-index clears the sticky header (z-30) so the
     // revealed chip isn't buried; the reduced-motion rule drops the transition.
     // The rules are `scoped`, so also assert the rendered link actually carries
-    // AppLayout's scope attribute — otherwise moving the link into a child SFC
-    // would leave these regexes matching text that no longer styles anything.
+    // AppLayout's OWN scope id — a plain data-v-* check would still pass if the
+    // link moved into a child SFC (which stamps its own scope id) while these
+    // CSS rules stayed orphaned in AppLayout, styling nothing.
     const wrapper = mount(AppLayout);
-    const scopeAttributes = Object.keys(
-      wrapper.get("a.skip-link").attributes(),
+    const scopeId = (AppLayout as unknown as { __scopeId?: string }).__scopeId;
+    expect(scopeId).toBeTruthy();
+    expect(Object.keys(wrapper.get("a.skip-link").attributes())).toContain(
+      scopeId,
     );
-    expect(scopeAttributes.some((name) => name.startsWith("data-v-"))).toBe(
-      true,
-    );
-    const layoutSource = readFileSync(LAYOUT_PATH, "utf8");
+    // Strip comments first: a commented-out style block would otherwise leave
+    // every regex below matching dead text while the link renders permanently
+    // visible.
+    const layoutSource = stripComments(readFileSync(LAYOUT_PATH, "utf8"));
     expect(layoutSource).toMatch(/\.skip-link\s*\{[^}]*position:\s*fixed/);
+    // The link renders outside NeonPixelsPage's .font-mono root, so it must set
+    // the monospace face itself or fall back to the default sans stack.
+    expect(layoutSource).toMatch(
+      /\.skip-link\s*\{[^}]*font-family:\s*var\(--font-mono\)/,
+    );
     expect(layoutSource).toMatch(
       /\.skip-link\s*\{[^}]*z-index:\s*(?:[4-9]\d|\d{3,})/,
     );

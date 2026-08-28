@@ -60,6 +60,10 @@ function skipToContent(event: MouseEvent) {
      overlays the header, not bare text (panel/border are near-invisible on bg) */
   border: 1px solid var(--color-lime);
   color: var(--color-fg);
+  /* The link now lives outside NeonPixelsPage's .font-mono root, so it no longer
+     inherits the site's monospace face — re-declare it here or the revealed chip
+     renders in the default sans stack while every other control is mono. */
+  font-family: var(--font-mono);
   font-size: 12.5px;
 }
 .skip-link:focus {
