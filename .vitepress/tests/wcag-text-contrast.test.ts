@@ -665,6 +665,16 @@ describe("background resolver", () => {
     expect(resolvedBackgroundOf(leaf)).toBe("#0b0b0e");
   });
 
+  it.each(["bg-cover", "bg-center", "bg-no-repeat"])(
+    "climbs past a lone non-color utility %s instead of failing loud",
+    (utility) => {
+      const leaf = fixtureLeaf(
+        `<div class="${utility}"><span data-leaf class="text-[#f2f2f4]">x</span></div>`,
+      );
+      expect(resolvedBackgroundOf(leaf)).toBe(pageBackgroundHex());
+    },
+  );
+
   it("keeps the lightest opaque stop of a gradient that fades to transparent", () => {
     const leaf = fixtureLeaf(
       '<div style="background: linear-gradient(180deg, #2a1030 0%, transparent 100%)"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
