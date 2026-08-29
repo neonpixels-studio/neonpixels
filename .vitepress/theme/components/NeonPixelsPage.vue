@@ -8,6 +8,7 @@ import { MAIN_CONTENT_ID } from "../a11y";
 // already derive their glows.
 import { hexToRgba } from "../utils/color";
 import { PROJECTS } from "../data/projects";
+import { STATES_TOTAL, STATES_VISITED, STATE_VISITS } from "../data/states";
 import ProjectSection from "./ProjectSection.vue";
 
 // Zero-padded project total for the "NN / NN" counter, so the header tracks the
@@ -26,21 +27,33 @@ const TRIP_CELL_COLORS = {
   off: "#0e2831",
 };
 
-const TRIP_CELLS =
-  "on off off mid off on off off low off on off off mid off off off low on off off off mid off off on off off low off on off mid off off on off low off on off off mid off off off on off".split(
-    " ",
-  ) as (keyof typeof TRIP_CELL_COLORS)[];
+// Visited states cycle through the three lit brightnesses for the heatmap's
+// visited / partly / faint texture; unvisited states take the empty tint.
+// Derived from STATE_VISITS so the grid always renders STATES_TOTAL cells with
+// STATES_VISITED lit — the picture can't drift from the caption. Typing the
+// arrays (rather than casting the result) keeps a typo like "lo" a compile
+// error instead of a silent `background: undefined`, and `Exclude<_, "off">`
+// stops the empty tint being listed as a lit brightness.
+type TripCellState = keyof typeof TRIP_CELL_COLORS;
+const LIT_CELL_STATES: Exclude<TripCellState, "off">[] = ["on", "mid", "low"];
+
+const TRIP_CELLS: TripCellState[] = STATE_VISITS.map((visited, cellIndex) => {
+  if (!visited) {
+    return "off";
+  }
+  return LIT_CELL_STATES[cellIndex % LIT_CELL_STATES.length];
+});
 
 // The Wanderist visual carries trip-scale figures, so unlike the other
 // decorative mockups it is exposed to assistive tech as a single labelled
 // image rather than hidden. The caption "47 / 50 states" is the canonical
 // figure; the footer total is reconciled to the same 47 (it previously read a
-// contradictory 26). Every stat is defined once here and rendered in both the
-// visible mockup and this label, so the two can never drift apart the way
-// 26/47 did. The heatmap grid below is deliberately abstract texture, not a
-// literal one-cell-per-state map, so its lit-cell count is decorative.
-const WANDERIST_STATES_VISITED = 47;
-const WANDERIST_STATES_TOTAL = 50;
+// contradictory 26). The states figure is owned by data/states.ts, so the
+// caption, this label, and the heatmap grid (one cell per state, exactly
+// STATES_VISITED lit — see TRIP_CELLS) all read from one source and can't drift
+// apart the way 26/47 did.
+const WANDERIST_STATES_VISITED = STATES_VISITED;
+const WANDERIST_STATES_TOTAL = STATES_TOTAL;
 const WANDERIST_MILES_TRAVELED = 60000;
 const WANDERIST_COUNTRIES = 3;
 
@@ -473,10 +486,17 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
                 {{ WANDERIST_STATES_TOTAL }} states</span
               >
             </div>
-            <div class="grid grid-cols-[repeat(16,minmax(0,1fr))] gap-1">
+            <!-- 10 columns lays the 50 state cells out as a clean 10x5 block;
+                 the taller card (vs. the old 3-row strip) is deliberate now that
+                 the grid holds all 50 states. -->
+            <div
+              class="grid grid-cols-[repeat(10,minmax(0,1fr))] gap-1"
+              data-testid="trip-log-heatmap"
+            >
               <div
                 v-for="(state, cellIndex) in TRIP_CELLS"
                 :key="cellIndex"
+                data-testid="trip-log-cell"
                 :style="{
                   aspectRatio: '1',
                   background: TRIP_CELL_COLORS[state],
