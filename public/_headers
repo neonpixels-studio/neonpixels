@@ -1,0 +1,6 @@
+# VitePress content-hashes everything under /assets/, so a new deploy emits new
+# filenames rather than mutating existing ones. The bytes at a given URL never
+# change, so they are safe to cache forever. The build's CSP Report-Only block
+# is appended after this (see .vitepress/csp); keep hand-written rules above it.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

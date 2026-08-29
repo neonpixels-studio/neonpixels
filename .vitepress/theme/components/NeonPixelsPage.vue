@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
 import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "../brand";
+import { MAIN_CONTENT_ID } from "../a11y";
 // Two accent-alpha helpers, two output formats: `withAlpha` appends a 2-digit
 // hex alpha to an accent (an 8-digit hex) for solid swatch fills (heatmap/feed
 // dots); `hexToRgba` yields an `rgba(r, g, b, a)` string for the
@@ -8,29 +8,13 @@ import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "../brand";
 // already derive their glows.
 import { hexToRgba } from "../utils/color";
 import { PROJECTS } from "../data/projects";
+import { STATES_TOTAL, STATES_VISITED, STATE_VISITS } from "../data/states";
 import ProjectSection from "./ProjectSection.vue";
 
 // Zero-padded project total for the "NN / NN" counter, so the header tracks the
 // data instead of a hand-typed number. PROJECTS is a static import, so a plain
 // constant is enough — no reactivity to track.
 const paddedProjectCount = String(PROJECTS.length).padStart(2, "0");
-
-// Single source of truth for the primary-content landmark id, shared by the
-// skip link's target and the <main> it jumps to so the two can never drift
-// apart (WCAG 2.4.1 bypass-blocks).
-const MAIN_CONTENT_ID = "main-content";
-
-const mainContent = ref<HTMLElement | null>(null);
-
-// VitePress's router intercepts same-page hash links (capture-phase, preventing
-// the default) and only scrolls — it never moves focus. So a bare
-// href="#main-content" would scroll without focusing <main>, and the next Tab
-// would fall back into the header nav, defeating the bypass. Move focus to the
-// landmark ourselves; focus() also scrolls it into view.
-function skipToContent(event: MouseEvent) {
-  event.preventDefault();
-  mainContent.value?.focus();
-}
 
 // Trip-log heatmap for the Wanderist card: each cell is one of four brightness
 // states so the grid reads as visited / partly / faint / empty. The lit states
@@ -43,10 +27,51 @@ const TRIP_CELL_COLORS = {
   off: "#0e2831",
 };
 
-const TRIP_CELLS =
-  "on off off mid off on off off low off on off off mid off off off low on off off off mid off off on off off low off on off mid off off on off low off on off off mid off off off on off".split(
-    " ",
-  ) as (keyof typeof TRIP_CELL_COLORS)[];
+// Visited states cycle through the three lit brightnesses for the heatmap's
+// visited / partly / faint texture; unvisited states take the empty tint.
+// Derived from STATE_VISITS so the grid always renders STATES_TOTAL cells with
+// STATES_VISITED lit — the picture can't drift from the caption. Typing the
+// arrays (rather than casting the result) keeps a typo like "lo" a compile
+// error instead of a silent `background: undefined`, and `Exclude<_, "off">`
+// stops the empty tint being listed as a lit brightness.
+type TripCellState = keyof typeof TRIP_CELL_COLORS;
+const LIT_CELL_STATES: Exclude<TripCellState, "off">[] = ["on", "mid", "low"];
+
+const TRIP_CELLS: TripCellState[] = STATE_VISITS.map((visited, cellIndex) => {
+  if (!visited) {
+    return "off";
+  }
+  return LIT_CELL_STATES[cellIndex % LIT_CELL_STATES.length];
+});
+
+// The Wanderist visual carries trip-scale figures, so unlike the other
+// decorative mockups it is exposed to assistive tech as a single labelled
+// image rather than hidden. The caption "47 / 50 states" is the canonical
+// figure; the footer total is reconciled to the same 47 (it previously read a
+// contradictory 26). The states figure is owned by data/states.ts, so the
+// caption, this label, and the heatmap grid (one cell per state, exactly
+// STATES_VISITED lit — see TRIP_CELLS) all read from one source and can't drift
+// apart the way 26/47 did.
+const WANDERIST_STATES_VISITED = STATES_VISITED;
+const WANDERIST_STATES_TOTAL = STATES_TOTAL;
+const WANDERIST_MILES_TRAVELED = 60000;
+const WANDERIST_COUNTRIES = 3;
+
+// Group thousands without Intl: a module-scope toLocaleString would depend on
+// the build machine's ICU data and could surface as a hydration mismatch on the
+// static aria-label. This one regex formats the trip mileage for both display
+// forms below off the single numeric source.
+function groupThousands(value: number) {
+  return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+// Two display forms of the one mileage figure: the compact "60k+" the mockup
+// shows and the grouped "60,000+" the label announces. Both floor to thousands,
+// so the "+" is always truthful (the real value is at least what's shown), and
+// both derive from WANDERIST_MILES_TRAVELED so they can't drift.
+const WANDERIST_MILES_SHORT = `${Math.floor(WANDERIST_MILES_TRAVELED / 1000)}k+`;
+const WANDERIST_MILES_LABEL = `${groupThousands(WANDERIST_MILES_TRAVELED)}+`;
+const WANDERIST_MOCKUP_LABEL = `Wanderist trip log: ${WANDERIST_STATES_VISITED} of ${WANDERIST_STATES_TOTAL} US states visited, ${WANDERIST_MILES_LABEL} miles traveled across ${WANDERIST_COUNTRIES} countries.`;
 
 // Basin aggregates a mixed feed; opacity of the leading dot fades with recency
 // via descending alpha suffixes on the amber accent (88/55/33 hex). Only the
@@ -126,11 +151,6 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
 
 <template>
   <div class="bg-bg text-fg relative font-mono">
-    <!-- skip link: first focusable element, visually hidden until focused -->
-    <a :href="`#${MAIN_CONTENT_ID}`" class="skip-link" @click="skipToContent">
-      Skip to content
-    </a>
-
     <!-- drifting grid backdrop -->
     <div
       class="animate-drift pointer-events-none fixed inset-0 z-0"
@@ -203,9 +223,9 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
     </header>
 
     <!-- tabindex="-1" keeps <main> out of the Tab order while letting the skip
-         link move focus here on browsers that don't set the focus navigation
-         starting point from fragment nav (Safari) -->
-    <main :id="MAIN_CONTENT_ID" ref="mainContent" tabindex="-1">
+         link (in AppLayout) move focus here on browsers that don't set the
+         focus navigation starting point from fragment nav (Safari) -->
+    <main :id="MAIN_CONTENT_ID" tabindex="-1">
       <!-- hero -->
       <section
         id="top"
@@ -454,17 +474,29 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
             v-else-if="project.id === 'wanderist'"
             class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]"
             :style="{ boxShadow: WANDERIST_GLOW }"
-            aria-hidden="true"
+            role="img"
+            :aria-label="WANDERIST_MOCKUP_LABEL"
           >
             <div
               class="text-wanderist-label flex justify-between text-[11px] tracking-[0.16em] uppercase"
             >
-              <span>trip log</span><span>47 / 50 states</span>
+              <span>trip log</span
+              ><span
+                >{{ WANDERIST_STATES_VISITED }} /
+                {{ WANDERIST_STATES_TOTAL }} states</span
+              >
             </div>
-            <div class="grid grid-cols-[repeat(16,minmax(0,1fr))] gap-1">
+            <!-- 10 columns lays the 50 state cells out as a clean 10x5 block;
+                 the taller card (vs. the old 3-row strip) is deliberate now that
+                 the grid holds all 50 states. -->
+            <div
+              class="grid grid-cols-[repeat(10,minmax(0,1fr))] gap-1"
+              data-testid="trip-log-heatmap"
+            >
               <div
                 v-for="(state, cellIndex) in TRIP_CELLS"
                 :key="cellIndex"
+                data-testid="trip-log-cell"
                 :style="{
                   aspectRatio: '1',
                   background: TRIP_CELL_COLORS[state],
@@ -474,8 +506,9 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               />
             </div>
             <div class="text-wanderist-label flex gap-5 text-[11px]">
-              <span>60k+ miles</span><span>26 states</span
-              ><span>3 countries</span>
+              <span>{{ WANDERIST_MILES_SHORT }} miles</span
+              ><span>{{ WANDERIST_STATES_VISITED }} states</span
+              ><span>{{ WANDERIST_COUNTRIES }} countries</span>
             </div>
           </div>
 
@@ -622,36 +655,6 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
 </template>
 
 <style scoped>
-/* Skip-to-content link: kept in the DOM and tab order but slid out of sight
-   above the viewport, then dropped into the top-left corner on keyboard focus.
-   z-index clears the sticky header (z-30). The global :focus-visible ring in
-   style.css lands on it like any other anchor, so no focus styles are needed
-   here. */
-.skip-link {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 50;
-  margin: 12px;
-  padding: 10px 16px;
-  transform: translateY(-160%);
-  transition: transform 0.2s ease;
-  background: var(--color-panel);
-  /* lime edge so the revealed chip reads as a distinct landing target where it
-     overlays the header, not bare text (panel/border are near-invisible on bg) */
-  border: 1px solid var(--color-lime);
-  color: var(--color-fg);
-  font-size: 12.5px;
-}
-.skip-link:focus {
-  transform: translateY(0);
-}
-@media (prefers-reduced-motion: reduce) {
-  .skip-link {
-    transition: none;
-  }
-}
-
 .pill {
   transition:
     background 0.2s ease,
