@@ -1,7 +1,10 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`NotFound > renders correctly 1`] = `
-"<div class="bg-bg text-fg relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-16 font-mono sm:px-8">
+"<!-- The 404 view has no header/nav to bypass, so its whole content is the
+       primary landmark. tabindex="-1" lets the shared skip link (in AppLayout)
+       move focus here, keeping bypass-blocks satisfied on 404 as well as /. -->
+<main id="main-content" tabindex="-1" class="bg-bg text-fg relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-16 font-mono sm:px-8">
   <!-- ambient glow -->
   <div class="animate-aurora pointer-events-none absolute top-[-200px] right-[-160px] h-[680px] w-[680px] blur-[24px]" style="background: radial-gradient(circle, rgba(34, 224, 255, 0.18), rgba(255, 46, 166, 0.09) 45%, transparent 70%);"></div>
   <div class="relative w-full max-w-[680px] text-center">
@@ -20,5 +23,5 @@ exports[`NotFound > renders correctly 1`] = `
       </div>
     </div>
   </div>
-</div>"
+</main>"
 `;

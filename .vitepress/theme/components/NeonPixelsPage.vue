@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
 import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "../brand";
+import { MAIN_CONTENT_ID } from "../a11y";
 // Two accent-alpha helpers, two output formats: `withAlpha` appends a 2-digit
 // hex alpha to an accent (an 8-digit hex) for solid swatch fills (heatmap/feed
 // dots); `hexToRgba` yields an `rgba(r, g, b, a)` string for the
@@ -14,23 +14,6 @@ import ProjectSection from "./ProjectSection.vue";
 // data instead of a hand-typed number. PROJECTS is a static import, so a plain
 // constant is enough — no reactivity to track.
 const paddedProjectCount = String(PROJECTS.length).padStart(2, "0");
-
-// Single source of truth for the primary-content landmark id, shared by the
-// skip link's target and the <main> it jumps to so the two can never drift
-// apart (WCAG 2.4.1 bypass-blocks).
-const MAIN_CONTENT_ID = "main-content";
-
-const mainContent = ref<HTMLElement | null>(null);
-
-// VitePress's router intercepts same-page hash links (capture-phase, preventing
-// the default) and only scrolls — it never moves focus. So a bare
-// href="#main-content" would scroll without focusing <main>, and the next Tab
-// would fall back into the header nav, defeating the bypass. Move focus to the
-// landmark ourselves; focus() also scrolls it into view.
-function skipToContent(event: MouseEvent) {
-  event.preventDefault();
-  mainContent.value?.focus();
-}
 
 // Trip-log heatmap for the Wanderist card: each cell is one of four brightness
 // states so the grid reads as visited / partly / faint / empty. The lit states
@@ -155,11 +138,6 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
 
 <template>
   <div class="bg-bg text-fg relative font-mono">
-    <!-- skip link: first focusable element, visually hidden until focused -->
-    <a :href="`#${MAIN_CONTENT_ID}`" class="skip-link" @click="skipToContent">
-      Skip to content
-    </a>
-
     <!-- drifting grid backdrop -->
     <div
       class="animate-drift pointer-events-none fixed inset-0 z-0"
@@ -232,9 +210,9 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
     </header>
 
     <!-- tabindex="-1" keeps <main> out of the Tab order while letting the skip
-         link move focus here on browsers that don't set the focus navigation
-         starting point from fragment nav (Safari) -->
-    <main :id="MAIN_CONTENT_ID" ref="mainContent" tabindex="-1">
+         link (in AppLayout) move focus here on browsers that don't set the
+         focus navigation starting point from fragment nav (Safari) -->
+    <main :id="MAIN_CONTENT_ID" tabindex="-1">
       <!-- hero -->
       <section
         id="top"
@@ -657,36 +635,6 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
 </template>
 
 <style scoped>
-/* Skip-to-content link: kept in the DOM and tab order but slid out of sight
-   above the viewport, then dropped into the top-left corner on keyboard focus.
-   z-index clears the sticky header (z-30). The global :focus-visible ring in
-   style.css lands on it like any other anchor, so no focus styles are needed
-   here. */
-.skip-link {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 50;
-  margin: 12px;
-  padding: 10px 16px;
-  transform: translateY(-160%);
-  transition: transform 0.2s ease;
-  background: var(--color-panel);
-  /* lime edge so the revealed chip reads as a distinct landing target where it
-     overlays the header, not bare text (panel/border are near-invisible on bg) */
-  border: 1px solid var(--color-lime);
-  color: var(--color-fg);
-  font-size: 12.5px;
-}
-.skip-link:focus {
-  transform: translateY(0);
-}
-@media (prefers-reduced-motion: reduce) {
-  .skip-link {
-    transition: none;
-  }
-}
-
 .pill {
   transition:
     background 0.2s ease,

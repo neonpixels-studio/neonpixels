@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { WORDMARK_GRADIENT } from "../brand";
+import { MAIN_CONTENT_ID } from "../a11y";
 
 const MISSING_LINES = [
   "no such page, only pixels",
@@ -23,7 +24,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div
+  <!-- The 404 view has no header/nav to bypass, so its whole content is the
+       primary landmark. tabindex="-1" lets the shared skip link (in AppLayout)
+       move focus here, keeping bypass-blocks satisfied on 404 as well as /. -->
+  <main
+    :id="MAIN_CONTENT_ID"
+    tabindex="-1"
     class="bg-bg text-fg relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-16 font-mono sm:px-8"
   >
     <!-- ambient glow -->
@@ -136,5 +142,5 @@ onMounted(() => {
         </div>
       </div>
     </div>
-  </div>
+  </main>
 </template>

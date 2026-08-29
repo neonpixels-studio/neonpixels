@@ -1,35 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 import { PROJECTS, type Project } from "@theme/data/projects";
-
-// happy-dom evaluates no computed CSS, so the skip link's "hidden until focused"
-// styling can't be asserted on the mounted DOM — scan the component source
-// instead (as component-focus.test.ts does for the outline guard). Anchored to
-// this test file so it resolves however vitest is invoked. Read lazily inside
-// the one test that needs it, so a moved file fails that assertion rather than
-// crashing every test in the suite at import time.
-const COMPONENT_PATH = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../theme/components/NeonPixelsPage.vue",
-);
+import { MAIN_CONTENT_ID } from "@theme/a11y";
+import { TABBABLE_SELECTOR } from "../utils/tabbable";
 
 // Interactive control classes the global :focus-visible ring lands on.
 const INTERACTIVE_FOCUS_CLASSES = ["pill", "nav-link", "footer-link"];
-
-// Tabbable-element selector, shared by the skip-link ordering check and the
-// aria-hidden visual guard so the two can't drift on what counts as focusable.
-// Excludes the not-tabbable cases on every branch: disabled controls, a
-// negative tabindex (matched programmatically but never on Tab, so the
-// exclusion has to hang off each term, not just the trailing [tabindex]),
-// contenteditable="false", and a bare <summary> outside <details>. Media
-// elements only count with controls; object/embed are omitted as they aren't
-// reliable tab stops across engines.
-const TABBABLE_SELECTOR =
-  'a[href]:not([tabindex^="-"]), area[href]:not([tabindex^="-"]), button:not([disabled]):not([tabindex^="-"]), input:not([disabled]):not([tabindex^="-"]), select:not([disabled]):not([tabindex^="-"]), textarea:not([disabled]):not([tabindex^="-"]), iframe:not([tabindex^="-"]), audio[controls]:not([tabindex^="-"]), video[controls]:not([tabindex^="-"]), details > summary:not([tabindex^="-"]), [contenteditable]:not([contenteditable="false"]):not([tabindex^="-"]), [tabindex]:not([tabindex^="-"])';
 
 // Matches any absolute URL (has a scheme) or a protocol-relative URL. In-page
 // hash links (#top, #projects) are internal and must NOT open a new tab.
@@ -88,71 +65,19 @@ describe("NeonPixelsPage", () => {
     wrapper.unmount();
   });
 
-  it("exposes a single main landmark that the skip link targets", () => {
+  it("exposes a single main landmark the skip link can target", () => {
     const wrapper = mount(NeonPixelsPage);
     // Exactly one primary landmark: assistive tech should find a single <main>,
-    // not zero (no bypass target) or several (ambiguous).
+    // not zero (no bypass target) or several (ambiguous). The skip link itself
+    // now lives in AppLayout (shared with the 404 view); it's covered there.
     const landmarks = wrapper.findAll("main");
     expect(landmarks).toHaveLength(1);
-    const mainId = landmarks[0].attributes("id");
-    expect(mainId).toBeTruthy();
+    expect(landmarks[0].attributes("id")).toBe(MAIN_CONTENT_ID);
     // Without tabindex="-1" the skip link can't move focus into <main> on
     // browsers that don't honor fragment-nav focus (Safari), so the bypass is
     // cosmetic. Pin the attribute here.
     expect(landmarks[0].attributes("tabindex")).toBe("-1");
-    // The skip link is the WCAG 2.4.1 bypass mechanism: it must jump to that id.
-    const skipLink = wrapper.get("a.skip-link");
-    expect(skipLink.attributes("href")).toBe(`#${mainId}`);
     wrapper.unmount();
-  });
-
-  it("makes the skip link the first tabbable element in the page component", () => {
-    const wrapper = mount(NeonPixelsPage);
-    // Bypass-blocks only works if the skip link is reached first on Tab, so it
-    // must precede every other tabbable control in this component's document
-    // order — assert against the tabbable set, not just anchors, so a header
-    // button or a [tabindex] element slipped in above it would fail here.
-    // Exclude the not-tabbable cases (disabled controls, negative tabindex like
-    // our own <main>) so they don't masquerade as the first stop. Scope is this
-    // component; the theme layout renders it as the whole page body (VitePress's
-    // own nav chrome is display:none), so first-here is first on the page.
-    const tabbables = wrapper.findAll(TABBABLE_SELECTOR);
-    expect(tabbables.length).toBeGreaterThan(0);
-    expect(tabbables[0].classes()).toContain("skip-link");
-    wrapper.unmount();
-  });
-
-  it("moves focus into the main landmark when the skip link is activated", async () => {
-    // The real WCAG 2.4.1 guarantee: activating the skip link must land focus on
-    // <main> (VitePress's router only scrolls hash links, so the component moves
-    // focus itself). attachTo connects the tree so focus() actually takes.
-    const wrapper = mount(NeonPixelsPage, { attachTo: document.body });
-    await wrapper.get("a.skip-link").trigger("click");
-    expect(document.activeElement).toBe(wrapper.get("main").element);
-    wrapper.unmount();
-  });
-
-  it("hides the skip link off-canvas until it is focused", () => {
-    // Guards the reveal mechanism from silent deletion. position: fixed takes it
-    // out of flow (without it the link is an in-flow box shoving the hero down);
-    // the transform lifts it above the viewport, restored to translateY(0) on
-    // :focus; z-index clears the sticky header (z-30) so the revealed chip isn't
-    // buried behind it; the reduced-motion rule drops the transition. Together
-    // that's the whole hide/show contract.
-    const componentSource = readFileSync(COMPONENT_PATH, "utf8");
-    expect(componentSource).toMatch(/\.skip-link\s*\{[^}]*position:\s*fixed/);
-    expect(componentSource).toMatch(
-      /\.skip-link\s*\{[^}]*z-index:\s*(?:[4-9]\d|\d{3,})/,
-    );
-    expect(componentSource).toMatch(
-      /\.skip-link\s*\{[^}]*transform:\s*translateY\(-/,
-    );
-    expect(componentSource).toMatch(
-      /\.skip-link:focus\s*\{[^}]*transform:\s*translateY\(0/,
-    );
-    expect(componentSource).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.skip-link\s*\{[^}]*transition:\s*none/,
-    );
   });
 
   it("renders the hero headline", () => {

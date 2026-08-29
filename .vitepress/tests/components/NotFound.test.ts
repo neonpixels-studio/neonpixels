@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { shallowMount } from "@vue/test-utils";
 import NotFound from "@components/NotFound.vue";
+import { MAIN_CONTENT_ID } from "@theme/a11y";
 
 // Matches any absolute URL (has a scheme, e.g. "https:", "mailto:") or a
 // protocol-relative URL ("//host/..."). Matching by scheme presence rather
@@ -26,6 +27,19 @@ describe("NotFound", () => {
     const wrapper = shallowMount(NotFound);
     await wrapper.vm.$nextTick();
     expect(wrapper.html()).toMatchSnapshot();
+    wrapper.unmount();
+  });
+
+  it("exposes a single main landmark for the skip link to target", async () => {
+    // The 404 page must satisfy WCAG 2.4.1 bypass-blocks too: exactly one
+    // <main> landmark, carrying the shared content id and tabindex="-1" so the
+    // skip link in AppLayout can move focus into it.
+    const wrapper = shallowMount(NotFound);
+    await wrapper.vm.$nextTick();
+    const landmarks = wrapper.findAll("main");
+    expect(landmarks).toHaveLength(1);
+    expect(landmarks[0].attributes("id")).toBe(MAIN_CONTENT_ID);
+    expect(landmarks[0].attributes("tabindex")).toBe("-1");
     wrapper.unmount();
   });
 

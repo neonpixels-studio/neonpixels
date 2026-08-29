@@ -2,7 +2,7 @@
 
 exports[`NeonPixelsPage > renders correctly 1`] = `
 "<div data-v-aa442b0f="" class="bg-bg text-fg relative font-mono">
-  <!-- skip link: first focusable element, visually hidden until focused --><a data-v-aa442b0f="" href="#main-content" class="skip-link"> Skip to content </a><!-- drifting grid backdrop -->
+  <!-- drifting grid backdrop -->
   <div data-v-aa442b0f="" class="animate-drift pointer-events-none fixed inset-0 z-0" style="background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 80px 80px;"></div><!-- header -->
   <header data-v-aa442b0f="" class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b px-10 py-[22px] backdrop-blur-md" style="background: #08080ae6;"><a data-v-aa442b0f="" href="#top" class="flex items-center gap-[11px]"><svg data-v-aa442b0f="" width="20" height="20" viewBox="0 0 34 34" class="block flex-none" aria-hidden="true">
         <rect data-v-aa442b0f="" x="0" y="22" width="10" height="10" fill="#22e0ff"></rect>
@@ -12,8 +12,8 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
     <nav data-v-aa442b0f="" class="text-fg-subtle flex items-center gap-[26px] text-[12.5px]"><a data-v-aa442b0f="" href="#projects" class="nav-link text-fg-subtle">projects</a><a data-v-aa442b0f="" href="#about" class="nav-link text-fg-subtle">about</a><span data-v-aa442b0f="" class="text-lime flex items-center gap-[7px]"><span data-v-aa442b0f="" class="bg-lime animate-pulse-dot h-[7px] w-[7px] rounded-full" style="box-shadow: 0 0 8px #b8ff2e;"></span>4 projects </span></nav>
   </header>
   <!-- tabindex="-1" keeps <main> out of the Tab order while letting the skip
-         link move focus here on browsers that don't set the focus navigation
-         starting point from fragment nav (Safari) -->
+         link (in AppLayout) move focus here on browsers that don't set the
+         focus navigation starting point from fragment nav (Safari) -->
   <main data-v-aa442b0f="" id="main-content" tabindex="-1">
     <!-- hero -->
     <section data-v-aa442b0f="" id="top" class="relative z-[2] overflow-hidden px-10 pt-28 pb-24">
