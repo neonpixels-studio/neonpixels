@@ -85,9 +85,10 @@ export default defineConfig({
   ],
   vite: {
     // tailwindcss() is typed against the top-level Vite 8 (required by Vitest),
-    // while VitePress bundles its own Vite 5. The Plugin shapes are compatible
-    // at runtime but nominally distinct across the major gap, so cast to
-    // VitePress's re-exported (Vite 5) Plugin type at the seam.
+    // while VitePress bundles its own Vite 6 (pinned via the `overrides` block
+    // in package.json to pull in a patched vite/esbuild). The Plugin shapes are
+    // compatible at runtime but nominally distinct across the major gap, so
+    // cast to VitePress's re-exported (Vite 6) Plugin type at the seam.
     plugins: [tailwindcss() as unknown as Plugin[]],
   },
   // Hash the inline bootstrap scripts VitePress emits and publish them in a
