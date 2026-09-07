@@ -114,13 +114,43 @@ const STATIC_HEADERS = {
 
 const HEADER_LINE = /^\s*([\w-]+)\s*=\s*"([^"]*)"/;
 
+// Slice to the [[headers]] table whose `for` matches "/*", mirroring
+// readBuildTable() above: a more specific block (e.g. `for = "/assets/*"`)
+// added later in the file would otherwise let a stray duplicate key silently
+// overwrite the value this suite actually needs to assert on, passing green
+// while the deploy serves a different value for that path.
+function readGlobalHeadersTable() {
+  const lines = NETLIFY_CONFIG.split("\n");
+  const start = lines.findIndex((line) => /^\s*for\s*=\s*"\/\*"/.test(line));
+  if (start === -1) {
+    throw new Error('netlify.toml has no [[headers]] block for "/*"');
+  }
+  const rest = lines.slice(start + 1);
+  const nextTable = rest.findIndex((line) => /^\s*\[\[/.test(line));
+  const end = nextTable === -1 ? rest.length : nextTable;
+  return rest.slice(0, end).join("\n");
+}
+
+const GLOBAL_HEADERS_TABLE = readGlobalHeadersTable();
+
 function parseHeaders() {
   const headers = new Map<string, string>();
-  for (const line of NETLIFY_CONFIG.split("\n")) {
+  const duplicates: string[] = [];
+  for (const line of GLOBAL_HEADERS_TABLE.split("\n")) {
     const match = line.match(HEADER_LINE);
-    if (match) {
-      headers.set(match[1], match[2]);
+    if (!match) {
+      continue;
     }
+    if (headers.has(match[1])) {
+      duplicates.push(match[1]);
+      continue;
+    }
+    headers.set(match[1], match[2]);
+  }
+  if (duplicates.length > 0) {
+    throw new Error(
+      `Duplicate header key(s) in the "/*" headers block: ${duplicates.join(", ")}`,
+    );
   }
   return headers;
 }
