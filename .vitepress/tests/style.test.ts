@@ -131,12 +131,8 @@ function motionValue(body: string, property: string) {
 function findMatchingBraceIndex(source: string, openBraceIndex: number) {
   let depth = 0;
   for (let index = openBraceIndex; index < source.length; index += 1) {
-    if (source[index] === "{") {
-      depth += 1;
-    }
-    if (source[index] === "}") {
-      depth -= 1;
-    }
+    const character = source[index];
+    depth += character === "{" ? 1 : character === "}" ? -1 : 0;
     if (depth === 0) {
       return index;
     }
@@ -184,10 +180,25 @@ function splitReducedMotionBlock(source: string) {
   return { insideBlock: insideBlocks.join("\n"), outsideBlock };
 }
 
-// Records every `.animate-*` class + motion property pair in `rule` into
-// `destination`, but only the ones whose disabled-state matches
-// `wantDisabled` (false while scanning outside the block for real animations,
-// true while scanning inside it for `none` overrides).
+// Adds one class+property pair per class in `animateClasses` to `destination`,
+// but only if `value`'s disabled-state matches `wantDisabled` (false while
+// scanning outside the block for real animations, true while scanning inside
+// it for `none` overrides).
+function recordMotionPair(
+  animateClasses: string[],
+  property: string,
+  wantDisabled: boolean,
+  value: string,
+  destination: Set<string>,
+) {
+  if (DISABLED_VALUE_PATTERN.test(value) !== wantDisabled) {
+    return;
+  }
+  animateClasses.forEach((selector) =>
+    destination.add(`${selector}${KEY_SEPARATOR}${property}`),
+  );
+}
+
 function collectMotionClassesFromRule(
   rule: CssRule,
   wantDisabled: boolean,
@@ -199,11 +210,15 @@ function collectMotionClassesFromRule(
   }
   MOTION_PROPERTIES.forEach((property) => {
     const value = motionValue(rule.body, property);
-    if (value === null || DISABLED_VALUE_PATTERN.test(value) !== wantDisabled) {
+    if (value === null) {
       return;
     }
-    animateClasses.forEach((selector) =>
-      destination.add(`${selector}${KEY_SEPARATOR}${property}`),
+    recordMotionPair(
+      animateClasses,
+      property,
+      wantDisabled,
+      value,
+      destination,
     );
   });
 }
@@ -223,9 +238,22 @@ function collectMotionClasses(source: string) {
   return { animatedClasses, disabledClasses };
 }
 
-const { animatedClasses, disabledClasses } = collectMotionClasses(
-  STYLE_CSS_WITHOUT_COMMENTS,
-);
+// Computed once, at module scope, so every `it`/`it.each` below shares the
+// same parse — but caught rather than left to throw here: an uncaught throw
+// during module evaluation would abort collection of this whole file (taking
+// the unrelated `style.css keyboard focus` suite above down with it) instead
+// of failing as one named, attributable test.
+let reducedMotionSplitError: Error | null = null;
+let animatedClasses = new Set<string>();
+let disabledClasses = new Set<string>();
+try {
+  ({ animatedClasses, disabledClasses } = collectMotionClasses(
+    STYLE_CSS_WITHOUT_COMMENTS,
+  ));
+} catch (error) {
+  reducedMotionSplitError =
+    error instanceof Error ? error : new Error(String(error));
+}
 // An independent, dumber scan of every `.animate-*` token anywhere in the
 // file. If `collectMotionClasses`'s rule parser ever silently stops matching
 // (a regex tweak gone wrong, an unexpected syntax shape), the tests below
@@ -241,6 +269,10 @@ function baseSelectorOf(key: string) {
 }
 
 describe("style.css reduced-motion coverage", () => {
+  it("parses a @media (prefers-reduced-motion: reduce) block without error", () => {
+    expect(reducedMotionSplitError).toBeNull();
+  });
+
   it("finds at least one real .animate-* rule to guard", () => {
     // An empty set would make every check below vacuously pass, silently
     // guarding nothing — e.g. if the parser regex stopped matching.
