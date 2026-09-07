@@ -202,4 +202,127 @@ describe("writeReportOnlyHeaders", () => {
       writeReportOnlyHeaders(outDir, netlifyConfigPath),
     ).rejects.toThrow(/multiple Content-Security-Policy headers/);
   });
+
+  describe("extraGlobalHeaderLines", () => {
+    const NOINDEX_HEADER_LINE = "X-Robots-Tag: noindex";
+    const HEADERS_PATH_GLOB = "/*";
+
+    it("folds an extra header line into the same generated /* block", async () => {
+      // Seed the hand-written /assets/* rule production always ships, so the
+      // path-block count below reflects a realistic file rather than a
+      // fixture that happens to omit the one other path in it.
+      writeOutFile(HEADERS_FILE, IMMUTABLE_ASSET_RULE);
+      writeOutFile("index.html", INLINE_SCRIPT);
+      writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+      await writeReportOnlyHeaders(outDir, netlifyConfigPath, [
+        NOINDEX_HEADER_LINE,
+      ]);
+
+      const headers = readGeneratedHeaders();
+      // Exactly one /* block ships: Netlify's behaviour for two blocks
+      // declaring the same path is undocumented, so the noindex line must
+      // land inside the existing generated block, not a second one. Counted
+      // by exact line match, not substring, so /assets/* (which contains the
+      // substring "/*") can't inflate the count.
+      const pathGlobLines = headers
+        .split("\n")
+        .filter((line) => line === HEADERS_PATH_GLOB);
+      expect(pathGlobLines).toHaveLength(1);
+      expect(headers).toContain(NOINDEX_HEADER_LINE);
+      expect(headers).toContain(`${REPORT_ONLY_HEADER_NAME}:`);
+    });
+
+    it("does not add the extra line when none is passed", async () => {
+      writeOutFile("index.html", INLINE_SCRIPT);
+      writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+      await writeReportOnlyHeaders(outDir, netlifyConfigPath);
+
+      const headers = readGeneratedHeaders();
+      expect(headers).not.toContain(NOINDEX_HEADER_LINE);
+    });
+
+    it("drops a stale extra line when a later build omits it, instead of leaving it stuck in a reused publish dir", async () => {
+      writeOutFile("index.html", INLINE_SCRIPT);
+      writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+      // Simulates a deploy-preview build followed by a production build that
+      // reuses the same, non-emptied publish dir (e.g. a local rebuild).
+      await writeReportOnlyHeaders(outDir, netlifyConfigPath, [
+        NOINDEX_HEADER_LINE,
+      ]);
+      await writeReportOnlyHeaders(outDir, netlifyConfigPath);
+
+      const headers = readGeneratedHeaders();
+      expect(headers).not.toContain(NOINDEX_HEADER_LINE);
+      expect(headers.split(REPORT_ONLY_HEADER_NAME).length - 1).toBe(1);
+    });
+
+    it("throws instead of writing a line that would inject a second _headers block", async () => {
+      writeOutFile("index.html", INLINE_SCRIPT);
+      writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+      await expect(
+        writeReportOnlyHeaders(outDir, netlifyConfigPath, [
+          "X-Robots-Tag: noindex\n/evil/*\n  X-Frame-Options: ALLOWALL",
+        ]),
+      ).rejects.toThrow(/malformed extra header line/);
+    });
+
+    it("throws on a single embedded newline, not just a multi-line payload", async () => {
+      // `\s*` between the colon and value would let the separator itself
+      // absorb one newline, hiding a path-block injection behind a payload
+      // that looks single-line at a glance; pin the narrower case directly.
+      writeOutFile("index.html", INLINE_SCRIPT);
+      writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+      await expect(
+        writeReportOnlyHeaders(outDir, netlifyConfigPath, [
+          "X-Robots-Tag:\n/evil/*",
+        ]),
+      ).rejects.toThrow(/malformed extra header line/);
+    });
+
+    it("throws instead of writing a line with no header name", async () => {
+      writeOutFile("index.html", INLINE_SCRIPT);
+      writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+      await expect(
+        writeReportOnlyHeaders(outDir, netlifyConfigPath, [""]),
+      ).rejects.toThrow(/malformed extra header line/);
+    });
+
+    it("throws instead of writing a whitespace-only value", async () => {
+      writeOutFile("index.html", INLINE_SCRIPT);
+      writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+      await expect(
+        writeReportOnlyHeaders(outDir, netlifyConfigPath, ["X-Robots-Tag:   "]),
+      ).rejects.toThrow(/malformed extra header line/);
+    });
+
+    it("throws when an extra line reuses a header name this module already generates", async () => {
+      writeOutFile("index.html", INLINE_SCRIPT);
+      writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+      await expect(
+        writeReportOnlyHeaders(outDir, netlifyConfigPath, [
+          `${REPORT_ONLY_HEADER_NAME}: default-src 'none'`,
+        ]),
+      ).rejects.toThrow(/collide with a header this module already generates/);
+    });
+
+    it("throws when a hand-written file already declares the extra line's header", async () => {
+      writeOutFile("index.html", INLINE_SCRIPT);
+      writeOutFile(HEADERS_FILE, `/*\n  ${NOINDEX_HEADER_LINE}\n`);
+      writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+      await expect(
+        writeReportOnlyHeaders(outDir, netlifyConfigPath, [
+          NOINDEX_HEADER_LINE,
+        ]),
+      ).rejects.toThrow(/two conflicting policies/);
+    });
+  });
 });
