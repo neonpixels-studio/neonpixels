@@ -689,6 +689,23 @@ describe("background resolver", () => {
     expect(resolvedBackgroundOf(leaf)).toBe("#0b0b0e");
   });
 
+  it("does not read a custom property's hex value as a painted background", () => {
+    // `--card-background` ends in the literal "background", but BACKGROUND_DECLARATION
+    // requires a declaration boundary (start/`;`) directly before that word, so the
+    // custom property's leading `-` blocks the match and the element still climbs.
+    const leaf = fixtureLeaf(
+      '<div style="--card-background: #123456"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe(pageBackgroundHex());
+  });
+
+  it("reads the real background declaration over a custom property that precedes it", () => {
+    const leaf = fixtureLeaf(
+      '<div style="--card-background: #123456; background: #654321"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe("#654321");
+  });
+
   it("falls back to the page background when nothing opaque is painted", () => {
     const leaf = fixtureLeaf(
       '<div><span data-leaf class="text-[#f2f2f4]">x</span></div>',
