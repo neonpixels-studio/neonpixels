@@ -144,13 +144,20 @@ function readGlobalHeadersTable(config: string) {
       'Found `for = "/*"` outside of a [[headers]] table in netlify.toml',
     );
   }
-  const valuesStart = lines.findIndex(
-    (line, index) => index > forLineIndex && HEADERS_VALUES_START.test(line),
+  // Bound the search for [headers.values] to lines still inside this
+  // [[headers]] block (up to the next [[headers]] table), so a /* block
+  // missing its own [headers.values] table can't fall through and pick up a
+  // later, more specific block's values instead.
+  const afterFor = lines.slice(forLineIndex + 1);
+  const blockEnd = afterFor.findIndex((line) => HEADERS_TABLE_START.test(line));
+  const block = blockEnd === -1 ? afterFor : afterFor.slice(0, blockEnd);
+  const valuesStart = block.findIndex((line) =>
+    HEADERS_VALUES_START.test(line),
   );
   if (valuesStart === -1) {
     throw new Error('The "/*" [[headers]] block has no [headers.values] table');
   }
-  const rest = lines.slice(valuesStart + 1);
+  const rest = block.slice(valuesStart + 1);
   const nextTable = rest.findIndex((line) => ANY_TABLE_START.test(line));
   const end = nextTable === -1 ? rest.length : nextTable;
   return rest.slice(0, end).join("\n");
@@ -159,21 +166,21 @@ function readGlobalHeadersTable(config: string) {
 function parseHeaders(config: string) {
   const globalHeadersTable = readGlobalHeadersTable(config);
   const headers = new Map<string, string>();
-  const duplicates: string[] = [];
+  const duplicates = new Set<string>();
   for (const line of globalHeadersTable.split("\n")) {
     const match = line.match(HEADER_LINE);
     if (!match) {
       continue;
     }
     if (headers.has(match[1])) {
-      duplicates.push(match[1]);
+      duplicates.add(match[1]);
       continue;
     }
     headers.set(match[1], match[2]);
   }
-  if (duplicates.length > 0) {
+  if (duplicates.size > 0) {
     throw new Error(
-      `Duplicate header key(s) in the "/*" headers block: ${duplicates.join(", ")}`,
+      `Duplicate header key(s) in the "/*" headers block: ${[...duplicates].join(", ")}`,
     );
   }
   return headers;
@@ -354,6 +361,26 @@ describe("global headers table scoping", () => {
     expect(() => parseHeaders(config)).toThrow(
       /outside of a \[\[headers\]\] table/,
     );
+  });
+
+  it('throws when no [[headers]] block for "/*" exists at all', () => {
+    const config = ["[build]", '  publish = "dist"'].join("\n");
+    expect(() => parseHeaders(config)).toThrow(
+      /no \[\[headers\]\] block for "\/\*"/,
+    );
+  });
+
+  it("throws when the /* block has no [headers.values] table of its own, even if a later block has one", () => {
+    const config = [
+      "[[headers]]",
+      '  for = "/*"',
+      "",
+      "[[headers]]",
+      '  for = "/assets/*"',
+      "  [headers.values]",
+      '    X-Frame-Options = "SAMEORIGIN"',
+    ].join("\n");
+    expect(() => parseHeaders(config)).toThrow(/no \[headers\.values\] table/);
   });
 });
 
