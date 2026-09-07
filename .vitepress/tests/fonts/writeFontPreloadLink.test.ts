@@ -142,12 +142,51 @@ describe("writeFontPreloadLink", () => {
     );
   });
 
-  it("throws when a built HTML document has no closing </head> tag", async () => {
+  it("throws with the offending file path when a built HTML document has no closing </head> tag", async () => {
     writeAssetFile(CRITICAL_FONT_FILENAME);
-    writeHtmlFile("index.html", "<html><body>no head here</body></html>");
+    writeHtmlFile("no-head.html", "<html><body>no head here</body></html>");
 
     await expect(writeFontPreloadLink(outDir)).rejects.toThrow(
-      /no closing <\/head> tag/,
+      /no-head\.html has no closing <\/head> tag/,
     );
+  });
+
+  it("throws when the build output has no assets/ directory", async () => {
+    rmSync(assetsDir, { recursive: true, force: true });
+    writeHtmlFile("index.html", BASE_HTML);
+
+    await expect(writeFontPreloadLink(outDir)).rejects.toThrow(
+      /has no assets\/ dir/,
+    );
+  });
+
+  it("throws instead of silently succeeding when no HTML documents were built", async () => {
+    writeAssetFile(CRITICAL_FONT_FILENAME);
+
+    await expect(writeFontPreloadLink(outDir)).rejects.toThrow(
+      /no \.html documents found/,
+    );
+  });
+
+  it("prefixes the href with a non-root site base", async () => {
+    writeAssetFile(CRITICAL_FONT_FILENAME);
+    writeHtmlFile("index.html", BASE_HTML);
+
+    await writeFontPreloadLink(outDir, "/preview/");
+
+    const html = readHtmlFile("index.html");
+    expect(html).toContain(`href="/preview/assets/${CRITICAL_FONT_FILENAME}"`);
+  });
+
+  it("reads assets from a non-default assets directory name", async () => {
+    const staticDir = join(outDir, "static");
+    mkdirSync(staticDir, { recursive: true });
+    writeFileSync(join(staticDir, CRITICAL_FONT_FILENAME), "");
+    writeHtmlFile("index.html", BASE_HTML);
+
+    await writeFontPreloadLink(outDir, "/", "static");
+
+    const html = readHtmlFile("index.html");
+    expect(html).toContain(`href="/static/${CRITICAL_FONT_FILENAME}"`);
   });
 });

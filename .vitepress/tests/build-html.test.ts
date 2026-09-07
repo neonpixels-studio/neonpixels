@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "vitepress";
 
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
+import { CRITICAL_FONT_FILENAME_PATTERN } from "../fonts/writeFontPreloadLink";
 
 // Asserts the tags survive `vitepress build` into the emitted HTML, not just the
 // config.head array. config.test.ts already covers the config object; this closes
@@ -48,10 +49,6 @@ const ASSETS_DIR = "assets";
 // than only immediately before the final extension.
 const CONTENT_HASH_FILENAME = /\.[A-Za-z0-9_-]{8,}\./;
 const NOT_FOUND_HTML_FILE = "404.html";
-// @fontsource keeps this basename stable across versions; only the
-// content-hash segment changes — mirrors ../fonts/writeFontPreloadLink.
-const CRITICAL_FONT_FILENAME_PATTERN =
-  /archivo-latin-900-normal\.[A-Za-z0-9_-]+\.woff2/;
 const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
 const REPORT_ONLY_HEADER_LINE = new RegExp(
   `^\\s*${REPORT_ONLY_HEADER_NAME}:\\s*(.+)$`,
@@ -462,7 +459,8 @@ describe("hero font preload", () => {
   it("preloads the critical Archivo 900 face with crossorigin set", () => {
     const linkTag = preloadLinkFor(builtHead);
     expect(linkTag, "no font preload <link> in built HTML").toBeTruthy();
-    expect(linkTag).toMatch(CRITICAL_FONT_FILENAME_PATTERN);
+    const href = attributeValue(linkTag!, "href")!;
+    expect(basename(href)).toMatch(CRITICAL_FONT_FILENAME_PATTERN);
     // Boolean attribute (no ="value"), so match its presence directly rather
     // than through attributeValue()'s ="..." pattern.
     expect(linkTag).toMatch(/(?:^|\s)crossorigin(?:\s|>)/);
@@ -488,13 +486,18 @@ describe("hero font preload", () => {
     ).toContain(basename(href));
   });
 
-  it("also preloads the face on the 404 page", () => {
+  it("also preloads the same built asset on the 404 page", () => {
     const notFoundHtml = readFileSync(
       resolve(buildOutDir, NOT_FOUND_HTML_FILE),
       "utf8",
     );
-    const linkTag = preloadLinkFor(extractHead(notFoundHtml));
-    expect(linkTag, "no font preload <link> on 404.html").toBeTruthy();
+    const notFoundLinkTag = preloadLinkFor(extractHead(notFoundHtml));
+    expect(notFoundLinkTag, "no font preload <link> on 404.html").toBeTruthy();
+    // Both pages must preload the exact same content-hashed asset, not merely
+    // an asset matching the family/weight pattern, so a hash mismatch between
+    // pages (e.g. a partial rebuild) fails here.
+    const indexHref = attributeValue(preloadLinkFor(builtHead)!, "href");
+    expect(attributeValue(notFoundLinkTag!, "href")).toBe(indexHref);
   });
 });
 

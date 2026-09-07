@@ -104,6 +104,10 @@ export default defineConfig({
   // ./fonts/writeFontPreloadLink.
   async buildEnd(siteConfig) {
     await writeReportOnlyHeaders(siteConfig.outDir);
-    await writeFontPreloadLink(siteConfig.outDir);
+    await writeFontPreloadLink(
+      siteConfig.outDir,
+      siteConfig.site.base,
+      siteConfig.assetsDir,
+    );
   },
 });
