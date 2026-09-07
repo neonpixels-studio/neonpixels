@@ -433,12 +433,30 @@ describe("built index.html head", () => {
 // dist/assets (not a stale or guessed hash), and reaches the 404 page too,
 // since the hero wordmark also renders there.
 describe("hero font preload", () => {
+  // Mirrors findUniqueTag()'s "duplicate keys are themselves a bug worth
+  // failing" convention: a stacked stale-plus-fresh preload (the exact case
+  // the GENERATED_MARKER_ATTRIBUTE de-dupe in writeFontPreloadLink.ts guards
+  // against) must fail this check, not silently pick the first match.
   function preloadLinkFor(head: string) {
-    return tagsNamed(head, "link").find(
+    const matches = tagsNamed(head, "link").filter(
       (tag) =>
         attributeValue(tag, "rel") === "preload" &&
         attributeValue(tag, "as") === "font",
     );
+    if (matches.length > 1) {
+      throw new Error(`Built <head> has ${matches.length} font preload links`);
+    }
+    return matches[0];
+  }
+
+  function bundledCss() {
+    const assetFiles = readdirSync(resolve(buildOutDir, ASSETS_DIR));
+    return assetFiles
+      .filter((file) => file.endsWith(".css"))
+      .map((file) =>
+        readFileSync(resolve(buildOutDir, ASSETS_DIR, file), "utf8"),
+      )
+      .join("\n");
   }
 
   it("preloads the critical Archivo 900 face with crossorigin set", () => {
@@ -455,6 +473,19 @@ describe("hero font preload", () => {
     const href = attributeValue(linkTag, "href")!;
     const assetFiles = readdirSync(resolve(buildOutDir, ASSETS_DIR));
     expect(assetFiles).toContain(basename(href));
+  });
+
+  it("preloads the same file the built @font-face rule requests", () => {
+    // The whole value of a font preload is that it matches what the CSS asks
+    // for; if they diverge (e.g. an @fontsource layout change emitting a
+    // second Archivo 900 latin file), the browser downloads a font nobody
+    // uses, the hero still FOUTs, and every other assertion here stays green.
+    const linkTag = preloadLinkFor(builtHead)!;
+    const href = attributeValue(linkTag, "href")!;
+    expect(
+      bundledCss(),
+      "preloaded font is not referenced by the built @font-face rule",
+    ).toContain(basename(href));
   });
 
   it("also preloads the face on the 404 page", () => {
