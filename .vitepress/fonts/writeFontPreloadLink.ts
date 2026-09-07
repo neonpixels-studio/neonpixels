@@ -2,12 +2,14 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 // Build-time glue: after the build emits its content-hashed assets, locates the
-// self-hosted Archivo 900 face (the above-the-fold hero/404 wordmark font, see
-// theme/index.ts) and injects a <link rel="preload"> for it into every emitted
-// HTML document's <head>. Runs from VitePress's buildEnd hook — the same
-// pattern as ../csp/writeReportOnlyHeaders — so the href always matches the
-// real, content-hashed filename Vite emitted for this build rather than a
-// hand-hardcoded hash that would drift on the next @fontsource bump.
+// self-hosted Archivo 900 face (the site's sole display font — the hero
+// wordmark, the 404 view, and every other .font-display heading on the
+// single-page site, see theme/index.ts) and injects a <link rel="preload">
+// for it into every emitted HTML document's <head>. Runs from VitePress's
+// buildEnd hook — the same pattern as ../csp/writeReportOnlyHeaders — so the
+// href always matches the real, content-hashed filename Vite emitted for this
+// build rather than a hand-hardcoded hash that would drift on the next
+// @fontsource bump.
 
 // Vite's default assets subdirectory name; config.ts doesn't override it, but
 // the real value still comes from siteConfig.assetsDir (see writeFontPreloadLink
@@ -31,17 +33,20 @@ const GENERATED_LINK_PATTERN = new RegExp(
   `\\s*<link\\b[^>]*${GENERATED_MARKER_ATTRIBUTE}[^>]*>`,
   "g",
 );
-const FILE_NOT_FOUND_CODE = "ENOENT";
+// A dir that doesn't exist raises ENOENT; a path that exists but isn't a dir
+// (e.g. `assets` shipped as a file by a misconfigured build) raises ENOTDIR.
+// Both mean "no usable directory here" for this script's purposes.
+const MISSING_DIRECTORY_CODES = new Set(["ENOENT", "ENOTDIR"]);
 // VitePress always normalizes `site.base` to a leading-and-trailing slash
 // (defaults to "/"), so every emitted absolute URL — including this href —
 // must be prefixed with it, not a hardcoded root.
 const DEFAULT_SITE_BASE = "/";
 
-function isFileNotFound(error: unknown) {
+function isMissingDirectory(error: unknown) {
   return (
     typeof error === "object" &&
     error !== null &&
-    (error as { code?: string }).code === FILE_NOT_FOUND_CODE
+    MISSING_DIRECTORY_CODES.has((error as { code?: string }).code ?? "")
   );
 }
 
@@ -51,7 +56,7 @@ async function findCriticalFontAsset(outDir: string, assetsDirName: string) {
   try {
     entries = await readdir(assetsDir, { withFileTypes: true });
   } catch (error) {
-    if (isFileNotFound(error)) {
+    if (isMissingDirectory(error)) {
       throw new Error(
         `Font preload: build output has no ${assetsDirName}/ dir at ${assetsDir}; is this a complete VitePress build?`,
         { cause: error },
@@ -77,10 +82,18 @@ async function findCriticalFontAsset(outDir: string, assetsDirName: string) {
 }
 
 async function readHtmlFiles(outDir: string) {
-  const entries = await readdir(outDir, {
-    recursive: true,
-    withFileTypes: true,
-  });
+  let entries;
+  try {
+    entries = await readdir(outDir, { recursive: true, withFileTypes: true });
+  } catch (error) {
+    if (isMissingDirectory(error)) {
+      throw new Error(
+        `Font preload: build output dir ${outDir} is missing or unreadable`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
   const htmlFiles = entries.filter(
     (entry) => entry.isFile() && entry.name.endsWith(HTML_EXTENSION),
   );
@@ -109,6 +122,30 @@ function injectPreloadLink(html: string, linkTag: string, filePath: string) {
   );
 }
 
+// Reads and injects every document sequentially before any write happens, so
+// a bad document (e.g. missing </head>) throws before touching disk rather
+// than leaving outDir a mix of injected and un-injected HTML. Sequential also
+// keeps this bounded to one open file at a time — the CSP writer's HTML read
+// in ../csp/writeReportOnlyHeaders can afford Promise.all because it never
+// writes back, but this script both reads and writes every document.
+async function readAndInjectAll(
+  htmlFiles: Awaited<ReturnType<typeof readHtmlFiles>>,
+  linkTag: string,
+) {
+  const injected: Array<{ filePath: string; html: string }> = [];
+  for (const entry of htmlFiles) {
+    // `parentPath` (Node 20.12+/21.4+) is guaranteed: .nvmrc pins Node 24,
+    // same as ../csp/writeReportOnlyHeaders.
+    const filePath = join(entry.parentPath, entry.name);
+    const html = await readFile(filePath, "utf8");
+    injected.push({
+      filePath,
+      html: injectPreloadLink(html, linkTag, filePath),
+    });
+  }
+  return injected;
+}
+
 export async function writeFontPreloadLink(
   outDir: string,
   siteBase: string = DEFAULT_SITE_BASE,
@@ -117,17 +154,8 @@ export async function writeFontPreloadLink(
   const fontFilename = await findCriticalFontAsset(outDir, assetsDirName);
   const linkTag = preloadLinkTag(`${siteBase}${assetsDirName}/${fontFilename}`);
   const htmlFiles = await readHtmlFiles(outDir);
-  await Promise.all(
-    htmlFiles.map(async (entry) => {
-      // `parentPath` (Node 20.12+/21.4+) is guaranteed: .nvmrc pins Node 24,
-      // same as ../csp/writeReportOnlyHeaders.
-      const filePath = join(entry.parentPath, entry.name);
-      const html = await readFile(filePath, "utf8");
-      await writeFile(
-        filePath,
-        injectPreloadLink(html, linkTag, filePath),
-        "utf8",
-      );
-    }),
-  );
+  const injected = await readAndInjectAll(htmlFiles, linkTag);
+  for (const { filePath, html } of injected) {
+    await writeFile(filePath, html, "utf8");
+  }
 }

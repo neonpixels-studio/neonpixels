@@ -160,6 +160,44 @@ describe("writeFontPreloadLink", () => {
     );
   });
 
+  it("throws when assets/ exists as a file rather than a directory", async () => {
+    rmSync(assetsDir, { recursive: true, force: true });
+    writeFileSync(assetsDir, "not a directory");
+    writeHtmlFile("index.html", BASE_HTML);
+
+    await expect(writeFontPreloadLink(outDir)).rejects.toThrow(
+      /has no assets\/ dir/,
+    );
+  });
+
+  it("throws a scoped error (not a bare ENOENT) when outDir itself is missing", async () => {
+    // findCriticalFontAsset resolves outDir/assets first, so a wholly missing
+    // outDir surfaces through that check's message rather than
+    // readHtmlFiles' own missing-dir guard — either way this must never
+    // propagate a raw, contextless ENOENT.
+    rmSync(outDir, { recursive: true, force: true });
+
+    await expect(writeFontPreloadLink(outDir)).rejects.toThrow(
+      /Font preload: build output has no assets\/ dir/,
+    );
+  });
+
+  it("leaves every document untouched when one document fails to inject", async () => {
+    writeAssetFile(CRITICAL_FONT_FILENAME);
+    writeHtmlFile("index.html", BASE_HTML);
+    const noHeadHtml = "<html><body>no head here</body></html>";
+    writeHtmlFile("no-head.html", noHeadHtml);
+
+    await expect(writeFontPreloadLink(outDir)).rejects.toThrow();
+
+    // readdir doesn't guarantee iteration order, so this doesn't assume which
+    // document is read first — only that every read-and-inject happens before
+    // any write, so a failure anywhere leaves the whole build untouched
+    // rather than a partial mix of injected and un-injected HTML.
+    expect(readHtmlFile("index.html")).toBe(BASE_HTML);
+    expect(readHtmlFile("no-head.html")).toBe(noHeadHtml);
+  });
+
   it("throws instead of silently succeeding when no HTML documents were built", async () => {
     writeAssetFile(CRITICAL_FONT_FILENAME);
 
