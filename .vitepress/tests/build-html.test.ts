@@ -47,6 +47,11 @@ const ASSETS_DIR = "assets";
 // safe to cache immutably for a year, so match it anywhere in the name rather
 // than only immediately before the final extension.
 const CONTENT_HASH_FILENAME = /\.[A-Za-z0-9_-]{8,}\./;
+const NOT_FOUND_HTML_FILE = "404.html";
+// @fontsource keeps this basename stable across versions; only the
+// content-hash segment changes — mirrors ../fonts/writeFontPreloadLink.
+const CRITICAL_FONT_FILENAME_PATTERN =
+  /archivo-latin-900-normal\.[A-Za-z0-9_-]+\.woff2/;
 const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
 const REPORT_ONLY_HEADER_LINE = new RegExp(
   `^\\s*${REPORT_ONLY_HEADER_NAME}:\\s*(.+)$`,
@@ -421,6 +426,45 @@ describe("built index.html head", () => {
       expect(new URL(content!).protocol).toBe(HTTPS_PROTOCOL);
     },
   );
+});
+
+// Closes the gap a config.head-only check would miss: proves the preload link
+// survives into real build output, points at an asset that actually exists in
+// dist/assets (not a stale or guessed hash), and reaches the 404 page too,
+// since the hero wordmark also renders there.
+describe("hero font preload", () => {
+  function preloadLinkFor(head: string) {
+    return tagsNamed(head, "link").find(
+      (tag) =>
+        attributeValue(tag, "rel") === "preload" &&
+        attributeValue(tag, "as") === "font",
+    );
+  }
+
+  it("preloads the critical Archivo 900 face with crossorigin set", () => {
+    const linkTag = preloadLinkFor(builtHead);
+    expect(linkTag, "no font preload <link> in built HTML").toBeTruthy();
+    expect(linkTag).toMatch(CRITICAL_FONT_FILENAME_PATTERN);
+    // Boolean attribute (no ="value"), so match its presence directly rather
+    // than through attributeValue()'s ="..." pattern.
+    expect(linkTag).toMatch(/(?:^|\s)crossorigin(?:\s|>)/);
+  });
+
+  it("points at a font file that actually exists in the built assets dir", () => {
+    const linkTag = preloadLinkFor(builtHead)!;
+    const href = attributeValue(linkTag, "href")!;
+    const assetFiles = readdirSync(resolve(buildOutDir, ASSETS_DIR));
+    expect(assetFiles).toContain(basename(href));
+  });
+
+  it("also preloads the face on the 404 page", () => {
+    const notFoundHtml = readFileSync(
+      resolve(buildOutDir, NOT_FOUND_HTML_FILE),
+      "utf8",
+    );
+    const linkTag = preloadLinkFor(extractHead(notFoundHtml));
+    expect(linkTag, "no font preload <link> on 404.html").toBeTruthy();
+  });
 });
 
 // Creates a throwaway dir seeded with the given build artifacts, runs the

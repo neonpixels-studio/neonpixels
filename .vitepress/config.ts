@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from "vitepress";
 import tailwindcss from "@tailwindcss/vite";
 
 import { writeReportOnlyHeaders } from "./csp/writeReportOnlyHeaders";
+import { writeFontPreloadLink } from "./fonts/writeFontPreloadLink";
 
 const SITE_URL = "https://neonpixels.io";
 const DESCRIPTION =
@@ -96,7 +97,13 @@ export default defineConfig({
   // the real build output so the hashes can never drift silently. The enforcing
   // CSP in netlify.toml keeps 'unsafe-inline' until this Report-Only rollout
   // confirms no violations — see the @todo there.
+  //
+  // Also preloads the self-hosted Archivo 900 face (the hero/404 wordmark) so it
+  // doesn't visibly swap in after CSS parse. The href is read back from the real
+  // build output, never hand-hardcoded to a hashed filename — see
+  // ./fonts/writeFontPreloadLink.
   async buildEnd(siteConfig) {
     await writeReportOnlyHeaders(siteConfig.outDir);
+    await writeFontPreloadLink(siteConfig.outDir);
   },
 });
