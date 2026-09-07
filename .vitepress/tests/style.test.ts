@@ -57,3 +57,109 @@ describe("style.css keyboard focus", () => {
     expect(STYLE_CSS_WITHOUT_COMMENTS).not.toMatch(SUPPRESSED_OUTLINE_PATTERN);
   });
 });
+
+// The `prefers-reduced-motion: reduce` block hand-lists every ambient
+// `.animate-*` class it freezes. Nothing ties that list back to the classes
+// actually defined above it, so a new `.animate-*` rule (or a renamed one)
+// can ship without ever being added there, leaving it looping forever for
+// visitors who asked their OS to reduce motion. This parses every rule in the
+// stylesheet instead of hand-listing the current seven classes, so the guard
+// itself can't go stale the way the CSS did: a class counts as "animated" if
+// some rule gives it a real (non-`none`) `animation`/`transition` value, and
+// "covered" if some rule sets that same property to `none`. Every animated
+// class must also be covered, wherever in the file that happens to live.
+type CssRule = { selectors: string[]; body: string };
+
+// Matches one flat `selector(s) { declarations }` block at a time. Nested
+// at-rules (`@keyframes`, `@media`) have no selector of their own here, so
+// this naturally yields their inner rules (`0%, 18% { ... }`,
+// `.animate-drift { animation: none; }`) without needing to special-case the
+// wrapper — exactly what this guard needs, since a disabling rule can live
+// inside a `@media` block while the animating rule lives outside one.
+const CSS_RULE_PATTERN = /([^{}]+)\{([^{}]*)\}/g;
+const ANIMATE_CLASS_PATTERN = /^\.animate-[\w-]+$/;
+const MOTION_PROPERTIES = ["animation", "transition"] as const;
+const DISABLED_VALUE_PATTERN = /^none\b/i;
+
+function parseCssRules(source: string): CssRule[] {
+  return [...source.matchAll(CSS_RULE_PATTERN)].map((match) => ({
+    selectors: match[1]
+      .split(",")
+      .map((selector) => selector.trim())
+      .filter(Boolean),
+    body: match[2],
+  }));
+}
+
+function animateSelectorsOf(rule: CssRule) {
+  return rule.selectors.filter((selector) =>
+    ANIMATE_CLASS_PATTERN.test(selector),
+  );
+}
+
+function motionValue(body: string, property: string) {
+  const match = body.match(new RegExp(`${property}:\\s*([^;]+);`));
+  return match ? match[1].trim() : null;
+}
+
+// Files an animate class's motion state for one property into whichever
+// bucket applies: a real value means it needs reduced-motion coverage, a
+// `none` value means this rule provides that coverage.
+function recordMotionState(
+  rule: CssRule,
+  animateSelectors: string[],
+  property: string,
+  animatedClasses: Set<string>,
+  disabledClasses: Set<string>,
+) {
+  const value = motionValue(rule.body, property);
+  if (value === null) {
+    return;
+  }
+  const targetSet = DISABLED_VALUE_PATTERN.test(value)
+    ? disabledClasses
+    : animatedClasses;
+  animateSelectors.forEach((selector) => targetSet.add(selector));
+}
+
+function collectMotionClasses(rules: CssRule[]) {
+  const animatedClasses = new Set<string>();
+  const disabledClasses = new Set<string>();
+
+  for (const rule of rules) {
+    const animateSelectors = animateSelectorsOf(rule);
+    if (animateSelectors.length === 0) {
+      continue;
+    }
+    for (const property of MOTION_PROPERTIES) {
+      recordMotionState(
+        rule,
+        animateSelectors,
+        property,
+        animatedClasses,
+        disabledClasses,
+      );
+    }
+  }
+
+  return { animatedClasses, disabledClasses };
+}
+
+const { animatedClasses, disabledClasses } = collectMotionClasses(
+  parseCssRules(STYLE_CSS_WITHOUT_COMMENTS),
+);
+
+describe("style.css reduced-motion coverage", () => {
+  it("finds at least one real .animate-* rule to guard", () => {
+    // An empty set would make every check below vacuously pass, silently
+    // guarding nothing — e.g. if the parser regex stopped matching.
+    expect(animatedClasses.size).toBeGreaterThan(0);
+  });
+
+  it.each([...animatedClasses])(
+    "disables %s inside the prefers-reduced-motion block",
+    (animateClass) => {
+      expect(disabledClasses.has(animateClass), animateClass).toBe(true);
+    },
+  );
+});
