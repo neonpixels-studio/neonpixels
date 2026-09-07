@@ -64,90 +64,181 @@ describe("style.css keyboard focus", () => {
 // can ship without ever being added there, leaving it looping forever for
 // visitors who asked their OS to reduce motion. This parses every rule in the
 // stylesheet instead of hand-listing the current seven classes, so the guard
-// itself can't go stale the way the CSS did: a class counts as "animated" if
-// some rule gives it a real (non-`none`) `animation`/`transition` value, and
-// "covered" if some rule sets that same property to `none`. Every animated
-// class must also be covered, wherever in the file that happens to live.
-type CssRule = { selectors: string[]; body: string };
+// itself can't go stale the way the CSS did: a class+property counts as
+// "animated" if some rule OUTSIDE the reduced-motion block gives it a real
+// (non-`none`) value, and "covered" only if some rule INSIDE that exact block
+// sets the same property to `none`. Every animated class+property pair must
+// also be covered — tracked as a pair, not just a class, so freezing
+// `animation` doesn't wrongly excuse a class that only reduces motion via
+// `transition` (or vice versa).
+type CssRule = { selectorText: string; body: string };
 
 // Matches one flat `selector(s) { declarations }` block at a time. Nested
 // at-rules (`@keyframes`, `@media`) have no selector of their own here, so
 // this naturally yields their inner rules (`0%, 18% { ... }`,
 // `.animate-drift { animation: none; }`) without needing to special-case the
-// wrapper — exactly what this guard needs, since a disabling rule can live
-// inside a `@media` block while the animating rule lives outside one.
+// wrapper.
 const CSS_RULE_PATTERN = /([^{}]+)\{([^{}]*)\}/g;
-const ANIMATE_CLASS_PATTERN = /^\.animate-[\w-]+$/;
+// A bare token scan (not an exact selector match) so a class is still caught
+// under a pseudo-element or descendant combinator, e.g. `.animate-drift:hover`
+// or `.hero .animate-drift`, not just a plain `.animate-drift` selector.
+const ANIMATE_CLASS_TOKEN_PATTERN = /\.animate-[\w-]+/g;
 const MOTION_PROPERTIES = ["animation", "transition"] as const;
 const DISABLED_VALUE_PATTERN = /^none\b/i;
+// Matches the `@media (...) {` opener for any reduced-motion query, not one
+// exact spelling — tolerant of extra media features (`screen and ...`) and
+// of whitespace around the colon, so a harmless reformat of the query can't
+// make this guard stop finding the block it exists to check.
+const REDUCED_MOTION_QUERY_OPENER =
+  /@media[^{]*\bprefers-reduced-motion\s*:\s*reduce\b[^{]*\{/gi;
+// Joins a class token and a motion property into one map key so `animation`
+// coverage can never stand in for `transition` coverage or vice versa.
+const KEY_SEPARATOR = "::";
 
 function parseCssRules(source: string): CssRule[] {
   return [...source.matchAll(CSS_RULE_PATTERN)].map((match) => ({
-    selectors: match[1]
-      .split(",")
-      .map((selector) => selector.trim())
-      .filter(Boolean),
+    selectorText: match[1],
     body: match[2],
   }));
 }
 
-function animateSelectorsOf(rule: CssRule) {
-  return rule.selectors.filter((selector) =>
-    ANIMATE_CLASS_PATTERN.test(selector),
+function extractAnimateClasses(selectorText: string) {
+  return [...selectorText.matchAll(ANIMATE_CLASS_TOKEN_PATTERN)].map(
+    (match) => match[0],
   );
 }
 
+// Returns the LAST declared value for `property` in `body` (CSS applies the
+// last declaration when a property repeats), and matches through to the
+// closing brace so a final declaration missing its trailing `;` still counts.
+// The `(?:^|[;\s])` guard stops `-webkit-animation`/`--animation` custom
+// properties from being read as a plain `animation` declaration.
 function motionValue(body: string, property: string) {
-  const match = body.match(new RegExp(`${property}:\\s*([^;]+);`));
-  return match ? match[1].trim() : null;
+  const declarationPattern = new RegExp(
+    `(?:^|[;\\s])${property}:\\s*([^;}]+)`,
+    "gi",
+  );
+  const matches = [...body.matchAll(declarationPattern)];
+  if (matches.length === 0) {
+    return null;
+  }
+  return matches[matches.length - 1][1].trim();
 }
 
-// Files an animate class's motion state for one property into whichever
-// bucket applies: a real value means it needs reduced-motion coverage, a
-// `none` value means this rule provides that coverage.
-function recordMotionState(
+// Finds the `}` that closes the brace opened at `openBraceIndex`, so the
+// reduced-motion block can be sliced out whole even though it wraps more than
+// one nested rule.
+function findMatchingBraceIndex(source: string, openBraceIndex: number) {
+  let depth = 0;
+  for (let index = openBraceIndex; index < source.length; index += 1) {
+    if (source[index] === "{") {
+      depth += 1;
+    }
+    if (source[index] === "}") {
+      depth -= 1;
+    }
+    if (depth === 0) {
+      return index;
+    }
+  }
+  throw new Error(
+    "Unbalanced braces while scanning for the prefers-reduced-motion block",
+  );
+}
+
+// Splits the stylesheet into the reduced-motion block(s)' own bodies
+// (candidate "coverage" rules) and everything else (candidate "animated"
+// rules), so a `.animate-x { animation: none }` written for an unrelated
+// reason elsewhere in the file can never masquerade as reduced-motion
+// coverage. Handles more than one matching `@media` block (nothing stops a
+// future edit from adding a second, e.g. scoped to one component's <style>)
+// by cutting each one out right-to-left, which keeps every earlier match's
+// index valid as later slices are removed.
+function splitReducedMotionBlock(source: string) {
+  const queryMatches = [...source.matchAll(REDUCED_MOTION_QUERY_OPENER)];
+  if (queryMatches.length === 0) {
+    // Fail loud: a query that can no longer be found must not be silently
+    // treated as "nothing to cover" — that would make every animated class
+    // pass this guard for the wrong reason.
+    throw new Error(
+      "style.css has no @media (prefers-reduced-motion: reduce) block to check coverage against",
+    );
+  }
+
+  const insideBlocks: string[] = [];
+  let outsideBlock = source;
+  [...queryMatches].reverse().forEach((match) => {
+    const openBraceIndex = match.index + match[0].length - 1;
+    const closeBraceIndex = findMatchingBraceIndex(
+      outsideBlock,
+      openBraceIndex,
+    );
+    insideBlocks.unshift(
+      outsideBlock.slice(openBraceIndex + 1, closeBraceIndex),
+    );
+    outsideBlock =
+      outsideBlock.slice(0, match.index) +
+      outsideBlock.slice(closeBraceIndex + 1);
+  });
+
+  return { insideBlock: insideBlocks.join("\n"), outsideBlock };
+}
+
+// Records every `.animate-*` class + motion property pair in `rule` into
+// `destination`, but only the ones whose disabled-state matches
+// `wantDisabled` (false while scanning outside the block for real animations,
+// true while scanning inside it for `none` overrides).
+function collectMotionClassesFromRule(
   rule: CssRule,
-  animateSelectors: string[],
-  property: string,
-  animatedClasses: Set<string>,
-  disabledClasses: Set<string>,
+  wantDisabled: boolean,
+  destination: Set<string>,
 ) {
-  const value = motionValue(rule.body, property);
-  if (value === null) {
+  const animateClasses = extractAnimateClasses(rule.selectorText);
+  if (animateClasses.length === 0) {
     return;
   }
-  const targetSet = DISABLED_VALUE_PATTERN.test(value)
-    ? disabledClasses
-    : animatedClasses;
-  animateSelectors.forEach((selector) => targetSet.add(selector));
+  MOTION_PROPERTIES.forEach((property) => {
+    const value = motionValue(rule.body, property);
+    if (value === null || DISABLED_VALUE_PATTERN.test(value) !== wantDisabled) {
+      return;
+    }
+    animateClasses.forEach((selector) =>
+      destination.add(`${selector}${KEY_SEPARATOR}${property}`),
+    );
+  });
 }
 
-function collectMotionClasses(rules: CssRule[]) {
+function collectMotionClasses(source: string) {
+  const { insideBlock, outsideBlock } = splitReducedMotionBlock(source);
   const animatedClasses = new Set<string>();
   const disabledClasses = new Set<string>();
 
-  for (const rule of rules) {
-    const animateSelectors = animateSelectorsOf(rule);
-    if (animateSelectors.length === 0) {
-      continue;
-    }
-    for (const property of MOTION_PROPERTIES) {
-      recordMotionState(
-        rule,
-        animateSelectors,
-        property,
-        animatedClasses,
-        disabledClasses,
-      );
-    }
-  }
+  parseCssRules(outsideBlock).forEach((rule) =>
+    collectMotionClassesFromRule(rule, false, animatedClasses),
+  );
+  parseCssRules(insideBlock).forEach((rule) =>
+    collectMotionClassesFromRule(rule, true, disabledClasses),
+  );
 
   return { animatedClasses, disabledClasses };
 }
 
 const { animatedClasses, disabledClasses } = collectMotionClasses(
-  parseCssRules(STYLE_CSS_WITHOUT_COMMENTS),
+  STYLE_CSS_WITHOUT_COMMENTS,
 );
+// An independent, dumber scan of every `.animate-*` token anywhere in the
+// file. If `collectMotionClasses`'s rule parser ever silently stops matching
+// (a regex tweak gone wrong, an unexpected syntax shape), the tests below
+// would otherwise still pass on whatever shrunken set it did find — this
+// pins the parser's own coverage against ground truth so that failure mode
+// can't hide.
+const ALL_ANIMATE_CLASS_TOKENS = new Set(
+  extractAnimateClasses(STYLE_CSS_WITHOUT_COMMENTS),
+);
+
+function baseSelectorOf(key: string) {
+  return key.split(KEY_SEPARATOR)[0];
+}
 
 describe("style.css reduced-motion coverage", () => {
   it("finds at least one real .animate-* rule to guard", () => {
@@ -156,10 +247,22 @@ describe("style.css reduced-motion coverage", () => {
     expect(animatedClasses.size).toBeGreaterThan(0);
   });
 
-  it.each([...animatedClasses])(
-    "disables %s inside the prefers-reduced-motion block",
-    (animateClass) => {
-      expect(disabledClasses.has(animateClass), animateClass).toBe(true);
+  it("accounts for every .animate-* class token found anywhere in the file", () => {
+    const classesTheParserSaw = new Set(
+      [...animatedClasses, ...disabledClasses].map(baseSelectorOf),
+    );
+    expect(classesTheParserSaw).toEqual(ALL_ANIMATE_CLASS_TOKENS);
+  });
+
+  const animatedEntries = [...animatedClasses].map((key) => {
+    const [selector, property] = key.split(KEY_SEPARATOR);
+    return { key, selector, property };
+  });
+
+  it.each(animatedEntries)(
+    "disables $selector's $property inside the prefers-reduced-motion block",
+    ({ key }) => {
+      expect(disabledClasses.has(key), key).toBe(true);
     },
   );
 });
