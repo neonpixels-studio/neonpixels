@@ -188,7 +188,11 @@ function backgroundTokenName(token: string): string | null {
 // `background-image` declaration. `background-image` counts because it can be a
 // real fill (the NotFound CTA), unless the element clips it to its text (handled
 // separately). The `-color|-image`-only alternation keeps `background-size`/
-// `-position` out.
+// `-position` out. The leading `(?:^|;)` pins each match to a declaration
+// boundary so a custom property whose name ends in the word (e.g.
+// `--card-background: #123456`) is not read as a painted surface — loosening
+// it makes `lastBackgroundValue` return the custom property's hex instead of
+// the real (or absent) background.
 const BACKGROUND_DECLARATION =
   /(?:^|;)\s*(background(?:-color|-image)?)\s*:\s*([^;]*)/gi;
 
