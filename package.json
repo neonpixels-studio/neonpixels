@@ -10,7 +10,7 @@
     "test": "vitest",
     "test:ci": "vitest run",
     "typecheck": "vue-tsc --noEmit",
-    "audit": "npm audit --omit=dev --audit-level=high",
+    "audit": "npm audit --audit-level=high",
     "lint": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",
     "prepare": "husky"
@@ -38,5 +38,11 @@
     "vitepress": "^1.6.4",
     "vitest": "^4.1.11",
     "vue-tsc": "^3.3.11"
+  },
+  "overrides": {
+    "vitepress": {
+      "vite": "^6.4.3",
+      "esbuild": "^0.25.0"
+    }
   }
 }
