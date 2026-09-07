@@ -19,6 +19,11 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
     Strict-Transport-Security = "max-age=63072000; includeSubDomains"
+    # Same-origin isolation at zero cost for this same-origin static site: COOP
+    # prevents cross-origin windows from holding a reference to this one, and
+    # CORP stops other origins from embedding this site's sub-resources.
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Resource-Policy = "same-origin"
     # Scoped to what the built site actually loads: self only. Fonts are
     # self-hosted (@fontsource, bundled at build), so no Google Fonts origins.
     # script-src/style-src keep 'unsafe-inline' because VitePress emits inline
