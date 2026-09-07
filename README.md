@@ -58,7 +58,31 @@ generated `_headers` file that hashes VitePress's inline scripts. That header is
 wired to a collector — a `Reporting-Endpoints` header plus `report-to` /
 `report-uri` directives point violations at the `/csp-report` Netlify Function
 ([`netlify/functions/csp-report.ts`](netlify/functions/csp-report.ts)), which
-records them to the function logs. The parsing/validation is isolated in
+records them to the function logs **and** persists each accepted,
+same-origin violation to [Netlify Blobs](https://docs.netlify.com/blobs/overview/)
+(store name `csp-reports`, one blob per violation, key
+`<receivedAt ISO timestamp, colons/periods replaced with dashes>-<uuid>.json`)
+so the rollout signal is queryable instead of grep-only. A violation whose
+`document-uri`/`documentURL` doesn't match this site's own origin (Netlify's
+injected `URL`/`DEPLOY_PRIME_URL`, so production, branch deploys, previews and
+`netlify dev` all persist) is still logged to the console but skipped for
+persistence, with a `csp-report-not-persisted` marker so the skip itself is
+visible rather than reading as "no violations". This is a noise filter, not an
+anti-forgery control — `documentUrl` is attacker-controlled request-body
+content on this public, unauthenticated endpoint, so it only screens out
+misconfigured integrations and reports sent to the wrong deploy, not a forger
+who reads the source. The Blobs write is isolated in
+[`netlify/functions/lib/cspReportStore.ts`](netlify/functions/lib/cspReportStore.ts)
+behind a minimal `BlobWriter` interface, so the write path is unit-tested with a
+fake writer rather than the real Blobs client. Netlify auto-configures Blobs for
+Functions (siteID/token injected at runtime) both in production and under
+`netlify dev`, so **no new environment variables are required**; if the Blobs
+context is ever missing (e.g. a bare `netlify functions:invoke` without a linked
+site) or the write is slow, the write is skipped/timed out (3s) and a
+`csp-report-persist-failed` marker is logged — the console log and the 204/4xx
+response are unaffected either way, since browsers treat this endpoint as a
+fire-and-forget beacon and won't retry a timed-out request. The
+parsing/validation is isolated in
 [`.vitepress/csp/cspReportCollector.ts`](.vitepress/csp/cspReportCollector.ts)
 so it is unit-testable without the Netlify runtime. Once the logs show no
 `script-src` violations **and no `csp-report-rejected` or `csp-report-unparsed`
@@ -66,8 +90,7 @@ entries** over the observation window, `'unsafe-inline'` can be dropped from the
 enforcing `script-src` (see the `@todo` in `netlify.toml`). The two markers
 matter: a request rejected for an unmodelled content type or an unrecognized
 body shape would otherwise read as "no violations", so a clean run must show
-neither. No environment variables or external services are required — the
-collector is same-origin.
+neither.
 
 ## Git hooks
 
