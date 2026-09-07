@@ -19,7 +19,6 @@ import { fileURLToPath } from "node:url";
 import { build } from "vitepress";
 
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
-import { CRITICAL_FONT_FILENAME_PATTERN } from "../fonts/writeFontPreloadLink";
 
 // Asserts the tags survive `vitepress build` into the emitted HTML, not just the
 // config.head array. config.test.ts already covers the config object; this closes
@@ -460,7 +459,14 @@ describe("hero font preload", () => {
     const linkTag = preloadLinkFor(builtHead);
     expect(linkTag, "no font preload <link> in built HTML").toBeTruthy();
     const href = attributeValue(linkTag!, "href")!;
-    expect(basename(href)).toMatch(CRITICAL_FONT_FILENAME_PATTERN);
+    // A literal expectation independent of the source module's exported
+    // pattern: the injector selects its file with that same regex, so
+    // asserting against it here would pass even if the pattern itself were
+    // pointed at the wrong font family/weight. This pins "Archivo 900" and a
+    // real content hash as two separate, hand-written facts.
+    expect(basename(href)).toMatch(/^archivo-latin-900-normal\./);
+    expect(basename(href)).toMatch(CONTENT_HASH_FILENAME);
+    expect(basename(href)).toMatch(/\.woff2$/);
     // Boolean attribute (no ="value"), so match its presence directly rather
     // than through attributeValue()'s ="..." pattern.
     expect(linkTag).toMatch(/(?:^|\s)crossorigin(?:\s|>)/);
@@ -478,10 +484,23 @@ describe("hero font preload", () => {
     // for; if they diverge (e.g. an @fontsource layout change emitting a
     // second Archivo 900 latin file), the browser downloads a font nobody
     // uses, the hero still FOUTs, and every other assertion here stays green.
+    // Scoped to the specific font-weight:900 @font-face block rather than "the
+    // preloaded basename appears somewhere in the bundle", so a coincidental
+    // hit against an unrelated rule (or another weight sharing a stylesheet)
+    // can't false-pass this.
     const linkTag = preloadLinkFor(builtHead)!;
     const href = attributeValue(linkTag, "href")!;
+    const archivo900Rule = [...bundledCss().matchAll(/@font-face\{[^}]*\}/g)]
+      .map((match) => match[0])
+      .find(
+        (rule) => rule.includes("font-weight:900") && rule.includes("Archivo"),
+      );
     expect(
-      bundledCss(),
+      archivo900Rule,
+      "no @font-face{font-weight:900} rule for Archivo in the built CSS",
+    ).toBeTruthy();
+    expect(
+      archivo900Rule,
       "preloaded font is not referenced by the built @font-face rule",
     ).toContain(basename(href));
   });

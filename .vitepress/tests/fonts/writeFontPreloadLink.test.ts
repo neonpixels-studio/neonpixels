@@ -227,4 +227,33 @@ describe("writeFontPreloadLink", () => {
     const html = readHtmlFile("index.html");
     expect(html).toContain(`href="/static/${CRITICAL_FONT_FILENAME}"`);
   });
+
+  it("normalizes a trailing slash on the assets directory name instead of doubling it", async () => {
+    const staticDir = join(outDir, "static");
+    mkdirSync(staticDir, { recursive: true });
+    writeFileSync(join(staticDir, CRITICAL_FONT_FILENAME), "");
+    writeHtmlFile("index.html", BASE_HTML);
+
+    await writeFontPreloadLink(outDir, "/", "static/");
+
+    const html = readHtmlFile("index.html");
+    expect(html).toContain(`href="/static/${CRITICAL_FONT_FILENAME}"`);
+    expect(html).not.toContain("static//");
+  });
+
+  it("escapes a stray quote in a config-supplied base rather than breaking out of the attribute", async () => {
+    writeAssetFile(CRITICAL_FONT_FILENAME);
+    writeHtmlFile("index.html", BASE_HTML);
+
+    await writeFontPreloadLink(outDir, '/"><script>alert(1)</script>/');
+
+    const html = readHtmlFile("index.html");
+    // The actual injection primitive is an unescaped `"` immediately followed
+    // by `>`, which closes the href attribute and the tag early, turning
+    // whatever comes after into real markup. A raw `<script>` string that
+    // stays *inside* the still-quoted attribute value is inert text a browser
+    // never parses as a tag, so that alone isn't the vulnerability.
+    expect(html).not.toContain('"><script>alert(1)</script>');
+    expect(html).toContain("&quot;");
+  });
 });

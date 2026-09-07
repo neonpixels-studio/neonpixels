@@ -105,8 +105,27 @@ async function readHtmlFiles(outDir: string) {
   return htmlFiles;
 }
 
+// `siteBase`/`assetsDirName` come from VitePress config, not from this build's
+// own output, so they're normalized (no doubled slashes from a config author
+// writing a trailing slash on either) and the `"` an attacker or typo could
+// put in either is escaped before landing in a quoted HTML attribute.
+function buildHref(
+  siteBase: string,
+  assetsDirName: string,
+  fontFilename: string,
+) {
+  const base = siteBase.endsWith("/") ? siteBase : `${siteBase}/`;
+  const assetsPath = assetsDirName.replace(/^\/+|\/+$/g, "");
+  return `${base}${assetsPath}/${fontFilename}`;
+}
+
+function escapeAttributeValue(value: string) {
+  return value.replace(/"/g, "&quot;");
+}
+
 function preloadLinkTag(href: string) {
-  return `<link rel="preload" href="${href}" as="font" type="${FONT_MIME_TYPE}" crossorigin ${GENERATED_MARKER_ATTRIBUTE}>`;
+  const escapedHref = escapeAttributeValue(href);
+  return `<link rel="preload" href="${escapedHref}" as="font" type="${FONT_MIME_TYPE}" crossorigin ${GENERATED_MARKER_ATTRIBUTE}>`;
 }
 
 function injectPreloadLink(html: string, linkTag: string, filePath: string) {
@@ -122,11 +141,14 @@ function injectPreloadLink(html: string, linkTag: string, filePath: string) {
   );
 }
 
-// Reads and injects every document sequentially before any write happens, so
-// a bad document (e.g. missing </head>) throws before touching disk rather
-// than leaving outDir a mix of injected and un-injected HTML. Sequential also
-// keeps this bounded to one open file at a time — the CSP writer's HTML read
-// in ../csp/writeReportOnlyHeaders can afford Promise.all because it never
+// Reads and injects every document before any write happens, so a bad
+// document (e.g. missing </head>) throws before touching disk rather than
+// leaving outDir a mix of injected and un-injected HTML. This only covers
+// injection failures — a mid-write disk error (ENOSPC, EACCES) can still
+// leave some documents written and others not, same as writeReportOnlyHeaders
+// has no atomicity guarantee across its own write. Sequential also keeps this
+// bounded to one open file at a time — the CSP writer's HTML read in
+// ../csp/writeReportOnlyHeaders can afford Promise.all because it never
 // writes back, but this script both reads and writes every document.
 async function readAndInjectAll(
   htmlFiles: Awaited<ReturnType<typeof readHtmlFiles>>,
@@ -152,7 +174,9 @@ export async function writeFontPreloadLink(
   assetsDirName: string = DEFAULT_ASSETS_DIR_NAME,
 ) {
   const fontFilename = await findCriticalFontAsset(outDir, assetsDirName);
-  const linkTag = preloadLinkTag(`${siteBase}${assetsDirName}/${fontFilename}`);
+  const linkTag = preloadLinkTag(
+    buildHref(siteBase, assetsDirName, fontFilename),
+  );
   const htmlFiles = await readHtmlFiles(outDir);
   const injected = await readAndInjectAll(htmlFiles, linkTag);
   for (const { filePath, html } of injected) {
