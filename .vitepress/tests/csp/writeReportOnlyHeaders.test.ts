@@ -313,6 +313,18 @@ describe("writeReportOnlyHeaders", () => {
       ).rejects.toThrow(/collide with a header this module already generates/);
     });
 
+    it("throws when two extra lines declare the same header name", async () => {
+      writeOutFile("index.html", INLINE_SCRIPT);
+      writeNetlifyConfig(NETLIFY_WITH_CSP);
+
+      await expect(
+        writeReportOnlyHeaders(outDir, netlifyConfigPath, [
+          NOINDEX_HEADER_LINE,
+          "X-Robots-Tag: nofollow",
+        ]),
+      ).rejects.toThrow(/declare the same header twice/);
+    });
+
     it("throws when a hand-written file already declares the extra line's header", async () => {
       writeOutFile("index.html", INLINE_SCRIPT);
       writeOutFile(HEADERS_FILE, `/*\n  ${NOINDEX_HEADER_LINE}\n`);

@@ -47,9 +47,12 @@ const GENERATED_HEADER_NAMES = [
   REPORT_ONLY_HEADER_NAME,
   REPORTING_ENDPOINTS_HEADER_NAME,
 ];
-// Escapes a header name for use inside the conflict-line RegExp below — none
-// of GENERATED_HEADER_NAMES need it today, but a caller-supplied extra header
-// name (see `extraGlobalHeaderLines`) is not guaranteed to be regex-safe.
+// Escapes a header name for use inside the conflict-line RegExp below.
+// Every name reaching this function is already constrained to `[\w-]+` by
+// assertWellFormedExtraHeaderLines (which runs before handWrittenHeaders is
+// called), so none of today's callers can actually supply a regex
+// metacharacter — this exists so that guarantee isn't a silent precondition
+// callers of conflictHeaderLinePattern have to remember to uphold.
 function escapeForRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -200,6 +203,30 @@ function assertNoReservedHeaderNameCollision(extraHeaderNames: string[]) {
   );
 }
 
+// Two callers could each pass their own `X-Robots-Tag` line (e.g. noindex and
+// nofollow) and both would land in the same `/*` block silently — the same
+// duplicate-value hazard assertNoReservedHeaderNameCollision and
+// handWrittenHeaders already guard against, just within the extra lines
+// themselves rather than against this module's own headers or a hand-written
+// file.
+function assertNoDuplicateExtraHeaderNames(extraHeaderNames: string[]) {
+  const seenHeaderNames = new Set<string>();
+  const duplicates = extraHeaderNames.filter((name) => {
+    const lowerCaseName = name.toLowerCase();
+    if (seenHeaderNames.has(lowerCaseName)) {
+      return true;
+    }
+    seenHeaderNames.add(lowerCaseName);
+    return false;
+  });
+  if (duplicates.length === 0) {
+    return;
+  }
+  throw new Error(
+    `CSP Report-Only: extra header line(s) declare the same header twice: ${duplicates.join(", ")}`,
+  );
+}
+
 // `extraGlobalHeaderLines` lets a caller (see .vitepress/robots) fold an
 // unrelated `/*` header, such as a context-gated noindex, into this same
 // block instead of writing a second `/*` block — Netlify's behaviour for two
@@ -236,6 +263,7 @@ export async function writeReportOnlyHeaders(
   assertWellFormedExtraHeaderLines(extraGlobalHeaderLines);
   const extraHeaderNames = extraGlobalHeaderLines.map(extraHeaderLineName);
   assertNoReservedHeaderNameCollision(extraHeaderNames);
+  assertNoDuplicateExtraHeaderNames(extraHeaderNames);
   const htmlDocuments = await readHtmlDocuments(outDir);
   const scriptHashes = collectInlineScriptHashes(htmlDocuments);
   if (scriptHashes.length === 0) {

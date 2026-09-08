@@ -40,7 +40,6 @@ const REUSE_BUILD_DIR_ENV = SMOKE_BUILD_REUSE_DIR_ENV;
 const HTML_EXTENSION = ".html";
 const HEADERS_FILE = "_headers";
 const NETLIFY_CONFIG_FILE = "netlify.toml";
-const HAND_WRITTEN_HEADERS_FILE = "public/_headers";
 const ASSETS_DIR = "assets";
 // VitePress/Rollup stamp a base64url content hash segment (>= 8 chars, dot
 // delimited) into every emitted asset filename, e.g. app.C3xK9-aQ.js or
@@ -703,42 +702,9 @@ describe("shipped immutable asset caching", () => {
   // check with no dependency on the build output, so it lives in
   // netlify.test.ts (see "shipped immutable asset caching" there) instead of
   // gating it behind this suite's 120s VitePress build.
-});
-
-// writeReportOnlyHeaders (.vitepress/csp) already fails loud if the build-time
-// noindex line collides with a *hand-written* header inside its own generated
-// block (see writeReportOnlyHeaders.test.ts), but that check only sees what's
-// in the publish dir's _headers at build time. Neither source file it's built
-// from — netlify.toml's global /* block, or the public/_headers VitePress
-// copies in verbatim — is covered by that runtime check, so both need a
-// static guard instead.
-describe("noindex header ownership", () => {
-  // netlify.toml and _headers are merged, and for a header both set on
-  // overlapping paths netlify.toml wins. A hand-added X-Robots-Tag there would
-  // silently win over (or, on preview contexts, mask) the noindex header
-  // generated into _headers (see .vitepress/robots), with every _headers
-  // assertion still passing. Case-insensitive (`im`): TOML keys are
-  // case-sensitive but Netlify applies HTTP header names case-insensitively,
-  // so `x-robots-tag` or `X-ROBOTS-TAG` would create the same hazard a
-  // case-sensitive match would miss entirely.
-  it("does not let netlify.toml declare its own X-Robots-Tag", () => {
-    const netlifyConfig = readFileSync(
-      resolve(PROJECT_ROOT, NETLIFY_CONFIG_FILE),
-      "utf8",
-    );
-    expect(netlifyConfig).not.toMatch(/^\s*"?X-Robots-Tag"?\s*=/im);
-  });
-
-  // public/_headers is the hand-written file writeReportOnlyHeaders treats as
-  // pre-existing content and carries forward as-is (see handWrittenHeaders) —
-  // an X-Robots-Tag added here, e.g. alongside the /assets/* rule, ships
-  // unconditionally on every context, including production, with no build
-  // failure and no _headers assertion noticing.
-  it("does not let public/_headers declare its own X-Robots-Tag", () => {
-    const handWrittenHeaders = readFileSync(
-      resolve(PROJECT_ROOT, HAND_WRITTEN_HEADERS_FILE),
-      "utf8",
-    );
-    expect(handWrittenHeaders).not.toMatch(/^\s*X-Robots-Tag\s*:/im);
-  });
+  //
+  // The noindex header ownership guards (netlify.toml and public/_headers
+  // never declaring their own X-Robots-Tag) are the same kind of static,
+  // build-independent check, so they live in netlify.test.ts too — see
+  // "noindex header ownership" there.
 });
