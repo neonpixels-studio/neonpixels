@@ -9,21 +9,22 @@ import {
 
 const LEGACY_CONTENT_TYPE = "application/csp-report";
 const REPORTING_API_CONTENT_TYPE = "application/reports+json";
+const WEBKIT_JSON_CONTENT_TYPE = "application/json";
+
+function cspRequest(contentType: string, body: unknown): CspReportRequest {
+  return { method: "POST", contentType, body: JSON.stringify(body) };
+}
 
 function legacyRequest(body: unknown): CspReportRequest {
-  return {
-    method: "POST",
-    contentType: LEGACY_CONTENT_TYPE,
-    body: JSON.stringify(body),
-  };
+  return cspRequest(LEGACY_CONTENT_TYPE, body);
 }
 
 function reportingApiRequest(body: unknown): CspReportRequest {
-  return {
-    method: "POST",
-    contentType: REPORTING_API_CONTENT_TYPE,
-    body: JSON.stringify(body),
-  };
+  return cspRequest(REPORTING_API_CONTENT_TYPE, body);
+}
+
+function webkitJsonRequest(body: unknown): CspReportRequest {
+  return cspRequest(WEBKIT_JSON_CONTENT_TYPE, body);
 }
 
 const LEGACY_REPORT = {
@@ -76,7 +77,7 @@ describe("collectCspReports request guards", () => {
   it("rejects an unrecognized content type with 415", () => {
     const result = collectCspReports({
       method: "POST",
-      contentType: "application/json",
+      contentType: "text/plain",
       body: JSON.stringify(LEGACY_REPORT),
     });
     expect(result.status).toBe(415);
@@ -299,6 +300,119 @@ describe("collectCspReports Reporting API application/reports+json", () => {
     const result = collectCspReports(reportingApiRequest({ type: "x" }));
     expect(result.status).toBe(204);
     expect(result.violations).toEqual([]);
+    expect(result.dropped).toBe(1);
+  });
+});
+
+describe("collectCspReports WebKit application/json", () => {
+  it("accepts a legacy-shaped csp-report body sent as application/json", () => {
+    const result = collectCspReports(webkitJsonRequest(LEGACY_REPORT));
+    expect(result.status).toBe(204);
+    expect(result.violations).toEqual([
+      {
+        documentUrl: "https://neonpixels.io/",
+        effectiveDirective: "script-src-elem",
+        blockedUri: "inline",
+        disposition: "report",
+        sourceFile: "https://neonpixels.io/",
+        lineNumber: 10,
+        columnNumber: 20,
+        sample: "boot()",
+      },
+    ]);
+  });
+
+  it("accepts a Reporting-API-shaped array body sent as application/json", () => {
+    const result = collectCspReports(webkitJsonRequest([REPORTING_API_REPORT]));
+    expect(result.status).toBe(204);
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].effectiveDirective).toBe("script-src-elem");
+  });
+
+  it("accepts a content type carrying a charset", () => {
+    const result = collectCspReports(
+      cspRequest("application/json; charset=utf-8", LEGACY_REPORT),
+    );
+    expect(result.status).toBe(204);
+    expect(result.violations).toHaveLength(1);
+  });
+
+  it("drops a directive-less legacy-shaped report instead of logging an empty violation", () => {
+    const result = collectCspReports(
+      webkitJsonRequest({ "csp-report": { "blocked-uri": "inline" } }),
+    );
+    expect(result.status).toBe(204);
+    expect(result.violations).toEqual([]);
+    expect(result.dropped).toBe(1);
+  });
+
+  it("rejects a csp-report key whose value isn't an object as a malformed body", () => {
+    // One character away from the accepted shape ({"csp-report": "nope"} vs.
+    // {"csp-report": {}}) — must not be treated as a legacy report that
+    // happens to be empty (that would inflate `dropped` on organic noise).
+    // application/json is still a supported content type, so this is a 400
+    // (malformed body), not a 415 (unsupported type).
+    const result = collectCspReports(
+      webkitJsonRequest({ "csp-report": "nope" }),
+    );
+    expect(result.status).toBe(400);
+    expect(result.violations).toEqual([]);
+    expect(result.dropped).toBe(0);
+  });
+
+  it("rejects a plain object with neither a csp-report key nor a violation array as a malformed body", () => {
+    // application/json is the default content type of arbitrary bots/scanners,
+    // unlike the two browser-only report types, so an unrecognized shape must
+    // not be silently counted as a dropped report — that would poison the
+    // csp-report-unparsed signal with unrelated JSON traffic. It's still a
+    // supported content type, so the response is 400, not 415.
+    const result = collectCspReports(webkitJsonRequest({ other: {} }));
+    expect(result.status).toBe(400);
+    expect(result.violations).toEqual([]);
+    expect(result.dropped).toBe(0);
+  });
+
+  it("rejects an array with no recognizable csp-violation entry as a malformed body", () => {
+    const result = collectCspReports(webkitJsonRequest(["oops", 42, {}]));
+    expect(result.status).toBe(400);
+    expect(result.violations).toEqual([]);
+    expect(result.dropped).toBe(0);
+  });
+
+  it("rejects an empty array as a malformed body rather than an empty batch", () => {
+    const result = collectCspReports(webkitJsonRequest([]));
+    expect(result.status).toBe(400);
+  });
+
+  it.each([null, "nope", 5, true])(
+    "rejects a scalar/null payload (%j) as a malformed body",
+    (payload) => {
+      const result = collectCspReports(webkitJsonRequest(payload));
+      expect(result.status).toBe(400);
+      expect(result.violations).toEqual([]);
+      expect(result.dropped).toBe(0);
+    },
+  );
+
+  it("ignores non-csp-violation entries mixed into the array rather than counting them as dropped", () => {
+    // A genuine WebKit batch never contains alien entries; entries this
+    // permissive filter can't identify as a report are excluded from the
+    // shared parser entirely so one real entry can't be used to inflate
+    // `dropped` with an unbounded number of siblings.
+    const result = collectCspReports(
+      webkitJsonRequest(["oops", 42, REPORTING_API_REPORT]),
+    );
+    expect(result.status).toBe(204);
+    expect(result.violations).toHaveLength(1);
+    expect(result.dropped).toBe(0);
+  });
+
+  it("still drops a recognized csp-violation entry with a missing body", () => {
+    const result = collectCspReports(
+      webkitJsonRequest([{ type: "csp-violation" }, REPORTING_API_REPORT]),
+    );
+    expect(result.status).toBe(204);
+    expect(result.violations).toHaveLength(1);
     expect(result.dropped).toBe(1);
   });
 });
