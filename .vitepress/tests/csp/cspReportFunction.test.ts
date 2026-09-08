@@ -3,22 +3,27 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 // The store write is a separate, independently-tested unit (see
 // cspReportStore.test.ts); mocking it here keeps this file about the
 // adapter's request/response and logging behavior, not Blobs itself.
-const { persistMock } = vi.hoisted(() => ({ persistMock: vi.fn() }));
+// getCspReportStoreMock is its own mock (not just a passthrough to
+// persistMock) so a test can make getCspReportStore() itself throw
+// synchronously, the way the real client does when the Blobs context is
+// missing (see "logs a persist-failure marker when the store is unavailable").
+const { persistMock, getCspReportStoreMock } = vi.hoisted(() => ({
+  persistMock: vi.fn(),
+  getCspReportStoreMock: vi.fn(),
+}));
 vi.mock("../../../netlify/functions/lib/cspReportStore", () => ({
-  getCspReportStore: () => ({ persist: persistMock }),
+  getCspReportStore: getCspReportStoreMock,
 }));
 
 import cspReportHandler, {
   config,
+  PERSIST_TIMEOUT_MS,
 } from "../../../netlify/functions/csp-report";
 
 const LEGACY_CONTENT_TYPE = "application/csp-report";
 const REPORTING_API_CONTENT_TYPE = "application/reports+json";
 const PERSIST_FAILED_LOG_PREFIX = "csp-report-persist-failed";
 const PERSIST_SKIPPED_LOG_PREFIX = "csp-report-not-persisted";
-// Mirrors the private PERSIST_TIMEOUT_MS in csp-report.ts (not exported,
-// since it's an internal tuning value, not part of the module's contract).
-const PERSIST_TIMEOUT_MS = 3000;
 
 const LEGACY_REPORT = {
   "csp-report": {
@@ -47,11 +52,13 @@ function postRequest(contentType: string, body: string) {
 
 beforeEach(() => {
   persistMock.mockReset().mockResolvedValue(undefined);
+  getCspReportStoreMock.mockReset().mockReturnValue({ persist: persistMock });
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("csp-report Netlify function", () => {
@@ -251,6 +258,31 @@ describe("csp-report Netlify function", () => {
     expect(failureCall).toBeDefined();
     const logged = JSON.parse(failureCall?.[1] as string);
     expect(logged.message).toBe("blobs unavailable");
+    expect(logged.count).toBe(1);
+  });
+
+  it("logs a persist-failure marker when the store is unavailable", async () => {
+    // getStore() throws synchronously when the Blobs context is missing (a
+    // bare `netlify functions:invoke` without a linked site) — this must
+    // stay inside persistViolations's try/catch, not hoisted above it, or a
+    // missing context turns every CSP report into an unhandled exception
+    // instead of a logged, non-fatal marker.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    getCspReportStoreMock.mockImplementationOnce(() => {
+      throw new Error("missing blobs context");
+    });
+
+    const response = await cspReportHandler(
+      postRequest(LEGACY_CONTENT_TYPE, JSON.stringify(LEGACY_REPORT)),
+    );
+
+    expect(response.status).toBe(204);
+    const failureCall = warn.mock.calls.find(
+      (call) => call[0] === PERSIST_FAILED_LOG_PREFIX,
+    );
+    expect(failureCall).toBeDefined();
+    const logged = JSON.parse(failureCall?.[1] as string);
+    expect(logged.message).toBe("missing blobs context");
   });
 
   it("never touches the store when there are no violations", async () => {
@@ -319,6 +351,103 @@ describe("csp-report Netlify function", () => {
     expect(skippedCall).toBeDefined();
     expect(JSON.parse(skippedCall?.[1] as string)).toEqual({ skipped: 1 });
     expect(persistMock).not.toHaveBeenCalled();
+  });
+
+  it("persists a violation matching the request's own origin under netlify dev, even when it isn't the site origin", async () => {
+    // Simulates `netlify dev`: Netlify doesn't inject URL/DEPLOY_PRIME_URL
+    // there, and the browser loads the page from localhost, not
+    // neonpixels.io, so only the request's own origin (not the env
+    // candidates or SITE_ORIGIN) can vouch for this violation. Gated on
+    // NETLIFY_DEV so a spoofed Host header can't buy the same trust outside
+    // dev (see the next test).
+    vi.stubEnv("NETLIFY_DEV", "true");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const localDevReport = {
+      "csp-report": {
+        "document-uri": "http://localhost:8888/",
+        "effective-directive": "script-src-elem",
+        "blocked-uri": "inline",
+      },
+    };
+
+    const request = new Request("http://localhost:8888/csp-report", {
+      method: "POST",
+      headers: { "content-type": LEGACY_CONTENT_TYPE },
+      body: JSON.stringify(localDevReport),
+    });
+    await cspReportHandler(request);
+
+    expect(persistMock).toHaveBeenCalledTimes(1);
+    const [persisted] = persistMock.mock.calls[0] as [
+      { documentUrl: string }[],
+    ];
+    expect(persisted[0].documentUrl).toBe("http://localhost:8888/");
+  });
+
+  it("does not trust a spoofed request origin outside netlify dev", async () => {
+    // Guards the fix above: request.url is derived from the client-sent Host
+    // header, so outside NETLIFY_DEV it must never be added to the allowed
+    // set — otherwise any request could vouch for its own forged origin.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const spoofedReport = {
+      "csp-report": {
+        "document-uri": "https://attacker.example/",
+        "effective-directive": "script-src-elem",
+        "blocked-uri": "inline",
+      },
+    };
+
+    const request = new Request("https://attacker.example/csp-report", {
+      method: "POST",
+      headers: { "content-type": LEGACY_CONTENT_TYPE },
+      body: JSON.stringify(spoofedReport),
+    });
+    await cspReportHandler(request);
+
+    expect(persistMock).not.toHaveBeenCalled();
+  });
+
+  it("persists a violation matching Netlify's injected URL env var", async () => {
+    // URL is Netlify's production-domain env var; unset here in tests unless
+    // stubbed, so this proves the candidate is read, not just SITE_ORIGIN.
+    vi.stubEnv("URL", "https://neonpixels.io");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await cspReportHandler(
+      postRequest(LEGACY_CONTENT_TYPE, JSON.stringify(LEGACY_REPORT)),
+    );
+
+    expect(persistMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists a violation matching Netlify's injected DEPLOY_PRIME_URL env var, even when it differs from the site origin and the request's own origin", async () => {
+    vi.stubEnv(
+      "DEPLOY_PRIME_URL",
+      "https://deploy-preview-93--neonpixels.netlify.app",
+    );
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const previewReport = {
+      "csp-report": {
+        "document-uri": "https://deploy-preview-93--neonpixels.netlify.app/",
+        "effective-directive": "script-src-elem",
+        "blocked-uri": "inline",
+      },
+    };
+
+    // Posted to the production host, as the deploy-preview Function actually
+    // receives it — DEPLOY_PRIME_URL, not the request's own origin, must be
+    // what vouches for the preview-domain documentUrl.
+    await cspReportHandler(
+      postRequest(LEGACY_CONTENT_TYPE, JSON.stringify(previewReport)),
+    );
+
+    expect(persistMock).toHaveBeenCalledTimes(1);
+    const [persisted] = persistMock.mock.calls[0] as [
+      { documentUrl: string }[],
+    ];
+    expect(persisted[0].documentUrl).toBe(
+      "https://deploy-preview-93--neonpixels.netlify.app/",
+    );
   });
 
   it("drops a violation with an empty/unparseable documentUrl rather than treating it as own-origin", async () => {

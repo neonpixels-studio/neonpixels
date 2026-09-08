@@ -64,8 +64,9 @@ same-origin violation to [Netlify Blobs](https://docs.netlify.com/blobs/overview
 `<receivedAt ISO timestamp, colons/periods replaced with dashes>-<uuid>.json`)
 so the rollout signal is queryable instead of grep-only. A violation whose
 `document-uri`/`documentURL` doesn't match this site's own origin (Netlify's
-injected `URL`/`DEPLOY_PRIME_URL`, so production, branch deploys, previews and
-`netlify dev` all persist) is still logged to the console but skipped for
+injected `URL`/`DEPLOY_PRIME_URL`, plus the request's own origin — so
+production, branch deploys, previews and `netlify dev` all persist) is still
+logged to the console but skipped for
 persistence, with a `csp-report-not-persisted` marker so the skip itself is
 visible rather than reading as "no violations". This is a noise filter, not an
 anti-forgery control — `documentUrl` is attacker-controlled request-body
