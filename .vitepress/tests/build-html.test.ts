@@ -339,8 +339,11 @@ function parseJsonLd(raw: string) {
   }
 }
 
-// Parses every ld+json block and returns the Organization one, tolerating extra
-// blocks rather than assuming the Organization renders first.
+// Parses every ld+json block and returns the Organization node, tolerating
+// extra blocks rather than assuming the @graph block renders first. The org
+// and each project (issue #83) share one script tag as sibling nodes in a
+// top-level @graph, so the Organization node carries no @context of its own —
+// the caller reads that off the wrapping block instead.
 function organizationJsonLd(head: string) {
   const blocks = [...head.matchAll(JSON_LD_BLOCK_PATTERN)].map((match) =>
     parseJsonLd(match[1]),
@@ -348,13 +351,17 @@ function organizationJsonLd(head: string) {
   if (!blocks.length) {
     throw new Error("Built <head> is missing a JSON-LD script block");
   }
-  const organization = blocks.find(
-    (block) => block["@type"] === ORGANIZATION_TYPE,
+  const graphBlock = blocks.find((block) => Array.isArray(block["@graph"]));
+  if (!graphBlock) {
+    throw new Error("No JSON-LD @graph block in built <head>");
+  }
+  const organization = graphBlock["@graph"].find(
+    (node: { "@type": string }) => node["@type"] === ORGANIZATION_TYPE,
   );
   if (!organization) {
-    throw new Error("No Organization JSON-LD block in built <head>");
+    throw new Error("No Organization node in the built @graph JSON-LD block");
   }
-  return organization;
+  return { "@context": graphBlock["@context"], ...organization };
 }
 
 async function waitForBuildToSettle(outDir: string) {
