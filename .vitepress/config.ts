@@ -3,6 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 import { writeReportOnlyHeaders } from "./csp/writeReportOnlyHeaders";
 import { writeFontPreloadLink } from "./fonts/writeFontPreloadLink";
+import { PROJECTS, type Project } from "./theme/data/projects";
 
 const SITE_URL = "https://neonpixels.io";
 const DESCRIPTION =
@@ -12,15 +13,80 @@ const OG_IMAGE = `${SITE_URL}/images/social-card.png`;
 const OG_IMAGE_ALT =
   "Neon Pixels wordmark on a dark grid, with the pixel logo mark and the four project names — grimicorn.dev, wanderist.io, basin.fm, markpost.io — glowing in lime, cyan, amber and pink.";
 
-const JSON_LD = JSON.stringify({
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  name: "Neon Pixels",
-  description: DESCRIPTION,
-  url: SITE_URL,
-  logo: `${SITE_URL}/images/neon-pixels-mark.svg`,
-  image: OG_IMAGE,
-});
+// The org exists to promote the four projects, but PROJECTS already owns their
+// canonical name/url/description — deriving each project's ld+json node from
+// it means the project graph can't drift from what's rendered on the page
+// (issue #83).
+//
+// Each project is its own WebSite node, linked back to the org via
+// `publisher`, rather than folded into the Organization node as `sameAs` or
+// `hasPart`: schema.org defines `sameAs` as an identity assertion ("this page
+// and that page describe the same thing"), so listing the four project
+// domains there would tell crawlers neonpixels.io *is* grimicorn.dev,
+// wanderist.io, basin.fm and markpost.io — the opposite of "the org publishes
+// these products". `hasPart` isn't defined on Organization at all (only on
+// CreativeWork/Place), so it validates as an unrecognized property there. A
+// `@graph` of sibling nodes tied together by `publisher` is the shape that
+// both validates and expresses the intended org -> product relationship.
+//
+// WebSite over SoftwareApplication deliberately: SoftwareApplication is a
+// rich-result type Google grades on `offers`/`aggregateRating` (neither of
+// which exists for these projects, three of which are still `"IN PROGRESS"`
+// per PROJECTS), so claiming it would trade "not present" for "invalid" in
+// Search Console. WebSite carries no such required-field contract.
+const ORGANIZATION_ID = `${SITE_URL}#organization`;
+
+// Only the fields the ld+json node actually reads — narrower than the full
+// Project type so a test fixture doesn't have to fabricate every pill color
+// and animation timing just to exercise this function.
+type ProjectJsonLdSource = Pick<
+  Project,
+  "name" | "tld" | "url" | "description"
+>;
+
+function projectLabel(project: ProjectJsonLdSource) {
+  return `${project.name}${project.tld}`;
+}
+
+function buildProjectNode(project: ProjectJsonLdSource) {
+  return {
+    "@type": "WebSite",
+    "@id": `${project.url}#website`,
+    name: projectLabel(project),
+    url: project.url,
+    description: project.description,
+    publisher: { "@id": ORGANIZATION_ID },
+  };
+}
+
+// Exported (rather than inlined below) so a test can feed it a fixture
+// description containing "</script>" and assert on the serialized string —
+// asserting only on the parsed object would hide a regression that stops
+// escaping "<", since JSON.parse silently undoes the escape either way.
+//
+// `<` isn't escaped by JSON.stringify, and this payload interpolates project
+// descriptions from a data module edited independently of this file — a
+// description containing "</script>" would otherwise close the tag early.
+// "<" is valid JSON and parses back to "<", so nothing downstream changes.
+export function buildOrganizationJsonLd(projects: ProjectJsonLdSource[]) {
+  return JSON.stringify({
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": ORGANIZATION_ID,
+        name: "Neon Pixels",
+        description: DESCRIPTION,
+        url: SITE_URL,
+        logo: `${SITE_URL}/images/neon-pixels-mark.svg`,
+        image: OG_IMAGE,
+      },
+      ...projects.map(buildProjectNode),
+    ],
+  }).replace(/</g, "\\u003c");
+}
+
+const JSON_LD = buildOrganizationJsonLd(PROJECTS);
 
 export default defineConfig({
   title: "Neon Pixels",
