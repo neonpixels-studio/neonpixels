@@ -528,9 +528,11 @@ describe("noindex header ownership", () => {
   // `-` in a bare key, so an inline-table assignment like
   // `values = { X-Robots-Tag = "index" }` would sail past a `^`-anchored
   // match despite setting the header — the exact hazard this guard exists to
-  // block.
+  // block. `['"]?` (not `"?`) since TOML also allows single-quoted literal
+  // keys (`'X-Robots-Tag' = "index"`), which a double-quote-only class would
+  // miss entirely.
   it("does not let netlify.toml declare its own X-Robots-Tag", () => {
-    expect(NETLIFY_CONFIG).not.toMatch(/"?X-Robots-Tag"?\s*=/i);
+    expect(NETLIFY_CONFIG).not.toMatch(/['"]?X-Robots-Tag['"]?\s*=/i);
   });
 
   // public/_headers is the hand-written file writeReportOnlyHeaders treats as

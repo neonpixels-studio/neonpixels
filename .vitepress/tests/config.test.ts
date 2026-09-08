@@ -421,7 +421,9 @@ describe("buildEnd wires the noindex context into the generated _headers", () =>
 
       const headers = await runBuildEnd();
 
-      expect(headers).toContain(NOINDEX_HEADER_LINE);
+      // Indented, not just present: an unindented line in a Netlify
+      // _headers file is parsed as a new path pattern rather than a header.
+      expect(headers).toContain(`\n  ${NOINDEX_HEADER_LINE}\n`);
     },
   );
 

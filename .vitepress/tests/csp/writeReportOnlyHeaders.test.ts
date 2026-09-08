@@ -229,7 +229,11 @@ describe("writeReportOnlyHeaders", () => {
         .split("\n")
         .filter((line) => line === HEADERS_PATH_GLOB);
       expect(pathGlobLines).toHaveLength(1);
-      expect(headers).toContain(NOINDEX_HEADER_LINE);
+      // Indented, not just present: an unindented line in a Netlify _headers
+      // file is parsed as a new path pattern rather than a header, so a
+      // missing indent here would silently turn this into a bogus path rule
+      // instead of the noindex header it's meant to be.
+      expect(headers).toContain(`\n  ${NOINDEX_HEADER_LINE}\n`);
       expect(headers).toContain(`${REPORT_ONLY_HEADER_NAME}:`);
     });
 
