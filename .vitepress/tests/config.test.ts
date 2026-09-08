@@ -10,7 +10,8 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 
-import config from "../config";
+import config, { buildOrganizationJsonLd } from "../config";
+import { PROJECTS } from "@theme/data/projects";
 import type { HeadConfig, SiteConfig } from "vitepress";
 
 const PUBLIC_DIR = resolve(process.cwd(), "public");
@@ -160,16 +161,42 @@ function readPngDimensions(filePath: string) {
   };
 }
 
-function findMetaContent(identifier: string) {
+const JSON_LD_SCRIPT_TYPE = "application/ld+json";
+
+// Shared by every "find the one head tag matching a predicate" lookup below
+// (a JSON-LD script tag, a named meta tag) so each caller stays a one-liner
+// over a single throw-if-missing implementation.
+function findHeadEntry(
+  predicate: (_headConfigEntry: HeadConfig) => boolean,
+  description: string,
+) {
   const head = config.head ?? [];
-  const entry = head.find(
+  const entry = head.find(predicate);
+  if (!entry) {
+    throw new Error(`Missing head entry: ${description}`);
+  }
+  return entry;
+}
+
+function findJsonLdScript() {
+  const entry = findHeadEntry(
+    ([tag, attributes]) =>
+      tag === "script" && attributes?.type === JSON_LD_SCRIPT_TYPE,
+    `<script type="${JSON_LD_SCRIPT_TYPE}">`,
+  );
+  if (entry.length !== 3) {
+    throw new Error("ld+json script has no body to parse");
+  }
+  return JSON.parse(entry[2]);
+}
+
+function findMetaContent(identifier: string) {
+  const entry = findHeadEntry(
     ([tag, attributes]) =>
       tag === "meta" &&
       (attributes?.property ?? attributes?.name) === identifier,
+    `meta tag for "${identifier}"`,
   );
-  if (!entry) {
-    throw new Error(`Missing meta tag for "${identifier}"`);
-  }
   const content = entry[1].content;
   if (content === undefined) {
     throw new Error(`Meta tag "${identifier}" has no content attribute`);
@@ -411,5 +438,128 @@ describe("buildEnd wires the noindex context into the generated _headers", () =>
     const headers = await runBuildEnd();
 
     expect(headers).not.toContain(NOINDEX_HEADER_LINE);
+  });
+});
+
+// The org's ld+json exists to tell crawlers about the four projects it promotes
+// (issue #83). Each project is a sibling WebSite node in a top-level @graph,
+// tied to the Organization node by `publisher` — see the rationale in
+// config.ts for why that shape was chosen over `sameAs`/`hasPart` (the
+// properties named in the issue).
+//
+// `EXPECTED_PROJECT_URLS` below is a deliberate tripwire: a literal anchor on
+// the four known domains, so adding a fifth project fails here and requires a
+// hand edit — that's the point, not a gap. The grimicorn test further down is
+// what actually catches a wrong field mapping (e.g. the bare project id
+// instead of "name+tld"), since the id and name happen to match today.
+//
+// findJsonLdScript() is called fresh inside each `it`, never hoisted to the
+// describe body — a missing or malformed script tag then fails only the test
+// that reads it, instead of throwing during collection and skipping every
+// other suite in this file (see collectLocalAssetHrefs()/findMetaContent()
+// usage above for the same convention).
+const EXPECTED_PROJECT_URLS = [
+  "https://grimicorn.dev",
+  "https://wanderist.io",
+  "https://basin.fm",
+  "https://markpost.io",
+];
+
+// jsonLd comes straight from JSON.parse via findJsonLdScript() — implicitly
+// `any`, left untyped deliberately, since asserting on its exact shape is
+// what every test below does.
+function findGraphNodesByType(jsonLd: any, type: string) {
+  return (jsonLd["@graph"] as Array<Record<string, unknown>>).filter(
+    (node) => node["@type"] === type,
+  );
+}
+
+describe("Organization JSON-LD links the four projects", () => {
+  it("wraps the org and every project in a single @graph", () => {
+    const jsonLd = findJsonLdScript();
+    expect(Array.isArray(jsonLd["@graph"])).toBe(true);
+    expect(jsonLd["@graph"].length).toBe(1 + PROJECTS.length);
+  });
+
+  it("declares exactly one Organization node", () => {
+    const organizationNodes = findGraphNodesByType(
+      findJsonLdScript(),
+      "Organization",
+    );
+    expect(organizationNodes).toHaveLength(1);
+    expect(organizationNodes[0].name).toBe("Neon Pixels");
+  });
+
+  it("declares the four known project domains as WebSite nodes", () => {
+    const projectNodes = findGraphNodesByType(findJsonLdScript(), "WebSite");
+    expect(projectNodes.map((node) => node.url)).toEqual(EXPECTED_PROJECT_URLS);
+  });
+
+  it("links every WebSite node back to the Organization node's @id via publisher", () => {
+    const jsonLd = findJsonLdScript();
+    const [organizationNode] = findGraphNodesByType(jsonLd, "Organization");
+    const projectNodes = findGraphNodesByType(jsonLd, "WebSite");
+    for (const projectNode of projectNodes) {
+      expect(projectNode.publisher).toEqual({
+        "@id": organizationNode["@id"],
+      });
+    }
+  });
+
+  it("describes grimicorn.dev as a WebSite with its full domain and real description", () => {
+    const grimicorn = PROJECTS.find((project) => project.id === "grimicorn");
+    if (!grimicorn) {
+      throw new Error(
+        "PROJECTS is missing the grimicorn entry this fixture assumes",
+      );
+    }
+    const projectNodes = findGraphNodesByType(findJsonLdScript(), "WebSite");
+    expect(projectNodes).toContainEqual(
+      expect.objectContaining({
+        name: "grimicorn.dev",
+        url: "https://grimicorn.dev",
+        description: grimicorn.description,
+      }),
+    );
+  });
+
+  it("labels every WebSite node with name+tld, matching PROJECTS one-to-one", () => {
+    const projectNodes = findGraphNodesByType(findJsonLdScript(), "WebSite");
+    expect(
+      projectNodes.map((node) => ({
+        name: node.name,
+        url: node.url,
+        description: node.description,
+      })),
+    ).toEqual(
+      PROJECTS.map((project) => ({
+        name: `${project.name}${project.tld}`,
+        url: project.url,
+        description: project.description,
+      })),
+    );
+  });
+
+  // Exercises buildOrganizationJsonLd() directly with a hostile description,
+  // rather than reading PROJECTS through findJsonLdScript() — nothing in the
+  // real project data contains "<" today, so a check limited to the real
+  // payload would pass even if the escaping in config.ts were deleted
+  // entirely. Asserted on the raw string, not the parsed object: JSON.parse
+  // silently undoes the escape, which would hide the exact regression this
+  // test exists to catch.
+  it("escapes '<' so a project description can't close the script tag early", () => {
+    const hostileDescription = "</script><script>alert(1)</script>";
+    const serialized = buildOrganizationJsonLd([
+      {
+        name: "evil",
+        tld: ".test",
+        url: "https://evil.test",
+        description: hostileDescription,
+      },
+    ]);
+    expect(serialized).not.toContain("</script>");
+    expect(JSON.parse(serialized)["@graph"][1].description).toBe(
+      hostileDescription,
+    );
   });
 });

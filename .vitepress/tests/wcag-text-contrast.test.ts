@@ -188,7 +188,11 @@ function backgroundTokenName(token: string): string | null {
 // `background-image` declaration. `background-image` counts because it can be a
 // real fill (the NotFound CTA), unless the element clips it to its text (handled
 // separately). The `-color|-image`-only alternation keeps `background-size`/
-// `-position` out.
+// `-position` out. The leading `(?:^|;)` pins each match to a declaration
+// boundary so a custom property whose name ends in the word (e.g.
+// `--card-background: #123456`) is not read as a painted surface — loosening
+// it makes `lastBackgroundValue` return the custom property's hex instead of
+// the real (or absent) background.
 const BACKGROUND_DECLARATION =
   /(?:^|;)\s*(background(?:-color|-image)?)\s*:\s*([^;]*)/gi;
 
@@ -687,6 +691,35 @@ describe("background resolver", () => {
       '<div style="background-image: linear-gradient(#0b0b0e, #0b0b0e); background-color: #ffffff"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
     );
     expect(resolvedBackgroundOf(leaf)).toBe("#0b0b0e");
+  });
+
+  it("does not read a custom property's hex value as a painted background", () => {
+    // `--card-background` ends in the literal "background", but BACKGROUND_DECLARATION
+    // requires a declaration boundary (start or `;`, optionally followed by
+    // whitespace) before that word, so the custom property's leading `-` blocks
+    // the match and the element still climbs.
+    const leaf = fixtureLeaf(
+      '<div style="--card-background: #123456"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe(pageBackgroundHex());
+  });
+
+  it("reads the real background declaration over a custom property that precedes it", () => {
+    const leaf = fixtureLeaf(
+      '<div style="--card-background: #123456; background: #654321"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe("#654321");
+  });
+
+  it("ignores a custom property that follows the real background declaration", () => {
+    // lastBackgroundValue takes the *last* declaration match, so the dangerous
+    // direction is the custom property coming after the real one: if the
+    // `(?:^|;)` boundary were ever loosened, this hits `.at(-1)` and silently
+    // reports the custom property's hex instead of the painted surface.
+    const leaf = fixtureLeaf(
+      '<div style="background: #654321; --card-background: #123456"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe("#654321");
   });
 
   it("falls back to the page background when nothing opaque is painted", () => {

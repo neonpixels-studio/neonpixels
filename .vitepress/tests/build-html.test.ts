@@ -340,8 +340,11 @@ function parseJsonLd(raw: string) {
   }
 }
 
-// Parses every ld+json block and returns the Organization one, tolerating extra
-// blocks rather than assuming the Organization renders first.
+// Parses every ld+json block and returns the Organization node, tolerating
+// extra blocks rather than assuming the @graph block renders first. The org
+// and each project (issue #83) share one script tag as sibling nodes in a
+// top-level @graph, so the Organization node carries no @context of its own —
+// the caller reads that off the wrapping block instead.
 function organizationJsonLd(head: string) {
   const blocks = [...head.matchAll(JSON_LD_BLOCK_PATTERN)].map((match) =>
     parseJsonLd(match[1]),
@@ -349,13 +352,17 @@ function organizationJsonLd(head: string) {
   if (!blocks.length) {
     throw new Error("Built <head> is missing a JSON-LD script block");
   }
-  const organization = blocks.find(
-    (block) => block["@type"] === ORGANIZATION_TYPE,
+  const graphBlock = blocks.find((block) => Array.isArray(block["@graph"]));
+  if (!graphBlock) {
+    throw new Error("No JSON-LD @graph block in built <head>");
+  }
+  const organization = graphBlock["@graph"].find(
+    (node: { "@type": string }) => node["@type"] === ORGANIZATION_TYPE,
   );
   if (!organization) {
-    throw new Error("No Organization JSON-LD block in built <head>");
+    throw new Error("No Organization node in the built @graph JSON-LD block");
   }
-  return organization;
+  return { "@context": graphBlock["@context"], ...organization };
 }
 
 async function waitForBuildToSettle(outDir: string) {
@@ -692,20 +699,10 @@ describe("shipped immutable asset caching", () => {
     }
   });
 
-  // netlify.toml and _headers are merged, and for a header both set on overlapping
-  // paths netlify.toml wins. A Cache-Control added to its /* block would silently
-  // override this /assets/* rule while every _headers assertion still passed.
-  // Match an actual Cache-Control assignment (bare or quoted key), not the bare
-  // string, so a comment mentioning Cache-Control — whole-line or trailing — can't
-  // false-trigger the guard. Any real assignment (overlapping path or not) still
-  // fails, forcing a deliberate review of the _headers/netlify.toml interaction.
-  it("does not let netlify.toml override the immutable asset cache", () => {
-    const netlifyConfig = readFileSync(
-      resolve(PROJECT_ROOT, NETLIFY_CONFIG_FILE),
-      "utf8",
-    );
-    expect(netlifyConfig).not.toMatch(/^\s*"?Cache-Control"?\s*=/m);
-  });
+  // The netlify.toml override guard for this same invariant is a static config
+  // check with no dependency on the build output, so it lives in
+  // netlify.test.ts (see "shipped immutable asset caching" there) instead of
+  // gating it behind this suite's 120s VitePress build.
 });
 
 // writeReportOnlyHeaders (.vitepress/csp) already fails loud if the build-time

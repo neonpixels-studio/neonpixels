@@ -2,11 +2,12 @@
 // touches Netlify, the filesystem, or the network, so the parsing and routing
 // can be unit-tested in isolation; the runtime adapter lives in
 // netlify/functions/csp-report.ts and only translates a web Request/Response
-// around this. Browsers deliver violations in two shapes: the deprecated
-// `application/csp-report` body (one report under a `csp-report` key) and the
-// modern Reporting API `application/reports+json` body (an array of reports);
-// both are normalized to a single CspViolation shape so downstream logging is
-// format-agnostic.
+// around this. Browsers deliver violations in a few shapes: the deprecated
+// `application/csp-report` body (one report under a `csp-report` key), the
+// modern Reporting API `application/reports+json` body (an array of reports),
+// and WebKit's mislabeled `application/json` body (either shape, sniffed at
+// parse time); all are normalized to a single CspViolation shape so downstream
+// logging is format-agnostic.
 
 // The same-origin route the collector is served from. Shared with the Netlify
 // function (its `config.path`) and the Report-Only header wiring so the endpoint
@@ -20,6 +21,13 @@ export const CSP_REPORTING_GROUP = "csp-endpoint";
 export const POST_METHOD = "POST";
 const LEGACY_CSP_REPORT_CONTENT_TYPE = "application/csp-report";
 const REPORTING_API_CONTENT_TYPE = "application/reports+json";
+// WebKit (Safari) sends report-uri violations with this content type instead of
+// `application/csp-report`, even though the body still uses the legacy
+// `csp-report`-wrapped shape — https://bugs.webkit.org/show_bug.cgi?id=214930.
+// Shape-sniffed rather than mapped straight to the legacy parser so a client
+// that mislabels the modern Reporting API array under this content type is
+// still collected instead of dropped.
+const WEBKIT_JSON_CONTENT_TYPE = "application/json";
 const LEGACY_REPORT_KEY = "csp-report";
 const CSP_VIOLATION_TYPE = "csp-violation";
 const DEFAULT_DISPOSITION = "report";
@@ -192,11 +200,49 @@ function parseReportingApiReports(payload: unknown): ParsedReports {
   return finalizeViolations(candidates, malformedEntries + missingBodies);
 }
 
-type ReportParser = (_payload: unknown) => ParsedReports;
+// The array entries that actually look like a Reporting API csp-violation
+// report. `application/json` is the default content type of arbitrary bots and
+// scanners (unlike the two browser-only types above), so the sniffed parser
+// hands the shared parser only entries it can identify as a report rather than
+// the raw array — one real entry must not vouch for an arbitrary number of
+// alien siblings and inflate `dropped` without bound. This filters organic
+// noise (a scanner's default JSON content type), not adversarial input: a
+// forged batch sent with the real `application/reports+json` type skips this
+// gate entirely, same as it always could.
+function cspViolationEntries(payload: unknown[]) {
+  return payload.filter((entry) => {
+    const record = asRecord(entry);
+    return record !== null && isCspViolationEntry(record);
+  });
+}
+
+// WebKit's mislabeled body is shaped like the legacy report when it's an object
+// wrapping a `csp-report` record, and like a Reporting API batch when it's an
+// array containing at least one recognizable csp-violation entry. Anything
+// else under this content type is not a report at all, so it's rejected as a
+// malformed body rather than silently counted as a dropped report.
+function parseWebKitJsonReports(payload: unknown): ParsedReports | null {
+  const root = asRecord(payload);
+  const legacyReport = root && asRecord(root[LEGACY_REPORT_KEY]);
+  if (legacyReport) {
+    return finalizeViolations([normalizeLegacyReport(legacyReport)], 0);
+  }
+  if (!Array.isArray(payload)) {
+    return null;
+  }
+  const violationEntries = cspViolationEntries(payload);
+  if (violationEntries.length === 0) {
+    return null;
+  }
+  return parseReportingApiReports(violationEntries);
+}
+
+type ReportParser = (_payload: unknown) => ParsedReports | null;
 
 const REPORT_PARSERS = new Map<string, ReportParser>([
   [LEGACY_CSP_REPORT_CONTENT_TYPE, parseLegacyReports],
   [REPORTING_API_CONTENT_TYPE, parseReportingApiReports],
+  [WEBKIT_JSON_CONTENT_TYPE, parseWebKitJsonReports],
 ]);
 
 // The bare media type, lowercased, with any parameters (`; charset=utf-8`)
@@ -239,6 +285,16 @@ export function collectCspReports({
   if (payload === PARSE_ERROR) {
     return { status: HTTP_BAD_REQUEST, violations: [], dropped: 0 };
   }
-  const { violations, dropped } = parseReports(payload);
+  // A registered content type whose body matched no known report shape (e.g.
+  // WebKit's shape-sniffed application/json parser finding neither the legacy
+  // wrapper nor a Reporting API batch) is a malformed body under a type we do
+  // parse, not an unsupported type — keep 415 meaning "no parser for this
+  // content type at all" so the csp-report-rejected marker stays a reliable
+  // signal for "add a parser," not noise from a scanner's default JSON body.
+  const parsed = parseReports(payload);
+  if (parsed === null) {
+    return { status: HTTP_BAD_REQUEST, violations: [], dropped: 0 };
+  }
+  const { violations, dropped } = parsed;
   return { status: HTTP_NO_CONTENT, violations, dropped };
 }
