@@ -108,17 +108,80 @@ const STATIC_HEADERS = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Resource-Policy": "same-origin",
 };
 
 const HEADER_LINE = /^\s*([\w-]+)\s*=\s*"([^"]*)"/;
 
-function parseHeaders() {
+const HEADERS_TABLE_START = /^\s*\[\[headers\]\]/;
+const ANY_TABLE_START = /^\s*\[/;
+const HEADERS_VALUES_START = /^\s*\[headers\.values\]/;
+const GLOBAL_FOR_LINE = /^\s*for\s*=\s*"\/\*"/;
+
+// Slice to the [headers.values] table nested under the [[headers]] block
+// whose `for` matches "/*", mirroring readBuildTable() above: a more specific
+// block (e.g. `for = "/assets/*"`) added later in the file would otherwise
+// let a stray duplicate key silently overwrite the value this suite actually
+// needs to assert on, passing green while the deploy serves a different
+// value for that path. Takes the config text as a parameter (rather than
+// reading the module-level NETLIFY_CONFIG directly) so it can be driven with
+// fixtures in tests.
+function readGlobalHeadersTable(config: string) {
+  const lines = config.split("\n");
+  const forLineIndex = lines.findIndex((line) => GLOBAL_FOR_LINE.test(line));
+  if (forLineIndex === -1) {
+    throw new Error('netlify.toml has no [[headers]] block for "/*"');
+  }
+  // Confirm that `for` line actually sits inside a [[headers]] table, not
+  // some other table that happens to define a same-named key.
+  const precedingTables = lines
+    .slice(0, forLineIndex)
+    .filter((line) => ANY_TABLE_START.test(line));
+  const nearestTable = precedingTables.at(-1);
+  if (!nearestTable || !HEADERS_TABLE_START.test(nearestTable)) {
+    throw new Error(
+      'Found `for = "/*"` outside of a [[headers]] table in netlify.toml',
+    );
+  }
+  // Bound the search for [headers.values] to lines still inside this
+  // [[headers]] block (up to the next [[headers]] table), so a /* block
+  // missing its own [headers.values] table can't fall through and pick up a
+  // later, more specific block's values instead.
+  const afterFor = lines.slice(forLineIndex + 1);
+  const blockEnd = afterFor.findIndex((line) => HEADERS_TABLE_START.test(line));
+  const block = blockEnd === -1 ? afterFor : afterFor.slice(0, blockEnd);
+  const valuesStart = block.findIndex((line) =>
+    HEADERS_VALUES_START.test(line),
+  );
+  if (valuesStart === -1) {
+    throw new Error('The "/*" [[headers]] block has no [headers.values] table');
+  }
+  const rest = block.slice(valuesStart + 1);
+  const nextTable = rest.findIndex((line) => ANY_TABLE_START.test(line));
+  const end = nextTable === -1 ? rest.length : nextTable;
+  return rest.slice(0, end).join("\n");
+}
+
+function parseHeaders(config: string) {
+  const globalHeadersTable = readGlobalHeadersTable(config);
   const headers = new Map<string, string>();
-  for (const line of NETLIFY_CONFIG.split("\n")) {
+  const duplicates = new Set<string>();
+  for (const line of globalHeadersTable.split("\n")) {
     const match = line.match(HEADER_LINE);
-    if (match) {
-      headers.set(match[1], match[2]);
+    if (!match) {
+      continue;
     }
+    if (headers.has(match[1])) {
+      duplicates.add(match[1]);
+      continue;
+    }
+    headers.set(match[1], match[2]);
+  }
+  if (duplicates.size > 0) {
+    throw new Error(
+      `Duplicate header key(s) in the "/*" headers block: ${[...duplicates].join(", ")}`,
+    );
   }
   return headers;
 }
@@ -223,7 +286,7 @@ function isOverlyBroadSource(source: string) {
   return OVERLY_BROAD_SOURCES.has(source);
 }
 
-const headers = parseHeaders();
+const headers = parseHeaders(NETLIFY_CONFIG);
 const cspHeaderValue = readHeader(headers, "Content-Security-Policy");
 const { directives: cspDirectives, duplicates: cspDuplicates } =
   parseCsp(cspHeaderValue);
@@ -248,6 +311,76 @@ describe("netlify security headers", () => {
       readHeader(headers, "Strict-Transport-Security"),
     );
     expect(directives).toContain("includesubdomains");
+  });
+});
+
+describe("global headers table scoping", () => {
+  it("ignores a same-named key in a more specific [[headers]] block", () => {
+    const config = [
+      "[[headers]]",
+      '  for = "/*"',
+      "  [headers.values]",
+      '    X-Frame-Options = "DENY"',
+      "",
+      "[[headers]]",
+      '  for = "/assets/*"',
+      "  [headers.values]",
+      '    X-Frame-Options = "SAMEORIGIN"',
+    ].join("\n");
+    expect(readHeader(parseHeaders(config), "X-Frame-Options")).toBe("DENY");
+  });
+
+  it("throws on a duplicate key within the /* block itself", () => {
+    const config = [
+      "[[headers]]",
+      '  for = "/*"',
+      "  [headers.values]",
+      '    X-Frame-Options = "DENY"',
+      '    X-Frame-Options = "SAMEORIGIN"',
+    ].join("\n");
+    expect(() => parseHeaders(config)).toThrow(/Duplicate header key/);
+  });
+
+  it("does not read keys from an unrelated single-bracket table after the block", () => {
+    const config = [
+      "[[headers]]",
+      '  for = "/*"',
+      "  [headers.values]",
+      '    X-Frame-Options = "DENY"',
+      "",
+      "[build.environment]",
+      '    NODE_VERSION = "20"',
+    ].join("\n");
+    expect(() => readHeader(parseHeaders(config), "NODE_VERSION")).toThrow(
+      /Missing "NODE_VERSION" header/,
+    );
+  });
+
+  it('throws when for = "/*" appears outside a [[headers]] table', () => {
+    const config = ["[build]", '  for = "/*"'].join("\n");
+    expect(() => parseHeaders(config)).toThrow(
+      /outside of a \[\[headers\]\] table/,
+    );
+  });
+
+  it('throws when no [[headers]] block for "/*" exists at all', () => {
+    const config = ["[build]", '  publish = "dist"'].join("\n");
+    expect(() => parseHeaders(config)).toThrow(
+      /no \[\[headers\]\] block for "\/\*"/,
+    );
+  });
+
+  it("throws when the /* block has no [headers.values] table of its own, even if a later block has one", () => {
+    const config = [
+      "[[headers]]",
+      '  for = "/*"',
+      "",
+      "[[headers]]",
+      '  for = "/assets/*"',
+      "  [headers.values]",
+      '    X-Frame-Options = "SAMEORIGIN"',
+    ].join("\n");
+    expect(() => parseHeaders(config)).toThrow(/no \[headers\.values\] table/);
   });
 });
 
