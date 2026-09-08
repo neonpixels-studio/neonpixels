@@ -104,7 +104,7 @@ describe("csp-report Netlify function", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const response = await cspReportHandler(
-      postRequest("application/json", JSON.stringify(LEGACY_REPORT)),
+      postRequest("text/plain", JSON.stringify(LEGACY_REPORT)),
     );
 
     expect(response.status).toBe(415);
@@ -112,8 +112,22 @@ describe("csp-report Netlify function", () => {
     expect(warn.mock.calls[0][0]).toBe("csp-report-rejected");
     const logged = JSON.parse(warn.mock.calls[0][1] as string);
     expect(logged.status).toBe(415);
-    expect(logged.contentType).toBe("application/json");
+    expect(logged.contentType).toBe("text/plain");
     expect(persistMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a WebKit-style legacy-shaped report sent as application/json", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const response = await cspReportHandler(
+      postRequest("application/json", JSON.stringify(LEGACY_REPORT)),
+    );
+
+    expect(response.status).toBe(204);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const logged = JSON.parse(warn.mock.calls[0][1] as string);
+    expect(logged.effectiveDirective).toBe("script-src-elem");
+    expect(logged.blockedUri).toBe("inline");
   });
 
   it("replies 400 and logs a rejection marker for a malformed body", async () => {
