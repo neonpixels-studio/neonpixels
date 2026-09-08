@@ -352,3 +352,22 @@ describe("Content-Security-Policy", () => {
     expect(broad).toEqual([]);
   });
 });
+
+describe("shipped immutable asset caching", () => {
+  // netlify.toml and _headers are merged, and for a header both set on
+  // overlapping paths netlify.toml wins. A Cache-Control added to its /*
+  // block would silently override the /assets/* immutable rule declared in
+  // _headers (see build-html.test.ts for the build-verified half of this
+  // invariant: that every shipped /assets/ file is content-hashed and that
+  // _headers actually carries the rule). Match an actual Cache-Control
+  // assignment (bare or quoted key), not the bare string, so a comment
+  // mentioning Cache-Control — whole-line or trailing — can't false-trigger
+  // the guard. Any real assignment (overlapping path or not) still fails,
+  // forcing a deliberate review of the _headers/netlify.toml interaction.
+  //
+  // This is a static check of netlify.toml alone, so unlike the build-html.test.ts
+  // checks it references, it runs without paying for a VitePress build.
+  it("does not let netlify.toml override the immutable asset cache", () => {
+    expect(NETLIFY_CONFIG).not.toMatch(/^\s*"?Cache-Control"?\s*=/m);
+  });
+});
