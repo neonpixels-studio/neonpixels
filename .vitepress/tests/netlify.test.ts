@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
 
 const NETLIFY_CONFIG_PATH = resolve(process.cwd(), "netlify.toml");
+const HAND_WRITTEN_HEADERS_PATH = resolve(process.cwd(), "public/_headers");
 const NVMRC_PATH = resolve(process.cwd(), ".nvmrc");
 // Netlify also honours .node-version and .tool-versions (mise/asdf), and reads
 // either in preference to .nvmrc, so their presence would silently split the
@@ -502,5 +503,45 @@ describe("shipped immutable asset caching", () => {
   // checks it references, it runs without paying for a VitePress build.
   it("does not let netlify.toml override the immutable asset cache", () => {
     expect(NETLIFY_CONFIG).not.toMatch(/^\s*"?Cache-Control"?\s*=/m);
+  });
+});
+
+// writeReportOnlyHeaders (.vitepress/csp) already fails loud if the build-time
+// noindex line collides with a *hand-written* header inside its own generated
+// block (see writeReportOnlyHeaders.test.ts), but that check only sees what's
+// in the publish dir's _headers at build time. Neither source file it's built
+// from — netlify.toml's global /* block, or the public/_headers VitePress
+// copies in verbatim — is covered by that runtime check, so both need a
+// static guard instead. Both checks are static reads of repo files, so — like
+// "shipped immutable asset caching" above — they run without paying for a
+// VitePress build (see build-html.test.ts, where these guards previously lived
+// gated behind the 120s build suite).
+describe("noindex header ownership", () => {
+  // netlify.toml and _headers are merged, and for a header both set on
+  // overlapping paths netlify.toml wins. A hand-added X-Robots-Tag there would
+  // silently win over (or, on preview contexts, mask) the noindex header
+  // generated into _headers (see .vitepress/robots), with every _headers
+  // assertion still passing. Case-insensitive (`im`): TOML keys are
+  // case-sensitive but Netlify applies HTTP header names case-insensitively,
+  // so `x-robots-tag` or `X-ROBOTS-TAG` would create the same hazard a
+  // case-sensitive match would miss entirely. Not line-anchored: TOML permits
+  // `-` in a bare key, so an inline-table assignment like
+  // `values = { X-Robots-Tag = "index" }` would sail past a `^`-anchored
+  // match despite setting the header — the exact hazard this guard exists to
+  // block. `['"]?` (not `"?`) since TOML also allows single-quoted literal
+  // keys (`'X-Robots-Tag' = "index"`), which a double-quote-only class would
+  // miss entirely.
+  it("does not let netlify.toml declare its own X-Robots-Tag", () => {
+    expect(NETLIFY_CONFIG).not.toMatch(/['"]?X-Robots-Tag['"]?\s*=/i);
+  });
+
+  // public/_headers is the hand-written file writeReportOnlyHeaders treats as
+  // pre-existing content and carries forward as-is (see handWrittenHeaders) —
+  // an X-Robots-Tag added here, e.g. alongside the /assets/* rule, ships
+  // unconditionally on every context, including production, with no build
+  // failure and no _headers assertion noticing.
+  it("does not let public/_headers declare its own X-Robots-Tag", () => {
+    const handWrittenHeaders = readFileSync(HAND_WRITTEN_HEADERS_PATH, "utf8");
+    expect(handWrittenHeaders).not.toMatch(/^\s*X-Robots-Tag\s*:/im);
   });
 });
