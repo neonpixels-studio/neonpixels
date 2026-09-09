@@ -47,6 +47,7 @@ const ASSETS_DIR = "assets";
 // safe to cache immutably for a year, so match it anywhere in the name rather
 // than only immediately before the final extension.
 const CONTENT_HASH_FILENAME = /\.[A-Za-z0-9_-]{8,}\./;
+const NOT_FOUND_HTML_FILE = "404.html";
 const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
 const REPORT_ONLY_HEADER_LINE = new RegExp(
   `^\\s*${REPORT_ONLY_HEADER_NAME}:\\s*(.+)$`,
@@ -428,6 +429,102 @@ describe("built index.html head", () => {
       expect(new URL(content!).protocol).toBe(HTTPS_PROTOCOL);
     },
   );
+});
+
+// Closes the gap a config.head-only check would miss: proves the preload link
+// survives into real build output, points at an asset that actually exists in
+// dist/assets (not a stale or guessed hash), and reaches the 404 page too,
+// since the hero wordmark also renders there.
+describe("hero font preload", () => {
+  // Mirrors findUniqueTag()'s "duplicate keys are themselves a bug worth
+  // failing" convention: a stacked stale-plus-fresh preload (the exact case
+  // the GENERATED_MARKER_ATTRIBUTE de-dupe in writeFontPreloadLink.ts guards
+  // against) must fail this check, not silently pick the first match.
+  function preloadLinkFor(head: string) {
+    const matches = tagsNamed(head, "link").filter(
+      (tag) =>
+        attributeValue(tag, "rel") === "preload" &&
+        attributeValue(tag, "as") === "font",
+    );
+    if (matches.length > 1) {
+      throw new Error(`Built <head> has ${matches.length} font preload links`);
+    }
+    return matches[0];
+  }
+
+  function bundledCss() {
+    const assetFiles = readdirSync(resolve(buildOutDir, ASSETS_DIR));
+    return assetFiles
+      .filter((file) => file.endsWith(".css"))
+      .map((file) =>
+        readFileSync(resolve(buildOutDir, ASSETS_DIR, file), "utf8"),
+      )
+      .join("\n");
+  }
+
+  it("preloads the critical Archivo 900 face with crossorigin set", () => {
+    const linkTag = preloadLinkFor(builtHead);
+    expect(linkTag, "no font preload <link> in built HTML").toBeTruthy();
+    const href = attributeValue(linkTag!, "href")!;
+    // A literal expectation independent of the source module's exported
+    // pattern: the injector selects its file with that same regex, so
+    // asserting against it here would pass even if the pattern itself were
+    // pointed at the wrong font family/weight. This pins "Archivo 900" and a
+    // real content hash as two separate, hand-written facts.
+    expect(basename(href)).toMatch(/^archivo-latin-900-normal\./);
+    expect(basename(href)).toMatch(CONTENT_HASH_FILENAME);
+    expect(basename(href)).toMatch(/\.woff2$/);
+    // Boolean attribute (no ="value"), so match its presence directly rather
+    // than through attributeValue()'s ="..." pattern.
+    expect(linkTag).toMatch(/(?:^|\s)crossorigin(?:\s|>)/);
+  });
+
+  it("points at a font file that actually exists in the built assets dir", () => {
+    const linkTag = preloadLinkFor(builtHead)!;
+    const href = attributeValue(linkTag, "href")!;
+    const assetFiles = readdirSync(resolve(buildOutDir, ASSETS_DIR));
+    expect(assetFiles).toContain(basename(href));
+  });
+
+  it("preloads the same file the built @font-face rule requests", () => {
+    // The whole value of a font preload is that it matches what the CSS asks
+    // for; if they diverge (e.g. an @fontsource layout change emitting a
+    // second Archivo 900 latin file), the browser downloads a font nobody
+    // uses, the hero still FOUTs, and every other assertion here stays green.
+    // Scoped to the specific font-weight:900 @font-face block rather than "the
+    // preloaded basename appears somewhere in the bundle", so a coincidental
+    // hit against an unrelated rule (or another weight sharing a stylesheet)
+    // can't false-pass this.
+    const linkTag = preloadLinkFor(builtHead)!;
+    const href = attributeValue(linkTag, "href")!;
+    const archivo900Rule = [...bundledCss().matchAll(/@font-face\{[^}]*\}/g)]
+      .map((match) => match[0])
+      .find(
+        (rule) => rule.includes("font-weight:900") && rule.includes("Archivo"),
+      );
+    expect(
+      archivo900Rule,
+      "no @font-face{font-weight:900} rule for Archivo in the built CSS",
+    ).toBeTruthy();
+    expect(
+      archivo900Rule,
+      "preloaded font is not referenced by the built @font-face rule",
+    ).toContain(basename(href));
+  });
+
+  it("also preloads the same built asset on the 404 page", () => {
+    const notFoundHtml = readFileSync(
+      resolve(buildOutDir, NOT_FOUND_HTML_FILE),
+      "utf8",
+    );
+    const notFoundLinkTag = preloadLinkFor(extractHead(notFoundHtml));
+    expect(notFoundLinkTag, "no font preload <link> on 404.html").toBeTruthy();
+    // Both pages must preload the exact same content-hashed asset, not merely
+    // an asset matching the family/weight pattern, so a hash mismatch between
+    // pages (e.g. a partial rebuild) fails here.
+    const indexHref = attributeValue(preloadLinkFor(builtHead)!, "href");
+    expect(attributeValue(notFoundLinkTag!, "href")).toBe(indexHref);
+  });
 });
 
 // Creates a throwaway dir seeded with the given build artifacts, runs the

@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import {
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -388,13 +389,26 @@ describe("buildEnd wires the noindex context into the generated _headers", () =>
   const HEADERS_FILE_NAME = "_headers";
   const NOINDEX_HEADER_LINE = "X-Robots-Tag: noindex";
   const INLINE_SCRIPT = `<script id="boot">boot()</script>`;
+  // writeFontPreloadLink (now the first step buildEnd runs) requires a real
+  // </head> to inject its <link rel="preload"> before, same as CSP hashing
+  // only ever needs the inline script.
+  const HTML_DOCUMENT = `<html><head>${INLINE_SCRIPT}</head><body></body></html>`;
   const ORIGINAL_CONTEXT = process.env.CONTEXT;
+  // Matches CRITICAL_FONT_FILENAME_PATTERN in ../fonts/writeFontPreloadLink —
+  // buildEnd now runs the font preload step first, so a fixture build output
+  // needs a real asset to find or that step throws before the CSP step it's
+  // actually testing here ever runs.
+  const CRITICAL_FONT_FILENAME = "archivo-latin-900-normal.D5FQlLQC.woff2";
+  const ASSETS_DIR_NAME = "assets";
 
   let outDir = "";
 
   beforeEach(() => {
     outDir = mkdtempSync(join(tmpdir(), "neonpixels-buildend-"));
-    writeFileSync(join(outDir, "index.html"), INLINE_SCRIPT);
+    writeFileSync(join(outDir, "index.html"), HTML_DOCUMENT);
+    const assetsDir = join(outDir, ASSETS_DIR_NAME);
+    mkdirSync(assetsDir, { recursive: true });
+    writeFileSync(join(assetsDir, CRITICAL_FONT_FILENAME), "");
   });
 
   afterEach(() => {
@@ -410,7 +424,11 @@ describe("buildEnd wires the noindex context into the generated _headers", () =>
     const buildEnd = config.buildEnd as (
       _siteConfig: SiteConfig,
     ) => Promise<void>;
-    await buildEnd({ outDir } as unknown as SiteConfig);
+    await buildEnd({
+      outDir,
+      site: { base: "/" },
+      assetsDir: ASSETS_DIR_NAME,
+    } as unknown as SiteConfig);
     return readFileSync(join(outDir, HEADERS_FILE_NAME), "utf8");
   }
 

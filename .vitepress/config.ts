@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from "vitepress";
 import tailwindcss from "@tailwindcss/vite";
 
 import { writeReportOnlyHeaders } from "./csp/writeReportOnlyHeaders";
+import { writeFontPreloadLink } from "./fonts/writeFontPreloadLink";
 import { getNoindexHeaderLines } from "./robots/getNoindexHeaderLines";
 import { PROJECTS, type Project } from "./theme/data/projects";
 
@@ -158,16 +159,29 @@ export default defineConfig({
     // cast to VitePress's re-exported (Vite 6) Plugin type at the seam.
     plugins: [tailwindcss() as unknown as Plugin[]],
   },
-  // Hash the inline bootstrap scripts VitePress emits and publish them in a
-  // Content-Security-Policy-Report-Only header (Netlify `_headers`). Derived from
-  // the real build output so the hashes can never drift silently. The enforcing
-  // CSP in netlify.toml keeps 'unsafe-inline' until this Report-Only rollout
-  // confirms no violations — see the @todo there.
+  // Preloads the self-hosted Archivo 900 face (the hero/404 wordmark, plus every
+  // other .font-display heading) so it doesn't visibly swap in after CSS parse.
+  // The href is read back from the real build output, never hand-hardcoded to a
+  // hashed filename — see ./fonts/writeFontPreloadLink. Runs first so the CSP
+  // step below always hashes the final, fully-mutated HTML — today the preload
+  // <link> carries no inline script for it to hash, but ordering it any other
+  // way would make that an accident rather than a guarantee.
+  //
+  // Then hashes the inline bootstrap scripts VitePress emits and publishes them
+  // in a Content-Security-Policy-Report-Only header (Netlify `_headers`).
+  // Derived from the real build output so the hashes can never drift silently.
+  // The enforcing CSP in netlify.toml keeps 'unsafe-inline' until this
+  // Report-Only rollout confirms no violations — see the @todo there.
   //
   // Also noindexes deploy-preview/branch-deploy builds (see .vitepress/robots)
   // since Netlify headers can't be scoped by context in netlify.toml itself;
   // the noindex line rides in the same `/*` block this hook already writes.
   async buildEnd(siteConfig) {
+    await writeFontPreloadLink(
+      siteConfig.outDir,
+      siteConfig.site.base,
+      siteConfig.assetsDir,
+    );
     // The skipped `undefined` is netlifyConfigPath, a test-only override seam
     // (see writeReportOnlyHeaders.test.ts) — production always wants its
     // default, so it has to be named here to reach extraGlobalHeaderLines.
