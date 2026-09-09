@@ -9,6 +9,7 @@ import {
   type CollectorResult,
   type CspViolation,
 } from "../../.vitepress/csp/cspReportCollector";
+import { getCspReportStore } from "./lib/cspReportStore";
 
 // Netlify Function (v2, web-standard Request/Response) that gathers the CSP
 // violations the Report-Only header sends here, so they land in the function
@@ -24,7 +25,100 @@ const UNPARSED_LOG_PREFIX = "csp-report-unparsed";
 // type). Without it an unmodelled content type would read as "no violations",
 // and the rollout would drop 'unsafe-inline' on false evidence.
 const REJECTED_LOG_PREFIX = "csp-report-rejected";
+// Logged when the Blobs write itself fails (missing context, outage, etc.).
+// Persistence failing must never fail the request or hide the violation —
+// it's still visible in the function logs above, this only flags that the
+// queryable copy didn't land.
+const PERSIST_FAILED_LOG_PREFIX = "csp-report-persist-failed";
+// Logged when one or more accepted violations were filtered out of the Blobs
+// write (see isOwnOriginViolation). Without this marker, a run where the
+// filter ate every violation would look identical in the store to a run with
+// no violations at all — the same "silence must not read as clean" problem
+// UNPARSED_LOG_PREFIX/REJECTED_LOG_PREFIX solve for the request-level path.
+const PERSIST_SKIPPED_LOG_PREFIX = "csp-report-not-persisted";
 const MAX_LOGGED_CONTENT_TYPE = 128;
+// The Blobs write is a best-effort side effect of what browsers treat as a
+// fire-and-forget beacon; cap how long we let it hold the response open so a
+// slow/unavailable Blobs region degrades to a logged failure marker instead
+// of turning a fast 204 into a function timeout the browser won't retry.
+// Exported so tests assert against the real value instead of mirroring it —
+// a mirrored constant that drifts from this one would turn a timeout
+// regression into a hung test rather than a failing assertion.
+export const PERSIST_TIMEOUT_MS = 3000;
+// Always allowed, regardless of environment: reports naming the production
+// origin are kept on every deploy (production, branch deploys, previews),
+// not only when Netlify happens to inject URL/DEPLOY_PRIME_URL.
+const SITE_ORIGIN = "https://neonpixels.io";
+
+// This is a noise filter, not an anti-forgery control: `documentUrl` comes
+// from the request body, so a forger who reads the source can spoof any
+// origin they like, including this site's. What it does buy: violations
+// from misconfigured integrations, scanners, or a report sent to the wrong
+// deploy never pollute the durable store the 'unsafe-inline' rollout gate
+// reads, without touching what's logged to the console (which stays
+// unfiltered — nothing is hidden, only the durable copy is narrowed).
+// Netlify injects URL (the production domain) and DEPLOY_PRIME_URL (the
+// running deploy's own URL — branch deploys, deploy previews) but neither is
+// the browser's actual host under `netlify dev` (localhost), and Netlify
+// doesn't inject either there. The request's own origin fills that one gap —
+// but ONLY under netlify dev (NETLIFY_DEV=true): in every other context
+// request.url is built from the client-sent Host header, so trusting it
+// unconditionally would let a forged Host make an arbitrary origin
+// "own-origin" for that same request's documentUrl, defeating the one
+// property this filter still guarantees.
+function allowedOrigins(requestUrl: string): Set<string> {
+  const candidates = [
+    process.env.URL,
+    process.env.DEPLOY_PRIME_URL,
+    process.env.NETLIFY_DEV === "true" ? requestUrl : null,
+    SITE_ORIGIN,
+  ];
+  const origins = candidates
+    .filter((candidate): candidate is string => Boolean(candidate))
+    .map(originOf)
+    .filter((origin): origin is string => origin !== null);
+  return new Set(origins);
+}
+
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+class PersistTimeoutError extends Error {
+  constructor() {
+    super(`store write exceeded ${PERSIST_TIMEOUT_MS}ms`);
+    this.name = "PersistTimeoutError";
+  }
+}
+
+// Races `work` against a timeout, always clearing the timer so a fast/normal
+// resolution doesn't leave a pending `setTimeout` on the event loop for the
+// rest of PERSIST_TIMEOUT_MS.
+async function withTimeout<Value>(work: Promise<Value>): Promise<Value> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new PersistTimeoutError()),
+      PERSIST_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isOwnOriginViolation(origins: Set<string>) {
+  return (violation: CspViolation): boolean => {
+    const origin = originOf(violation.documentUrl);
+    return origin !== null && origins.has(origin);
+  };
+}
 
 // A rejected request carried a report we failed to record; a 405 is just a bot
 // or crawler hitting the endpoint with the wrong method, not a lost report.
@@ -61,6 +155,39 @@ function recordResult(result: CollectorResult, contentType: string | null) {
 
 function logViolation(violation: CspViolation) {
   console.warn(VIOLATION_LOG_PREFIX, JSON.stringify(violation));
+}
+
+// Writes accepted, same-origin violations to the Blobs store in addition to
+// the console log above, so the rollout signal is queryable rather than
+// grep-only. A store failure (including a timeout) is logged, not thrown, so
+// a Blobs outage degrades to log-only rather than turning every report into a
+// 500. Skips the store entirely when there is nothing to persist, so a bot's
+// 405, a rejected malformed body, or an off-origin forgery never emits a
+// persist-failure marker into the rollout's "no rejection markers" window.
+async function persistViolations(
+  violations: CspViolation[],
+  requestUrl: string,
+) {
+  const origins = allowedOrigins(requestUrl);
+  const ownOriginViolations = violations.filter(isOwnOriginViolation(origins));
+  const skipped = violations.length - ownOriginViolations.length;
+  if (skipped > 0) {
+    console.warn(PERSIST_SKIPPED_LOG_PREFIX, JSON.stringify({ skipped }));
+  }
+  if (ownOriginViolations.length === 0) {
+    return;
+  }
+  try {
+    await withTimeout(getCspReportStore().persist(ownOriginViolations));
+  } catch (error) {
+    console.warn(
+      PERSIST_FAILED_LOG_PREFIX,
+      JSON.stringify({
+        message: error instanceof Error ? error.message : String(error),
+        count: ownOriginViolations.length,
+      }),
+    );
+  }
 }
 
 // A 405 must advertise the methods it accepts (RFC 9110 §15.5.6).
@@ -116,6 +243,11 @@ export default async (request: Request): Promise<Response> => {
   const contentType = request.headers.get("content-type");
   const result = await collect(request, contentType);
   recordResult(result, contentType);
+  // @todo This holds the response open for up to PERSIST_TIMEOUT_MS on a slow
+  // Blobs write, which is billed function duration. If Netlify Functions v2
+  // exposes a waitUntil-style background-work hook, move this off the
+  // response path instead of racing it against a timeout.
+  await persistViolations(result.violations, request.url);
   return new Response(null, {
     status: result.status,
     headers: responseHeaders(result.status),
