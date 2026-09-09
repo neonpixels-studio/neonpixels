@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from "vitepress";
 import tailwindcss from "@tailwindcss/vite";
 
 import { writeReportOnlyHeaders } from "./csp/writeReportOnlyHeaders";
+import { getNoindexHeaderLines } from "./robots/getNoindexHeaderLines";
 import { PROJECTS, type Project } from "./theme/data/projects";
 
 const SITE_URL = "https://neonpixels.io";
@@ -162,7 +163,18 @@ export default defineConfig({
   // the real build output so the hashes can never drift silently. The enforcing
   // CSP in netlify.toml keeps 'unsafe-inline' until this Report-Only rollout
   // confirms no violations — see the @todo there.
+  //
+  // Also noindexes deploy-preview/branch-deploy builds (see .vitepress/robots)
+  // since Netlify headers can't be scoped by context in netlify.toml itself;
+  // the noindex line rides in the same `/*` block this hook already writes.
   async buildEnd(siteConfig) {
-    await writeReportOnlyHeaders(siteConfig.outDir);
+    // The skipped `undefined` is netlifyConfigPath, a test-only override seam
+    // (see writeReportOnlyHeaders.test.ts) — production always wants its
+    // default, so it has to be named here to reach extraGlobalHeaderLines.
+    await writeReportOnlyHeaders(
+      siteConfig.outDir,
+      undefined,
+      getNoindexHeaderLines(),
+    );
   },
 });

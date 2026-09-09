@@ -1,10 +1,18 @@
-import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { basename, dirname, extname, resolve } from "node:path";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, extname, join, resolve } from "node:path";
 
 import config, { buildOrganizationJsonLd } from "../config";
 import { PROJECTS } from "@theme/data/projects";
-import type { HeadConfig } from "vitepress";
+import type { HeadConfig, SiteConfig } from "vitepress";
 
 const PUBLIC_DIR = resolve(process.cwd(), "public");
 const THEME_STYLE_PATH = resolve(process.cwd(), ".vitepress/theme/style.css");
@@ -366,6 +374,72 @@ describe("Self-hosted fonts are trimmed to the weights actually used", () => {
       .filter((classList) => DISPLAY_UTILITY_PATTERN.test(classList))
       .filter((classList) => !BLACK_UTILITY_PATTERN.test(classList));
     expect(unpairedDisplayClassLists).toEqual([]);
+  });
+});
+
+// getNoindexHeaderLines and writeReportOnlyHeaders (folding the noindex line
+// into the CSP writer's block, see .vitepress/robots and .vitepress/csp) are
+// each tested in isolation, but nothing else asserts the buildEnd hook here
+// actually wires one into the other — that seam is exactly where a silent
+// regression (every deploy preview becoming indexable) could slip through
+// with both halves' own tests still green. Runs buildEnd against a real,
+// throwaway outDir with the real repo netlify.toml as the CSP source.
+describe("buildEnd wires the noindex context into the generated _headers", () => {
+  const HEADERS_FILE_NAME = "_headers";
+  const NOINDEX_HEADER_LINE = "X-Robots-Tag: noindex";
+  const INLINE_SCRIPT = `<script id="boot">boot()</script>`;
+  const ORIGINAL_CONTEXT = process.env.CONTEXT;
+
+  let outDir = "";
+
+  beforeEach(() => {
+    outDir = mkdtempSync(join(tmpdir(), "neonpixels-buildend-"));
+    writeFileSync(join(outDir, "index.html"), INLINE_SCRIPT);
+  });
+
+  afterEach(() => {
+    rmSync(outDir, { recursive: true, force: true });
+    if (ORIGINAL_CONTEXT === undefined) {
+      delete process.env.CONTEXT;
+      return;
+    }
+    process.env.CONTEXT = ORIGINAL_CONTEXT;
+  });
+
+  async function runBuildEnd() {
+    const buildEnd = config.buildEnd as (
+      _siteConfig: SiteConfig,
+    ) => Promise<void>;
+    await buildEnd({ outDir } as unknown as SiteConfig);
+    return readFileSync(join(outDir, HEADERS_FILE_NAME), "utf8");
+  }
+
+  it.each(["deploy-preview", "branch-deploy"])(
+    "noindexes a %s build",
+    async (context) => {
+      process.env.CONTEXT = context;
+
+      const headers = await runBuildEnd();
+
+      // Indented, not just present: an unindented line in a Netlify
+      // _headers file is parsed as a new path pattern rather than a header.
+      expect(headers).toContain(`\n  ${NOINDEX_HEADER_LINE}\n`);
+    },
+  );
+
+  it.each([
+    ["production", "production"],
+    ["an unset CONTEXT", undefined],
+  ])("does not noindex %s", async (_label, context) => {
+    if (context === undefined) {
+      delete process.env.CONTEXT;
+    } else {
+      process.env.CONTEXT = context;
+    }
+
+    const headers = await runBuildEnd();
+
+    expect(headers).not.toContain(NOINDEX_HEADER_LINE);
   });
 });
 

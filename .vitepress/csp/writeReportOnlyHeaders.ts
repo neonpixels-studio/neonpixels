@@ -1,5 +1,6 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   buildReportOnlyCsp,
@@ -16,7 +17,19 @@ import { CSP_REPORT_PATH, CSP_REPORTING_GROUP } from "./cspReportCollector";
 // rollout step, so a missed hash reports a violation without breaking the page.
 // The filesystem seams are parameters so the whole flow is testable in isolation.
 
-const NETLIFY_CONFIG_URL = new URL("../../netlify.toml", import.meta.url);
+// Resolved via fileURLToPath rather than `new URL(...)` directly: a test
+// environment (e.g. Vitest's happy-dom) can shadow the global `URL`
+// constructor, and Node's `fs` functions reject a URL instance from any
+// implementation but its own. `import.meta.url` is a plain string per spec,
+// so routing through Node's own fileURLToPath sidesteps the ambient global
+// entirely and this stays a plain path both writeReportOnlyHeaders and
+// callers like config.test.ts (which exercises the real default) can rely on.
+const NETLIFY_CONFIG_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "netlify.toml",
+);
 // `[^"\n]` so a value can never span lines and inject extra `_headers` rules.
 const ENFORCING_CSP_PATTERN =
   /^\s*Content-Security-Policy\s*=\s*"([^"\n]*)"/gim;
@@ -34,12 +47,25 @@ const GENERATED_HEADER_NAMES = [
   REPORT_ONLY_HEADER_NAME,
   REPORTING_ENDPOINTS_HEADER_NAME,
 ];
-// Matches a generated header only as its own `_headers` line, so the name
-// appearing in a comment in a hand-written file doesn't trip the conflict guard.
-const GENERATED_HEADER_LINE = new RegExp(
-  `^\\s*(?:${GENERATED_HEADER_NAMES.join("|")})\\s*:`,
-  "im",
-);
+// Escapes a header name for use inside the conflict-line RegExp below.
+// Every name reaching this function is already constrained to `[\w-]+` by
+// assertWellFormedExtraHeaderLines (which runs before handWrittenHeaders is
+// called), so none of today's callers can actually supply a regex
+// metacharacter — this exists so that guarantee isn't a silent precondition
+// callers of conflictHeaderLinePattern have to remember to uphold.
+function escapeForRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Matches any of the given header names only as their own `_headers` line, so
+// the name appearing in a comment in a hand-written file doesn't trip the
+// conflict guard.
+function conflictHeaderLinePattern(headerNames: string[]) {
+  return new RegExp(
+    `^\\s*(?:${headerNames.map(escapeForRegExp).join("|")})\\s*:`,
+    "im",
+  );
+}
 
 // A single header comfortably under the ~8 KB limit CDNs and origins enforce; the
 // build fails loud here rather than letting Netlify truncate or reject at serve.
@@ -103,16 +129,20 @@ async function readExistingHeaders(headersPath: string) {
 
 // Strip this script's own previous block, then keep any remaining hand-written
 // `_headers` (VitePress copies public/_headers into the publish dir). A leftover
-// copy of either generated header from a hand-written file would ship two
-// conflicting values, so fail loud rather than merge it.
-function handWrittenHeaders(existingHeaders: string) {
+// copy of any header this call is about to generate — the two CSP headers plus
+// whatever `extraGlobalHeaderLines` names — would ship two conflicting values
+// for the same path, so fail loud rather than merge it.
+function handWrittenHeaders(
+  existingHeaders: string,
+  conflictHeaderNames: string[],
+) {
   const markerIndex = existingHeaders.indexOf(GENERATED_MARKER);
   const withoutGenerated = (
     markerIndex === -1 ? existingHeaders : existingHeaders.slice(0, markerIndex)
   ).trim();
-  if (GENERATED_HEADER_LINE.test(withoutGenerated)) {
+  if (conflictHeaderLinePattern(conflictHeaderNames).test(withoutGenerated)) {
     throw new Error(
-      `CSP Report-Only: ${HEADERS_FILE_NAME} already defines one of ${GENERATED_HEADER_NAMES.join(", ")}; refusing to ship two conflicting policies`,
+      `CSP Report-Only: ${HEADERS_FILE_NAME} already defines one of ${conflictHeaderNames.join(", ")}; refusing to ship two conflicting policies`,
     );
   }
   return withoutGenerated;
@@ -124,12 +154,94 @@ function reportingEndpointsHeaderValue() {
   return `${CSP_REPORTING_GROUP}="${CSP_REPORT_PATH}"`;
 }
 
-function formatGeneratedBlock(reportOnlyCsp: string) {
+// A single `Name: value` pair with no line break, mirroring the `[^"\n]` CSP
+// guard above: an extra header line is interpolated into the `_headers` file
+// verbatim, so an embedded newline could inject a second path block and a
+// value with no name could ship a malformed rule Netlify silently drops.
+// `[ \t]*` (not `\s*`) between the colon and the value: `\s` also matches
+// `\n`/`\r`, which would let a single embedded newline slip past the
+// `[^\r\n]+` value guard by having the separator itself absorb it. The value
+// itself starts with `\S` (not `[^\r\n]+` right away) so the optional
+// leading whitespace can't be handed back to satisfy the value on a
+// whitespace-only payload like `"X-Robots-Tag: "`, which Netlify would
+// silently drop as a malformed rule.
+const EXTRA_HEADER_LINE_PATTERN = /^[\w-]+:[ \t]*\S[^\r\n]*$/;
+
+function assertWellFormedExtraHeaderLines(extraGlobalHeaderLines: string[]) {
+  const malformed = extraGlobalHeaderLines.filter(
+    (line) => !EXTRA_HEADER_LINE_PATTERN.test(line),
+  );
+  if (malformed.length === 0) {
+    return;
+  }
+  throw new Error(
+    `CSP Report-Only: refusing to write malformed extra header line(s): ${malformed.map((line) => JSON.stringify(line)).join(", ")}`,
+  );
+}
+
+// Well-formedness (assertWellFormedExtraHeaderLines) guarantees a colon, so
+// this always finds one.
+function extraHeaderLineName(line: string) {
+  return line.slice(0, line.indexOf(":")).trim();
+}
+
+// A caller passing one of this module's own header names as an extra line
+// would silently ship it twice in the same generated block — catch that
+// before touching the filesystem, the same way a hand-written duplicate is
+// caught below via handWrittenHeaders.
+function assertNoReservedHeaderNameCollision(extraHeaderNames: string[]) {
+  const collisions = extraHeaderNames.filter((name) =>
+    GENERATED_HEADER_NAMES.some(
+      (reserved) => reserved.toLowerCase() === name.toLowerCase(),
+    ),
+  );
+  if (collisions.length === 0) {
+    return;
+  }
+  throw new Error(
+    `CSP Report-Only: extra header line(s) collide with a header this module already generates: ${collisions.join(", ")}`,
+  );
+}
+
+// Two callers could each pass their own `X-Robots-Tag` line (e.g. noindex and
+// nofollow) and both would land in the same `/*` block silently — the same
+// duplicate-value hazard assertNoReservedHeaderNameCollision and
+// handWrittenHeaders already guard against, just within the extra lines
+// themselves rather than against this module's own headers or a hand-written
+// file.
+function assertNoDuplicateExtraHeaderNames(extraHeaderNames: string[]) {
+  const seenHeaderNames = new Set<string>();
+  const duplicates = extraHeaderNames.filter((name) => {
+    const lowerCaseName = name.toLowerCase();
+    if (seenHeaderNames.has(lowerCaseName)) {
+      return true;
+    }
+    seenHeaderNames.add(lowerCaseName);
+    return false;
+  });
+  if (duplicates.length === 0) {
+    return;
+  }
+  throw new Error(
+    `CSP Report-Only: extra header line(s) declare the same header twice: ${duplicates.join(", ")}`,
+  );
+}
+
+// `extraGlobalHeaderLines` lets a caller (see .vitepress/robots) fold an
+// unrelated `/*` header, such as a context-gated noindex, into this same
+// block instead of writing a second `/*` block — Netlify's behaviour for two
+// blocks declaring the same path is undocumented, so this file owns the one
+// `/*` block that ships.
+function formatGeneratedBlock(
+  reportOnlyCsp: string,
+  extraGlobalHeaderLines: string[],
+) {
   return [
     GENERATED_MARKER,
     HEADERS_PATH_GLOB,
     `  ${REPORT_ONLY_HEADER_NAME}: ${reportOnlyCsp}`,
     `  ${REPORTING_ENDPOINTS_HEADER_NAME}: ${reportingEndpointsHeaderValue()}`,
+    ...extraGlobalHeaderLines.map((line) => `  ${line}`),
     "",
   ].join("\n");
 }
@@ -143,8 +255,15 @@ function mergeHeaders(handWritten: string, generatedBlock: string) {
 
 export async function writeReportOnlyHeaders(
   outDir: string,
-  netlifyConfigPath: string | URL = NETLIFY_CONFIG_URL,
+  netlifyConfigPath: string | URL = NETLIFY_CONFIG_PATH,
+  extraGlobalHeaderLines: string[] = [],
 ) {
+  // Caller-supplied and known up front, so fail before the expensive work
+  // below (HTML scan, hashing, netlify.toml read) rather than after it.
+  assertWellFormedExtraHeaderLines(extraGlobalHeaderLines);
+  const extraHeaderNames = extraGlobalHeaderLines.map(extraHeaderLineName);
+  assertNoReservedHeaderNameCollision(extraHeaderNames);
+  assertNoDuplicateExtraHeaderNames(extraHeaderNames);
   const htmlDocuments = await readHtmlDocuments(outDir);
   const scriptHashes = collectInlineScriptHashes(htmlDocuments);
   if (scriptHashes.length === 0) {
@@ -165,10 +284,14 @@ export async function writeReportOnlyHeaders(
   const headersPath = join(outDir, HEADERS_FILE_NAME);
   const handWritten = handWrittenHeaders(
     await readExistingHeaders(headersPath),
+    [...GENERATED_HEADER_NAMES, ...extraHeaderNames],
   );
   await writeFile(
     headersPath,
-    mergeHeaders(handWritten, formatGeneratedBlock(reportOnlyCsp)),
+    mergeHeaders(
+      handWritten,
+      formatGeneratedBlock(reportOnlyCsp, extraGlobalHeaderLines),
+    ),
     "utf8",
   );
 }

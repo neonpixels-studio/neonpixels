@@ -702,4 +702,9 @@ describe("shipped immutable asset caching", () => {
   // check with no dependency on the build output, so it lives in
   // netlify.test.ts (see "shipped immutable asset caching" there) instead of
   // gating it behind this suite's 120s VitePress build.
+  //
+  // The noindex header ownership guards (netlify.toml and public/_headers
+  // never declaring their own X-Robots-Tag) are the same kind of static,
+  // build-independent check, so they live in netlify.test.ts too — see
+  // "noindex header ownership" there.
 });
