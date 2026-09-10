@@ -1,11 +1,13 @@
 import { getCspReportPruner } from "./lib/cspReportPruner";
 
 // Netlify scheduled Function (v2) that prunes the csp-reports Blobs store on
-// a daily cadence. The public, unauthenticated /csp-report endpoint
+// an hourly cadence. The public, unauthenticated /csp-report endpoint
 // (csp-report.ts) has no per-caller rate limit, so without this the store
 // could grow without bound under sustained abuse; the retention/cap strategy
 // itself lives in cspReportPruner.ts, this adapter only invokes it on a
-// schedule and reports the outcome to the function logs.
+// schedule and reports the outcome to the function logs. Hourly (rather than
+// daily) keeps each run's backlog small enough to reliably finish inside
+// cspReportPruner's own time budget — see PRUNE_TIME_BUDGET_MS.
 
 const PRUNED_LOG_PREFIX = "csp-report-pruned";
 // Logged when the prune run itself fails (Blobs outage, missing context,
@@ -33,4 +35,4 @@ export default async (_request: Request): Promise<Response> => {
   }
 };
 
-export const config = { schedule: "@daily" };
+export const config = { schedule: "@hourly" };

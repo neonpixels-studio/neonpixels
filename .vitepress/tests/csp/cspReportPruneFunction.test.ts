@@ -42,8 +42,8 @@ afterEach(() => {
 });
 
 describe("csp-report-prune Netlify scheduled function", () => {
-  it("runs on a daily schedule", () => {
-    expect(config.schedule).toBe("@daily");
+  it("runs on an hourly schedule", () => {
+    expect(config.schedule).toBe("@hourly");
   });
 
   it("prunes the store, replies 200, and logs the outcome", async () => {
@@ -84,7 +84,28 @@ describe("csp-report-prune Netlify scheduled function", () => {
     const response = await cspReportPruneHandler(scheduledRequest());
 
     expect(response.status).toBe(500);
+    expect(warn.mock.calls[0][0]).toBe(PRUNE_FAILED_LOG_PREFIX);
     const logged = JSON.parse(warn.mock.calls[0][1] as string);
     expect(logged.message).toBe("missing blobs context");
+  });
+
+  it("still replies 200 and logs the incomplete outcome when a run only partially prunes", async () => {
+    // The store was too large to fully list/delete inside the time budget —
+    // this is not a failure (the next hourly run picks up where it left
+    // off), so it must not be reported the same way as a thrown error.
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    pruneMock.mockResolvedValueOnce({
+      deleted: 50,
+      remaining: 200,
+      complete: false,
+    });
+
+    const response = await cspReportPruneHandler(scheduledRequest());
+
+    expect(response.status).toBe(200);
+    expect(log).toHaveBeenCalledWith(
+      PRUNED_LOG_PREFIX,
+      JSON.stringify({ deleted: 50, remaining: 200, complete: false }),
+    );
   });
 });
