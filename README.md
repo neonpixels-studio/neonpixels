@@ -85,7 +85,25 @@ response are unaffected either way, since browsers treat this endpoint as a
 fire-and-forget beacon and won't retry a timed-out request. The
 parsing/validation is isolated in
 [`.vitepress/csp/cspReportCollector.ts`](.vitepress/csp/cspReportCollector.ts)
-so it is unit-testable without the Netlify runtime. Once the logs show no
+so it is unit-testable without the Netlify runtime.
+
+Since `/csp-report` is public and unauthenticated, sustained abuse could grow
+the `csp-reports` store without bound. A daily Netlify scheduled Function
+([`netlify/functions/csp-report-prune.ts`](netlify/functions/csp-report-prune.ts))
+prunes it: blobs older than `CSP_REPORT_RETENTION_DAYS` (default 30) are always
+deleted, and whatever remains is then trimmed to `CSP_REPORT_MAX_BLOBS`
+(default 5000), oldest first, so a flood landing entirely inside the retention
+window is still capped rather than only aged out on the next cutoff. Both are
+optional site environment variables (set via the Netlify dashboard or CLI, not
+a `.env` file — this repo has none) for tuning the window/cap without a code
+change; neither is required for pruning to run. The prune strategy is isolated
+in
+[`netlify/functions/lib/cspReportPruner.ts`](netlify/functions/lib/cspReportPruner.ts)
+behind a minimal `list`/`delete` seam (mirroring `BlobWriter` above), so it is
+unit-tested with a fake client rather than the real Blobs store. A failed
+prune run logs a `csp-report-prune-failed` marker and tries again on the next
+scheduled run; it never blocks or slows the `/csp-report` endpoint itself.
+Once the logs show no
 `script-src` violations **and no `csp-report-rejected` or `csp-report-unparsed`
 entries** over the observation window, `'unsafe-inline'` can be dropped from the
 enforcing `script-src` (see the `@todo` in `netlify.toml`). The two markers

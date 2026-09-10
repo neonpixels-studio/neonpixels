@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 import {
   createCspReportStore,
+  sanitizeTimestamp,
   type BlobWriter,
   type StoredCspViolation,
 } from "../../../netlify/functions/lib/cspReportStore";
@@ -24,6 +25,14 @@ function violation(overrides: Partial<CspViolation> = {}): CspViolation {
 function fakeBlobWriter(): BlobWriter & { setJSON: ReturnType<typeof vi.fn> } {
   return { setJSON: vi.fn().mockResolvedValue(undefined) };
 }
+
+describe("sanitizeTimestamp", () => {
+  it("replaces the colon and period separators of an ISO timestamp with dashes", () => {
+    expect(sanitizeTimestamp("2026-06-15T00:00:00.000Z")).toBe(
+      "2026-06-15T00-00-00-000Z",
+    );
+  });
+});
 
 describe("createCspReportStore", () => {
   it("writes one blob per violation, stamped with when it was received", async () => {
