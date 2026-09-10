@@ -84,56 +84,62 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
                  the taller card (vs. the old 3-row strip) is deliberate now that
                  the grid holds all 50 states. -->
           <div data-v-aa442b0f="" class="grid grid-cols-[repeat(10,minmax(0,1fr))] gap-1" data-testid="trip-log-heatmap">
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <!-- Unlike the other project visuals' decoration, this cell grid
+                   is the actual content behind the card's role="img"/aria-label
+                   above: under forced-colors the four cyan brightness tiers
+                   collapse to one indistinguishable fill, so \`.trip-cell\` in
+                   style.css redraws the visited/unvisited distinction with a
+                   system-color border + fill instead of losing it outright. -->
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
           </div>
           <div data-v-aa442b0f="" class="text-wanderist-label flex gap-5 text-[11px]"><span data-v-aa442b0f="">60k+ miles</span><span data-v-aa442b0f="">47 states</span><span data-v-aa442b0f="">3 countries</span></div>
         </div>

@@ -169,38 +169,43 @@ body {
   }
 }
 
-/* Accessibility guard: Windows High Contrast Mode (the `forced-colors` media
-   feature) strips most author colors down to the user's chosen system
-   palette, but it explicitly leaves `background-image` (gradients) alone —
-   so the ambient background decoration below (drifting grid + aurora blobs)
-   would otherwise keep rendering in full, uncontrolled color instead of
-   respecting the user's flat high-contrast preference. The same gap breaks
-   the gradient "wordmark" text (`background-clip: text` + `color:
-   transparent`): engines that don't force a transparent `color` can paint it
-   with no visible fill at all, leaving the heading empty. Small solid-fill
-   indicators (the nav status dot, the accent-pill swatch) rely on
-   `background-color` alone, which forced-colors *does* neutralize to
-   `Canvas` — the same color as the page background — so they can vanish
-   outright too. */
+/* Accessibility guard: under Windows High Contrast Mode (the `forced-colors`
+   media feature), spec-compliant engines already null out non-`url()`
+   `background-image` (gradients) and `box-shadow`, so the ambient
+   decoration below (drifting grid, aurora blobs) and most glows already go
+   away on their own — this block is the safety net for engines that don't,
+   plus the two cases forced-colors *can't* fix by itself: the gradient
+   "wordmark" text (`background-clip: text` + `color: transparent`) still
+   needs a real fill once its background is gone, or the glyphs paint with
+   nothing behind them; and small solid `background-color` shapes that carry
+   meaning purely through color (the nav status dot, the accent-pill swatch,
+   the Wanderist trip-log cells) get neutralized to `Canvas` — the same
+   color as the page background — and can vanish outright rather than
+   degrade gracefully. System color keywords (`Canvas`, `CanvasText`) used
+   below pass through forced-colors unchanged, since they already resolve to
+   whatever the user's chosen high-contrast theme defines. */
 @media (forced-colors: active) {
   /* Pure ambient decoration: no content, pointer-events-none, and every
      instance (hero auroras, each project card's aurora, the drifting grid
      backdrop) shares these classes. Forced-colors users opted into a flat
-     high-contrast palette, so drop the color noise instead of letting it
-     render uncontrolled. */
+     high-contrast palette, so drop the color noise instead of leaving it to
+     render however an engine that doesn't null gradient backgrounds sees
+     fit. */
   .animate-drift,
   .animate-aurora,
   .animate-aurora-reverse {
     display: none;
   }
 
-  /* Gradient-clipped text: fall back to a real, forced-colors-safe fill
-     instead of the clipped gradient so the glyphs are guaranteed visible.
+  /* Gradient-clipped text: give the glyphs a real, forced-colors-safe fill
+     instead of relying on the (now-absent) clipped gradient behind them.
      `-webkit-text-fill-color` wins in engines that support it; `color` is
      the fallback for engines that don't (and is what the clipped text used
-     to set to `transparent`). */
+     to set to `transparent`). The gradient itself is set inline per element
+     (a fixed style-attribute value beats this stylesheet rule regardless of
+     selector specificity), so there's nothing to null here — the opaque
+     fill covers it either way. */
   .bg-clip-text {
-    background-image: none;
     -webkit-text-fill-color: CanvasText;
     color: CanvasText;
   }
@@ -211,6 +216,23 @@ body {
   .animate-pulse-dot,
   .pill-dot {
     border: 1px solid CanvasText;
+  }
+
+  /* Wanderist trip-log heatmap: unlike the other project visuals (pure
+     decoration, aria-hidden), this grid is the real content behind the
+     card's role="img"/aria-label — its four cyan brightness tiers encode
+     visited/partly/faint/empty. Forced-colors collapses all of them to the
+     same neutralized fill, erasing the distinction for sighted
+     forced-colors users even though the aria-label still carries the
+     figures for assistive tech. Redraw the binary visited/unvisited split
+     (the one the "N / 50 states" caption itself reports) with a
+     system-color border + fill; the finer three-tier brightness texture is
+     decorative polish, not information the caption promises. */
+  .trip-cell {
+    border: 1px solid CanvasText;
+  }
+  .trip-cell[data-visited="true"] {
+    background: CanvasText;
   }
 }
 

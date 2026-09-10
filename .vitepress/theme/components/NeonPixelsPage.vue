@@ -493,10 +493,18 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               class="grid grid-cols-[repeat(10,minmax(0,1fr))] gap-1"
               data-testid="trip-log-heatmap"
             >
+              <!-- Unlike the other project visuals' decoration, this cell grid
+                   is the actual content behind the card's role="img"/aria-label
+                   above: under forced-colors the four cyan brightness tiers
+                   collapse to one indistinguishable fill, so `.trip-cell` in
+                   style.css redraws the visited/unvisited distinction with a
+                   system-color border + fill instead of losing it outright. -->
               <div
                 v-for="(state, cellIndex) in TRIP_CELLS"
                 :key="cellIndex"
                 data-testid="trip-log-cell"
+                class="trip-cell"
+                :data-visited="state !== 'off'"
                 :style="{
                   aspectRatio: '1',
                   background: TRIP_CELL_COLORS[state],
