@@ -203,6 +203,13 @@ const OPAQUE_HEX_STOP = /#[0-9a-fA-F]{6}(?![0-9a-fA-F])/g;
 // An eight-digit `#rrggbbaa` (base + alpha) as a whole inline value.
 const HEX_WITH_ALPHA = /^#([0-9a-fA-F]{6})([0-9a-fA-F]{2})$/;
 
+// A `var(...)` call, allowing one level of nested parens (e.g. a nested
+// `var()` or `rgba()` fallback). Stripped out before scanning for opaque hex
+// stops so a fallback hex — `var(--card-background, #123456)` — is never
+// mistaken for the actual painted surface: the real value comes from the
+// custom property, which this resolver can't read statically.
+const VAR_FUNCTION_CALL = /var\((?:[^()]|\([^()]*\))*\)/gi;
+
 // The first `rgb()`/`rgba()` in a value, capturing channels and optional alpha.
 const RGBA_VALUE =
   /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+%?))?\s*\)/i;
@@ -291,11 +298,15 @@ function layerFromValue(value: string): ResolvedLayer {
       alpha: parseInt(withAlpha[2], 16) / 255,
     };
   }
-  const opaqueStops = trimmed.match(OPAQUE_HEX_STOP);
+  // Scan for real stops outside any var() call — a fallback hex inside one
+  // isn't necessarily what's painted, so it must not win over the fail-loud
+  // check below.
+  const withoutVarCalls = trimmed.replace(VAR_FUNCTION_CALL, "");
+  const opaqueStops = withoutVarCalls.match(OPAQUE_HEX_STOP);
   if (opaqueStops) {
     return lightestHex(opaqueStops);
   }
-  const rgba = trimmed.match(RGBA_VALUE);
+  const rgba = withoutVarCalls.match(RGBA_VALUE);
   if (rgba) {
     const base = channelsToHex({
       red: Number(rgba[1]),
@@ -709,6 +720,24 @@ describe("background resolver", () => {
       '<div style="--card-background: #123456; background: #654321"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
     );
     expect(resolvedBackgroundOf(leaf)).toBe("#654321");
+  });
+
+  it("fails loud on a var() background with a hex fallback, not the fallback color", () => {
+    // The fallback hex is not necessarily what's painted — the real value
+    // comes from --card-background, which this resolver can't read
+    // statically. Silently trusting the fallback would be a false pass in
+    // the WCAG contrast gate.
+    const leaf = fixtureLeaf(
+      '<div style="background: var(--card-background, #f2f2f4)"><span data-leaf class="text-[#f2f2f4]">x</span></div>',
+    );
+    expect(() => resolvedBackgroundOf(leaf)).toThrow(/opaque but unreadable/);
+  });
+
+  it("still reads a plain hex background-color (not a var())", () => {
+    const leaf = fixtureLeaf(
+      '<div style="background-color: #08080a"><span data-leaf class="text-[#d4d4d8]">x</span></div>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe("#08080a");
   });
 
   it("ignores a custom property that follows the real background declaration", () => {
