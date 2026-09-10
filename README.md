@@ -96,24 +96,27 @@ neither.
 Since `/csp-report` is public and unauthenticated, sustained abuse could grow
 the `csp-reports` store without bound. An hourly Netlify scheduled Function
 ([`netlify/functions/csp-report-prune.ts`](netlify/functions/csp-report-prune.ts))
-prunes it: blobs older than `CSP_REPORT_RETENTION_DAYS` (default 30) are always
-deleted, and whatever remains is then trimmed to `CSP_REPORT_MAX_BLOBS`
-(default 5000), oldest first, so a flood landing entirely inside the retention
-window is trimmed to the cap on the next scheduled run rather than only aged
-out once the retention cutoff eventually reaches it. Both are optional site
-environment variables (set via the Netlify dashboard or CLI, not a `.env`
-file — this repo has none) for tuning the window/cap without a code change;
-neither is required for pruning to run. Because the count cap evicts
-oldest-first with no per-caller identity, a single flood larger than
-`CSP_REPORT_MAX_BLOBS` within one run can evict genuine historical reports
-along with the flood — a deliberate trade-off favoring "the store never grows
-unbounded" over "every genuine report is preserved forever"; raise the cap or
-add per-caller rate limiting at the endpoint if that trade-off stops being
-acceptable. The list and delete passes are each budgeted against a wall-clock
-deadline (`PRUNE_TIME_BUDGET_MS`) so a store too large to fully process in one
-run prunes what it can and picks up the rest on the next hourly run, rather
-than exceeding the Function's own execution limit and pruning nothing. The
-prune strategy is isolated in
+prunes it: blobs older than `CSP_REPORT_RETENTION_DAYS` (default 30, clamped to
+`MAX_RETENTION_DAYS`) are always deleted, and whatever the run saw is then
+trimmed to `CSP_REPORT_MAX_BLOBS` (default 5000, clamped to `MAX_MAX_BLOBS`),
+oldest first — including on a run that couldn't finish listing the whole
+store, since the count it did see is still a valid lower bound on the real
+total. Both are optional site environment variables (set via the Netlify
+dashboard or CLI, not a `.env` file — this repo has none) for tuning the
+window/cap without a code change; neither is required for pruning to run.
+Because the count cap evicts oldest-first with no per-caller identity, a
+single flood larger than `CSP_REPORT_MAX_BLOBS` within one run can evict
+genuine historical reports along with the flood — a deliberate trade-off
+favoring "the store never grows unbounded" over "every genuine report is
+preserved forever"; raise the cap or add per-caller rate limiting at the
+endpoint if that trade-off stops being acceptable. Netlify scheduled Functions
+have a hard 30s execution limit, so the list and delete passes each run
+against their own wall-clock budget (`LIST_TIME_BUDGET_MS` /
+`PRUNE_TIME_BUDGET_MS`) rather than sharing one deadline — otherwise a slow
+listing pass over a large store could consume the entire run and leave the
+delete pass no time at all. No cursor is persisted between runs, but pruning
+is self-correcting: a key that's still stale or still over the cap next hour
+gets picked up again on the next hourly run. The prune strategy is isolated in
 [`netlify/functions/lib/cspReportPruner.ts`](netlify/functions/lib/cspReportPruner.ts)
 behind a minimal `list`/`delete` seam (mirroring `BlobWriter` above), so it is
 unit-tested with a fake client rather than the real Blobs store. A failed or

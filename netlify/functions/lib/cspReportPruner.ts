@@ -10,16 +10,18 @@
 // grow the store without limit over time. This module is invoked on an hourly
 // schedule (see ../csp-report-prune.ts) and enforces two independent caps:
 // - retentionDays: blobs older than this are always deleted.
-// - maxBlobs: whatever remains after the age cut is trimmed to this count,
-//   oldest first, so a flood that lands entirely inside the retention window
-//   is still capped on the next scheduled run rather than only aged out once
-//   the retention cutoff eventually reaches it.
-// Both the list and the delete pass are budgeted against a wall-clock
-// deadline (see PRUNE_TIME_BUDGET_MS) so a store big enough to need pruning
-// can't make the run itself exceed the Function's execution limit — an
-// unbudgeted pass would get killed mid-run, prune nothing, and repeat that
-// failure on every later run. The hourly cadence keeps the per-run backlog
-// small enough that hitting the deadline should be rare in practice.
+// - maxBlobs: whatever remains is trimmed to this count, oldest first. This
+//   is applied even on a run that couldn't finish listing the whole store —
+//   the partial count is still a valid lower bound on the real count, so
+//   trimming `partialCount - maxBlobs` keys can never remove more than is
+//   actually in excess.
+// Both the list and the delete pass are budgeted against their own wall-clock
+// deadline (see LIST_TIME_BUDGET_MS / PRUNE_TIME_BUDGET_MS) so a store big
+// enough to need pruning can't make the run itself exceed the Function's
+// execution limit — an unbudgeted pass would get killed mid-run, prune
+// nothing, and repeat that failure on every later run. Splitting the budget
+// (rather than one shared deadline) guarantees the delete pass always gets
+// a share of the run even when listing alone would consume the whole thing.
 import { getStore } from "@netlify/blobs";
 
 import { CSP_REPORT_STORE_NAME, sanitizeTimestamp } from "./cspReportStore";
@@ -42,9 +44,10 @@ export type PruneResult = {
   // reliable total-store count when `complete` is true — an incomplete run
   // only saw part of the store, so this is the remainder of that partial view.
   remaining: number;
-  // False when the list or delete pass hit the time budget before finishing.
-  // The next scheduled run picks up where this one left off (stale keys are
-  // still stale, and a re-list finds whatever wasn't reached).
+  // False when the list or delete pass hit its time budget before finishing.
+  // No cursor is persisted between runs, but this is still self-correcting:
+  // the next hourly run re-lists from the start, and any key still stale or
+  // still over the count cap gets picked up again then.
   complete: boolean;
 };
 
@@ -59,11 +62,13 @@ export type PrunerOptions = {
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-// Conservative budget for the whole prune() call. Netlify's default synchronous
-// Function execution limit is 10s; this leaves headroom for cold start and the
-// final list/delete round-trip rather than racing the platform's own cutoff,
-// which would kill the run mid-batch with no chance to log the outcome.
-export const PRUNE_TIME_BUDGET_MS = 8000;
+// Netlify scheduled Functions have a hard 30s execution limit (unlike a
+// regular synchronous Function's default). PRUNE_TIME_BUDGET_MS leaves 5s of
+// headroom under that for cold start and the final in-flight batch;
+// LIST_TIME_BUDGET_MS caps listing at half of that so a large store can never
+// consume the entire run and starve the delete pass of any time at all.
+export const PRUNE_TIME_BUDGET_MS = 25000;
+export const LIST_TIME_BUDGET_MS = Math.floor(PRUNE_TIME_BUDGET_MS / 2);
 
 // Deletes are chunked rather than fired all at once so a store with tens of
 // thousands of stale blobs doesn't send that many simultaneous requests in
@@ -88,11 +93,16 @@ function isStaleKey(key: string, cutoffPrefix: string): boolean {
   return receivedAtPrefix(key) < cutoffPrefix;
 }
 
+function isPastDeadline(deadlineMs: number): boolean {
+  return Date.now() > deadlineMs;
+}
+
 type ListedKeys = { keys: string[]; complete: boolean };
 
-// Walks every list() page up to the deadline. Stops early (complete: false)
-// rather than exceeding the budget, so a store too large to fully list in one
-// run still gets a partial prune instead of no prune at all.
+// Walks every list() page up to its own deadline (see LIST_TIME_BUDGET_MS,
+// deliberately shorter than the full run budget). Stops early
+// (complete: false) rather than exceeding it, so a store too large to fully
+// list in one run still leaves time for the delete pass below.
 async function listAllKeys(
   client: BlobPrunerClient,
   deadlineMs: number,
@@ -100,7 +110,7 @@ async function listAllKeys(
   const keys: string[] = [];
   for await (const page of client.list({ paginate: true })) {
     keys.push(...page.blobs.map((blob) => blob.key));
-    if (Date.now() > deadlineMs) {
+    if (isPastDeadline(deadlineMs)) {
       return { keys, complete: false };
     }
   }
@@ -121,13 +131,47 @@ function describeFailures(failures: PromiseRejectedResult[]): string {
   return [...reasons].join("; ");
 }
 
+type DeleteBatchOutcome = {
+  deletedCount: number;
+  failures: PromiseRejectedResult[];
+};
+
+async function deleteBatch(
+  client: BlobPrunerClient,
+  batch: string[],
+): Promise<DeleteBatchOutcome> {
+  const results = await Promise.allSettled(
+    batch.map((key) => client.delete(key)),
+  );
+  const failures = results.filter(isRejected);
+  return { deletedCount: batch.length - failures.length, failures };
+}
+
+// Throws once for every failure gathered so far, in the same "X/Y failed"
+// shape regardless of whether the loop ran out of keys or ran out of time —
+// a real Blobs error must never be swallowed just because the deadline hit
+// on the same batch (or the one after) that produced it.
+function throwIfAnyFailed(
+  failures: PromiseRejectedResult[],
+  attempted: number,
+): void {
+  if (failures.length === 0) {
+    return;
+  }
+  throw new Error(
+    `${failures.length}/${attempted} csp report prune deletes failed: ${describeFailures(failures)}`,
+  );
+}
+
 type DeletedKeys = { deleted: number; complete: boolean };
 
 // Deletes in fixed-size batches, checking the deadline between batches so a
 // long delete pass yields a partial result instead of running past the
-// Function's own execution limit. A failure within a batch still aborts the
-// whole call (thrown, same contract as before) — only running out of time
-// produces the softer `complete: false` outcome.
+// Function's own execution limit. Every batch is attempted regardless of
+// earlier failures (mirrors persist() in cspReportStore.ts — one bad key
+// must not stop the rest from being cleaned up); every failure gathered so
+// far is (re-)thrown before returning, whether the loop finishes normally or
+// is cut short by the deadline.
 async function deleteKeys(
   client: BlobPrunerClient,
   keys: string[],
@@ -137,29 +181,24 @@ async function deleteKeys(
   let attempted = 0;
   const failures: PromiseRejectedResult[] = [];
   for (let start = 0; start < keys.length; start += DELETE_BATCH_SIZE) {
-    if (Date.now() > deadlineMs) {
+    if (isPastDeadline(deadlineMs)) {
+      throwIfAnyFailed(failures, attempted);
       return { deleted, complete: false };
     }
     const batch = keys.slice(start, start + DELETE_BATCH_SIZE);
-    const results = await Promise.allSettled(
-      batch.map((key) => client.delete(key)),
-    );
+    const outcome = await deleteBatch(client, batch);
     attempted += batch.length;
-    const batchFailures = results.filter(isRejected);
-    failures.push(...batchFailures);
-    deleted += batch.length - batchFailures.length;
+    deleted += outcome.deletedCount;
+    failures.push(...outcome.failures);
   }
-  if (failures.length > 0) {
-    throw new Error(
-      `${failures.length}/${attempted} csp report prune deletes failed: ${describeFailures(failures)}`,
-    );
-  }
+  throwIfAnyFailed(failures, attempted);
   return { deleted, complete: true };
 }
 
-// The oldest-first excess beyond maxBlobs, drawn only from keys that already
-// survived the age cut, so a key is never counted toward both the stale and
-// the over-cap deletion.
+// The oldest-first excess beyond maxBlobs. Safe to apply even against a
+// partial (incomplete-listing) view: the count of keys actually seen is a
+// lower bound on the real store size, so trimming `seen - maxBlobs` of them
+// can never remove more than is genuinely in excess.
 function overCapKeys(freshKeysOldestFirst: string[], maxBlobs: number) {
   const overflow = freshKeysOldestFirst.length - maxBlobs;
   return overflow > 0 ? freshKeysOldestFirst.slice(0, overflow) : [];
@@ -167,14 +206,11 @@ function overCapKeys(freshKeysOldestFirst: string[], maxBlobs: number) {
 
 // Sorted ascending, so every stale key (older than cutoffPrefix) sorts before
 // every fresh one — a single findIndex splits the list in one pass instead of
-// filtering it twice. The count cap is only applied when `enforceCap` is
-// true (i.e. the list pass saw the whole store): capping against a partial
-// view would evict keys that were never actually in excess.
+// filtering it twice.
 function selectKeysToDelete(
   sortedKeys: string[],
   cutoffPrefix: string,
   maxBlobs: number,
-  enforceCap: boolean,
 ): string[] {
   const firstFreshIndex = sortedKeys.findIndex(
     (key) => !isStaleKey(key, cutoffPrefix),
@@ -183,38 +219,33 @@ function selectKeysToDelete(
     firstFreshIndex === -1 ? sortedKeys : sortedKeys.slice(0, firstFreshIndex);
   const freshKeys =
     firstFreshIndex === -1 ? [] : sortedKeys.slice(firstFreshIndex);
-  const capKeys = enforceCap ? overCapKeys(freshKeys, maxBlobs) : [];
-  return [...staleKeys, ...capKeys];
+  return [...staleKeys, ...overCapKeys(freshKeys, maxBlobs)];
 }
 
 // Pure factory: given anything that can list and delete blobs, returns a
-// pruner that deletes everything older than `retentionDays`, then (once it
-// has seen the whole store this run) trims the remainder to `maxBlobs`,
-// oldest first.
+// pruner that deletes everything older than `retentionDays`, then trims
+// whatever it saw down to `maxBlobs`, oldest first.
 export function createCspReportPruner(
   client: BlobPrunerClient,
   { retentionDays, maxBlobs }: PrunerOptions,
 ): CspReportPruner {
   return {
     async prune() {
-      const deadlineMs = Date.now() + PRUNE_TIME_BUDGET_MS;
+      const startMs = Date.now();
+      const listDeadlineMs = startMs + LIST_TIME_BUDGET_MS;
+      const deleteDeadlineMs = startMs + PRUNE_TIME_BUDGET_MS;
       const { keys: unsortedKeys, complete: listComplete } = await listAllKeys(
         client,
-        deadlineMs,
+        listDeadlineMs,
       );
       const keys = unsortedKeys.sort();
       const cutoffMs = Date.now() - retentionDays * MS_PER_DAY;
       const cutoffPrefix = sanitizeTimestamp(new Date(cutoffMs).toISOString());
-      const toDelete = selectKeysToDelete(
-        keys,
-        cutoffPrefix,
-        maxBlobs,
-        listComplete,
-      );
+      const toDelete = selectKeysToDelete(keys, cutoffPrefix, maxBlobs);
       const { deleted, complete: deleteComplete } = await deleteKeys(
         client,
         toDelete,
-        deadlineMs,
+        deleteDeadlineMs,
       );
       return {
         deleted,
@@ -237,20 +268,31 @@ export const DEFAULT_MAX_BLOBS = 5000;
 // RangeError on every single scheduled run, pruning nothing forever. 10 years
 // is far beyond any real retention need for this store.
 export const MAX_RETENTION_DAYS = 3650;
+// Clamps a runaway CSP_REPORT_MAX_BLOBS the same way: an absurdly large value
+// would still pass integer validation but effectively disable the count cap,
+// defeating the reason this module exists.
+export const MAX_MAX_BLOBS = 1_000_000;
+
+// Matches a bare, non-negative decimal integer only — rejects scientific
+// notation ("1e21"), hex ("0x10"), and anything with a sign or decimal point,
+// each of which `Number()` would otherwise silently accept as a "valid"
+// integer.
+const PLAIN_DECIMAL_PATTERN = /^\d+$/;
 
 // Parses a positive-integer env var, falling back to `fallback` (and logging
-// a marker) for anything unset, non-numeric, zero, negative or fractional —
-// so a typo'd override degrades to the safe default with a visible trail
-// instead of silently doing nothing or crashing the run. Exported so the
-// unset/invalid/fallback behavior is unit-tested directly, without mocking
-// `@netlify/blobs` just to exercise env parsing.
+// a marker) for anything unset, not a plain decimal integer, zero, or beyond
+// Number.MAX_SAFE_INTEGER — so a typo'd or adversarial override degrades to
+// the safe default with a visible trail instead of silently doing nothing,
+// silently disabling a cap, or crashing the run. Exported so this behavior is
+// unit-tested directly, without mocking `@netlify/blobs` just to exercise env
+// parsing.
 export function positiveIntEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined) {
     return fallback;
   }
-  const parsed = Number(raw);
-  if (Number.isInteger(parsed) && parsed > 0) {
+  const parsed = PLAIN_DECIMAL_PATTERN.test(raw.trim()) ? Number(raw) : NaN;
+  if (Number.isSafeInteger(parsed) && parsed > 0) {
     return parsed;
   }
   console.warn(
@@ -270,7 +312,10 @@ export function resolveRetentionDays(): number {
 }
 
 export function resolveMaxBlobs(): number {
-  return positiveIntEnv("CSP_REPORT_MAX_BLOBS", DEFAULT_MAX_BLOBS);
+  return Math.min(
+    positiveIntEnv("CSP_REPORT_MAX_BLOBS", DEFAULT_MAX_BLOBS),
+    MAX_MAX_BLOBS,
+  );
 }
 
 // The concrete adapter the scheduled function uses.

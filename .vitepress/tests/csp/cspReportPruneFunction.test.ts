@@ -33,7 +33,9 @@ function scheduledRequest() {
 }
 
 beforeEach(() => {
-  pruneMock.mockReset().mockResolvedValue({ deleted: 0, remaining: 0 });
+  pruneMock
+    .mockReset()
+    .mockResolvedValue({ deleted: 0, remaining: 0, complete: true });
   getCspReportPrunerMock.mockReset().mockReturnValue({ prune: pruneMock });
 });
 
@@ -48,14 +50,18 @@ describe("csp-report-prune Netlify scheduled function", () => {
 
   it("prunes the store, replies 200, and logs the outcome", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    pruneMock.mockResolvedValueOnce({ deleted: 3, remaining: 7 });
+    pruneMock.mockResolvedValueOnce({
+      deleted: 3,
+      remaining: 7,
+      complete: true,
+    });
 
     const response = await cspReportPruneHandler(scheduledRequest());
 
     expect(response.status).toBe(200);
     expect(log).toHaveBeenCalledWith(
       PRUNED_LOG_PREFIX,
-      JSON.stringify({ deleted: 3, remaining: 7 }),
+      JSON.stringify({ deleted: 3, remaining: 7, complete: true }),
     );
   });
 
@@ -75,7 +81,7 @@ describe("csp-report-prune Netlify scheduled function", () => {
     // getStore() throws synchronously when the Blobs context is missing (see
     // the equivalent case in cspReportFunction.test.ts) — must be caught the
     // same way here, or a missing context turns every scheduled run into an
-    // unhandled exception instead of a logged, retryable-next-day failure.
+    // unhandled exception instead of a logged, retryable-next-hour failure.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     getCspReportPrunerMock.mockImplementationOnce(() => {
       throw new Error("missing blobs context");
@@ -91,8 +97,8 @@ describe("csp-report-prune Netlify scheduled function", () => {
 
   it("still replies 200 and logs the incomplete outcome when a run only partially prunes", async () => {
     // The store was too large to fully list/delete inside the time budget —
-    // this is not a failure (the next hourly run picks up where it left
-    // off), so it must not be reported the same way as a thrown error.
+    // this is not a failure (the next hourly run re-lists and prunes
+    // further), so it must not be reported the same way as a thrown error.
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     pruneMock.mockResolvedValueOnce({
       deleted: 50,

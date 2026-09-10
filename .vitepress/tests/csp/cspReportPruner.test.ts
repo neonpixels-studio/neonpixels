@@ -8,7 +8,9 @@ import {
   DEFAULT_RETENTION_DAYS,
   DEFAULT_MAX_BLOBS,
   MAX_RETENTION_DAYS,
+  MAX_MAX_BLOBS,
   DELETE_BATCH_SIZE,
+  LIST_TIME_BUDGET_MS,
   PRUNE_TIME_BUDGET_MS,
   type BlobPrunerClient,
   type BlobPage,
@@ -256,7 +258,7 @@ describe("createCspReportPruner", () => {
     );
   });
 
-  it("stops listing at the time budget and skips the count cap on the resulting partial view", async () => {
+  it("stops listing at its own time budget, but still applies the count cap to the keys already found", async () => {
     const foundKeys = [
       keyFromDaysAgo(1, "a"),
       keyFromDaysAgo(1, "b"),
@@ -266,25 +268,28 @@ describe("createCspReportPruner", () => {
     const client: BlobPrunerClient & { delete: ReturnType<typeof vi.fn> } = {
       delete: vi.fn().mockResolvedValue(undefined),
       // Simulates a slow first page over a large store: by the time it
-      // arrives, the budget is already spent, so the pruner must stop
-      // before requesting the next page.
+      // arrives, the list budget (half of the total run budget) is already
+      // spent, so the pruner must stop before requesting the next page —
+      // but the delete pass still has its own remaining budget to work with.
       async *list() {
-        vi.setSystemTime(new Date(NOW.getTime() + PRUNE_TIME_BUDGET_MS + 1));
+        vi.setSystemTime(new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1));
         yield { blobs: foundKeys.map((key) => ({ key })) };
         yield { blobs: [{ key: neverReachedKey }] };
       },
     };
     const pruner = createCspReportPruner(client, {
       retentionDays: 30,
-      // A cap this low would evict 2 of the 3 found keys if the count cap
-      // were (wrongly) enforced against a partial view.
       maxBlobs: 1,
     });
 
     const result = await pruner.prune();
 
-    expect(result).toEqual({ deleted: 0, remaining: 3, complete: false });
-    expect(client.delete).not.toHaveBeenCalled();
+    // The listing pass is incomplete, but the 3 keys it did find are still a
+    // valid lower bound on the store's size: trimming to maxBlobs 1 still
+    // deletes the oldest 2 of them, rather than leaving the cap disabled
+    // just because the run couldn't see the whole store.
+    expect(result).toEqual({ deleted: 2, remaining: 1, complete: false });
+    expect(deletedKeys(client)).toEqual([foundKeys[0], foundKeys[1]]);
   });
 
   it("stops deleting at the time budget and reports an incomplete run", async () => {
@@ -321,6 +326,43 @@ describe("createCspReportPruner", () => {
     });
     expect(deleteMock).toHaveBeenCalledTimes(DELETE_BATCH_SIZE);
   });
+
+  it("throws delete failures gathered before the deadline instead of swallowing them as a mere timeout", async () => {
+    const keys = Array.from({ length: DELETE_BATCH_SIZE * 2 }, (_, index) =>
+      keyFromDaysAgo(40, `stale-${index}`),
+    );
+    let deleteCalls = 0;
+    const deleteMock = vi.fn().mockImplementation(() => {
+      deleteCalls += 1;
+      if (deleteCalls === 1) {
+        return Promise.reject(new Error("blobs unavailable"));
+      }
+      // By the last call in the first batch, the run is already out of time
+      // — without accumulated-failure tracking this would silently report
+      // `complete: false` and lose the one real failure above.
+      if (deleteCalls === DELETE_BATCH_SIZE) {
+        vi.setSystemTime(new Date(NOW.getTime() + PRUNE_TIME_BUDGET_MS + 1));
+      }
+      return Promise.resolve();
+    });
+    const client: BlobPrunerClient & { delete: typeof deleteMock } = {
+      delete: deleteMock,
+      async *list() {
+        yield { blobs: keys.map((key) => ({ key })) };
+      },
+    };
+    const pruner = createCspReportPruner(client, {
+      retentionDays: 30,
+      maxBlobs: keys.length * 10,
+    });
+
+    await expect(pruner.prune()).rejects.toThrow(
+      new RegExp(
+        `1/${DELETE_BATCH_SIZE} csp report prune deletes failed.*blobs unavailable`,
+      ),
+    );
+    expect(deleteMock).toHaveBeenCalledTimes(DELETE_BATCH_SIZE);
+  });
 });
 
 describe("positiveIntEnv", () => {
@@ -345,6 +387,8 @@ describe("positiveIntEnv", () => {
     ["zero", "0"],
     ["negative", "-5"],
     ["fractional", "2.5"],
+    ["scientific notation", "1e21"],
+    ["hexadecimal", "0x10"],
   ])("falls back and logs a config marker for a %s value", (_label, raw) => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv(ENV_NAME, raw);
@@ -393,5 +437,11 @@ describe("resolveMaxBlobs", () => {
     vi.stubEnv("CSP_REPORT_MAX_BLOBS", "250");
 
     expect(resolveMaxBlobs()).toBe(250);
+  });
+
+  it("clamps an override above MAX_MAX_BLOBS instead of effectively disabling the cap", () => {
+    vi.stubEnv("CSP_REPORT_MAX_BLOBS", "999999999");
+
+    expect(resolveMaxBlobs()).toBe(MAX_MAX_BLOBS);
   });
 });
