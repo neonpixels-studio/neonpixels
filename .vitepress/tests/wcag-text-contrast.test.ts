@@ -203,39 +203,22 @@ const OPAQUE_HEX_STOP = /#[0-9a-fA-F]{6}(?![0-9a-fA-F])/g;
 // An eight-digit `#rrggbbaa` (base + alpha) as a whole inline value.
 const HEX_WITH_ALPHA = /^#([0-9a-fA-F]{6})([0-9a-fA-F]{2})$/;
 
-// The index of the `)` that closes the paren opened at `openIndex`, counting
-// nesting depth so a fallback containing its own function calls (`var(--a,
-// rgba(0, 0, 0, .5))`, `var(--a, var(--b, #fff))`) still closes at the right
-// place. Falls back to the value's last index on an unbalanced string, so a
-// malformed value still gets stripped to its end rather than looping forever.
-function closingParenIndex(value: string, openIndex: number): number {
-  let depth = 0;
-  for (let index = openIndex; index < value.length; index += 1) {
-    if (value[index] === "(") {
-      depth += 1;
-    } else if (value[index] === ")") {
-      depth -= 1;
-    }
-    if (depth === 0) {
-      return index;
-    }
-  }
-  return value.length - 1;
-}
+// A `var(...)` call anywhere in the value. Its custom property can't be read
+// statically, so a value containing one fails loud in full rather than only
+// stripping the call before scanning for stops — a readable stop sitting next
+// to (or inside) the var() call, e.g. `linear-gradient(var(--a, #fff),
+// #0a0a0a)`, is not a safe worst case either: the property could resolve to
+// something lighter than every stop the resolver *can* read, so trusting the
+// other stops would be a false pass in the dangerous direction.
+const VAR_CALL = /\bvar\s*\(/i;
 
-// Removes every `var(...)` call from a value, fallback included, at any
-// nesting depth. Used before scanning for opaque hex/rgba stops so a fallback
-// color — `var(--card-background, #123456)`, or one buried inside a nested
-// function like `var(--a, linear-gradient(#123456, rgba(0, 0, 0, .5)))` —
-// is never mistaken for the actual painted surface: the real value comes
-// from the custom property, which this resolver can't read statically.
-function stripVarCalls(value: string): string {
-  const start = value.search(/var\(/i);
-  if (start === -1) {
-    return value;
-  }
-  const end = closingParenIndex(value, value.indexOf("(", start));
-  return stripVarCalls(value.slice(0, start) + value.slice(end + 1));
+// The shared "can't read this background" failure, so the message has one
+// source whether it's triggered by a var() call or another unreadable form
+// (hsl()/named/etc).
+function unreadableBackground(value: string): Error {
+  return new Error(
+    `wcag-text-contrast: background "${value}" is opaque but unreadable (rgb/hsl/var/named) — teach readLayerBackground the new form`,
+  );
 }
 
 // The first `rgb()`/`rgba()` in a value, capturing channels and optional alpha.
@@ -326,15 +309,17 @@ function layerFromValue(value: string): ResolvedLayer {
       alpha: parseInt(withAlpha[2], 16) / 255,
     };
   }
-  // Scan for real stops outside any var() call — a fallback color inside one
-  // isn't necessarily what's painted, so it must not win over the fail-loud
-  // check below.
-  const withoutVarCalls = stripVarCalls(trimmed);
-  const opaqueStops = withoutVarCalls.match(OPAQUE_HEX_STOP);
+  // A var() call means part of this value's real color can't be read
+  // statically — fail loud before trusting any other stop in the value (see
+  // VAR_CALL).
+  if (VAR_CALL.test(trimmed)) {
+    throw unreadableBackground(value);
+  }
+  const opaqueStops = trimmed.match(OPAQUE_HEX_STOP);
   if (opaqueStops) {
     return lightestHex(opaqueStops);
   }
-  const rgba = withoutVarCalls.match(RGBA_VALUE);
+  const rgba = trimmed.match(RGBA_VALUE);
   if (rgba) {
     const base = channelsToHex({
       red: Number(rgba[1]),
@@ -344,19 +329,15 @@ function layerFromValue(value: string): ResolvedLayer {
     const alpha = rgba[4] === undefined ? 1 : parseAlpha(rgba[4]);
     return alpha >= 1 ? base : { base, alpha };
   }
-  // No readable opaque stop. Ignoring `transparent`, if a color the resolver
-  // can't read still remains (a var()/hsl()/named paint, alone or as another
-  // gradient stop), fail loud; otherwise the value only paints transparent/
-  // nothing, so climb.
+  // No readable opaque stop, and no var() call (already handled above).
+  // Ignoring `transparent`, if a color the resolver still can't read remains
+  // (an hsl()/named paint, alone or as another gradient stop), fail loud;
+  // otherwise the value only paints transparent/nothing, so climb.
   const readableColorRemains = trimmed
     .replace(/\btransparent\b/gi, "")
-    .match(
-      /#[0-9a-fA-F]+|\b(?:rgb|hsl|oklch|oklab|lab|lch|color|var)\s*\(|--\w/i,
-    );
+    .match(/#[0-9a-fA-F]+|\b(?:rgb|hsl|oklch|oklab|lab|lch|color)\s*\(|--\w/i);
   if (readableColorRemains) {
-    throw new Error(
-      `wcag-text-contrast: background "${value}" is opaque but unreadable (rgb/hsl/var/named) — teach readLayerBackground the new form`,
-    );
+    throw unreadableBackground(value);
   }
   return null;
 }
@@ -753,15 +734,19 @@ describe("background resolver", () => {
   // The fallback color inside a var() call is not necessarily what's
   // painted — the real value comes from the custom property, which this
   // resolver can't read statically. Silently trusting the fallback (a plain
-  // hex, an rgba(), one buried inside a nested var() or another function)
-  // would each be a false pass in the WCAG contrast gate, so every shape
-  // must fail loud instead.
+  // hex, an rgba(), one buried inside a nested var() or another function), or
+  // trusting a *different* readable stop sitting next to the var() call in
+  // the same value, would each be a false pass in the WCAG contrast gate: the
+  // property could resolve to something lighter than every stop the resolver
+  // can read. Every shape must fail loud instead.
   it.each([
     "var(--card-background)",
     "var(--card-background, #f2f2f4)",
     "var(--card-background, rgba(242, 242, 244, 1))",
     "var(--card-background, var(--panel-background, #f2f2f4))",
     "var(--card-background, linear-gradient(#f2f2f4, rgba(0, 0, 0, 0.5)))",
+    "linear-gradient(var(--card-background, #f2f2f4), #0a0a0a)",
+    "linear-gradient(var(--card-background), rgba(10, 10, 10, 1))",
   ])(
     "fails loud on background: %s instead of trusting a fallback color",
     (value) => {
