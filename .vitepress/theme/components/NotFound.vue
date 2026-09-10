@@ -34,7 +34,7 @@ onMounted(() => {
   >
     <!-- ambient glow -->
     <div
-      class="animate-aurora pointer-events-none absolute top-[-200px] right-[-160px] h-[680px] w-[680px] blur-[24px]"
+      class="animate-aurora ambient-decoration pointer-events-none absolute top-[-200px] right-[-160px] h-[680px] w-[680px] blur-[24px]"
       style="
         background: radial-gradient(
           circle,

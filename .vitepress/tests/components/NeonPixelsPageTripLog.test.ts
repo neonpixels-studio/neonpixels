@@ -12,12 +12,18 @@ const HEATMAP_SELECTOR = '[data-testid="trip-log-heatmap"]';
 const CELL_SELECTOR = '[data-testid="trip-log-cell"]';
 
 // Every lit brightness (on / mid / low) is the cyan accent, optionally with an
-// alpha suffix; the empty tint carries no cyan. Inspect the background alone
-// (not the whole style string, which also holds the box-shadow) so a future
-// cyan border or glow on an empty cell can't be miscounted as lit.
+// alpha suffix; the empty tint carries no cyan. Inspect the `--trip-cell-bg`
+// custom property alone (not the whole style string, which also holds the
+// box-shadow) so a future cyan border or glow on an empty cell can't be
+// miscounted as lit. The fill is set via this custom property rather than
+// `background` directly so the forced-colors override in style.css can win
+// the cascade — see the `.trip-cell` rule and its comment there.
+function tripCellBackground(cell: { element: Element }) {
+  return (cell.element as HTMLElement).style.getPropertyValue("--trip-cell-bg");
+}
+
 function isLitCell(cell: { element: Element }) {
-  const background = (cell.element as HTMLElement).style.background;
-  return background.startsWith(BRAND_ACCENTS.cyan);
+  return tripCellBackground(cell).startsWith(BRAND_ACCENTS.cyan);
 }
 
 describe("NeonPixelsPage trip-log heatmap", () => {
@@ -67,5 +73,22 @@ describe("NeonPixelsPage trip-log heatmap", () => {
     expect(wrapper.get('[role="img"]').text()).toContain(
       `${STATES_VISITED} states`,
     );
+  });
+
+  // Regression guard: an earlier version of the forced-colors override set
+  // this fill via a plain `background` in the element's inline style, which
+  // silently made style.css's `.trip-cell[data-visited="true"]` override
+  // unreachable — an inline style attribute always wins over any external
+  // stylesheet rule regardless of selector specificity. Every cell must
+  // route its fill through the `--trip-cell-bg` custom property instead, so
+  // style.css's `.trip-cell { background: var(--trip-cell-bg); }` base rule
+  // (and the forced-colors override that outranks it) stays in control.
+  it("sets the cell fill through --trip-cell-bg, never an inline background", () => {
+    const cells = wrapper.get(HEATMAP_SELECTOR).findAll(CELL_SELECTOR);
+    cells.forEach((cell) => {
+      const element = cell.element as HTMLElement;
+      expect(element.style.background).toBe("");
+      expect(tripCellBackground(cell)).not.toBe("");
+    });
   });
 });

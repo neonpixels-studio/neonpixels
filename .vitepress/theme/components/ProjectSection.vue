@@ -37,7 +37,7 @@ const gridColumns = computed(() => {
       :style="{ background: project.section.topLine }"
     />
     <div
-      class="pointer-events-none absolute rounded-full blur-[46px]"
+      class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px]"
       :class="[
         project.section.aurora.animation,
         project.section.aurora.position,

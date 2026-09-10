@@ -323,9 +323,8 @@ describe("style.css reduced-motion coverage", () => {
 // reduced-motion suite) rather than regex-matching a hand-written selector
 // list in a fixed order: a `color:` match, for instance, must not also accept
 // `-webkit-text-fill-color:` just because the substring appears inside it,
-// and a future edit that splits `.animate-aurora` and `.animate-drift` into
-// separate rules (or reorders them) must not fail this suite for a reason
-// that isn't a real regression.
+// and a future edit that reorders these rules must not fail this suite for a
+// reason that isn't a real regression.
 const FORCED_COLORS_QUERY_OPENER =
   /@media[^{]*\bforced-colors\s*:\s*active\b[^{]*\{/i;
 
@@ -360,23 +359,43 @@ try {
     error instanceof Error ? error : new Error(String(error));
 }
 const forcedColorsRules = parseCssRules(forcedColorsBlockBody ?? "");
+// Every rule in the whole file, forced-colors block included — `parseCssRules`
+// treats `@media`'s body as unwrapped content (see its doc comment above), so
+// this is how the "reads the trip-log cell fill from a custom property" check
+// below reaches the plain `.trip-cell` rule that lives outside that block.
+const ALL_CSS_RULES = parseCssRules(STYLE_CSS_WITHOUT_COMMENTS);
 
-// True if some rule in the forced-colors block targets `className` (as a
-// whole class token, so `.pill` can't false-match `.pill-dot`) and declares
-// `property` to a value matching `expectedValue`.
+// True if some rule matches `className` as a whole class token and declares
+// `property` to a value matching `expectedValue`. The lookahead (not `\b`)
+// is deliberate: `\b` treats `-` as a boundary, so `\.pill\b` would wrongly
+// match inside `.pill-dot`, and `\.animate-aurora\b` would wrongly match
+// inside `.animate-aurora-reverse`. `(?![\w-])` requires the class name not
+// be followed by another word/hyphen character, while still allowing it to
+// be followed by an attribute selector, combinator, comma, or `{` — so
+// `.trip-cell[data-visited="true"]` still counts as `.trip-cell` (a real
+// attribute-qualified instance of that same class), just not `.trip-cell-x`.
+function rulesMatchingClass(rules: CssRule[], className: string) {
+  const classPattern = new RegExp(`\\.${className}(?![\\w-])`);
+  return rules.filter((rule) => classPattern.test(rule.selectorText));
+}
+
+function declares(rules: CssRule[], property: string, expectedValue: RegExp) {
+  return rules.some((rule) => {
+    const value = lastDeclarationValue(rule.body, property);
+    return value !== null && expectedValue.test(value);
+  });
+}
+
 function forcedColorsBlockDeclares(
   className: string,
   property: string,
   expectedValue: RegExp,
 ) {
-  const classPattern = new RegExp(`\\.${className}\\b`);
-  return forcedColorsRules.some((rule) => {
-    if (!classPattern.test(rule.selectorText)) {
-      return false;
-    }
-    const value = lastDeclarationValue(rule.body, property);
-    return value !== null && expectedValue.test(value);
-  });
+  return declares(
+    rulesMatchingClass(forcedColorsRules, className),
+    property,
+    expectedValue,
+  );
 }
 
 describe("style.css forced-colors coverage", () => {
@@ -388,24 +407,21 @@ describe("style.css forced-colors coverage", () => {
     expect(forcedColorsBlockBody).not.toBeNull();
   });
 
-  it.each(["animate-drift", "animate-aurora", "animate-aurora-reverse"])(
-    "hides %s instead of letting it render in whatever color an engine that doesn't null gradient backgrounds leaves it",
-    (className) => {
-      expect(forcedColorsBlockDeclares(className, "display", /^none\b/i)).toBe(
-        true,
-      );
-    },
-  );
-
-  it("gives gradient-clipped wordmark text a real, non-transparent fill", () => {
+  it("hides ambient decoration instead of letting it render in whatever color an engine that doesn't null gradient backgrounds leaves it", () => {
     expect(
-      forcedColorsBlockDeclares("bg-clip-text", "color", /^CanvasText\b/i),
+      forcedColorsBlockDeclares("ambient-decoration", "display", /^none\b/i),
+    ).toBe(true);
+  });
+
+  it("gives gradient-clipped wordmark text a real fill that matches its surrounding context instead of a hardcoded color", () => {
+    expect(
+      forcedColorsBlockDeclares("bg-clip-text", "color", /^inherit\b/i),
     ).toBe(true);
     expect(
       forcedColorsBlockDeclares(
         "bg-clip-text",
         "-webkit-text-fill-color",
-        /^CanvasText\b/i,
+        /^currentColor\b/i,
       ),
     ).toBe(true);
   });
@@ -434,12 +450,26 @@ describe("style.css forced-colors coverage", () => {
   });
 
   it("fills visited trip-log cells so the visited/unvisited distinction survives", () => {
-    const visitedRule = forcedColorsRules.find((rule) =>
+    const visitedRules = forcedColorsRules.filter((rule) =>
       /\.trip-cell\[data-visited="true"\]/.test(rule.selectorText),
     );
-    expect(visitedRule).not.toBeUndefined();
-    expect(lastDeclarationValue(visitedRule?.body ?? "", "background")).toMatch(
-      /^CanvasText\b/i,
+    expect(visitedRules.length).toBeGreaterThan(0);
+    expect(declares(visitedRules, "background", /^CanvasText\b/i)).toBe(true);
+  });
+
+  // Guards the cascade the visited-cell override above depends on: the
+  // fill must come from a custom property (an inline `background` on the
+  // element would always beat this rule, forced-colors override or not —
+  // see the round-1 regression this exists to catch), and the override
+  // rule must actually carry more specificity than this base rule so it
+  // reliably wins regardless of source order between the two.
+  it("reads the trip-log cell fill from a custom property so the forced-colors override can outrank it", () => {
+    const baseRule = ALL_CSS_RULES.find(
+      (rule) => rule.selectorText.trim() === ".trip-cell",
+    );
+    expect(baseRule).not.toBeUndefined();
+    expect(lastDeclarationValue(baseRule?.body ?? "", "background")).toMatch(
+      /^var\(--trip-cell-bg\)/i,
     );
   });
 });

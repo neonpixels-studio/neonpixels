@@ -153,7 +153,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
   <div class="bg-bg text-fg relative font-mono">
     <!-- drifting grid backdrop -->
     <div
-      class="animate-drift pointer-events-none fixed inset-0 z-0"
+      class="animate-drift ambient-decoration pointer-events-none fixed inset-0 z-0"
       style="
         background-image:
           linear-gradient(#ffffff08 1px, transparent 1px),
@@ -232,15 +232,15 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
         class="relative z-[2] overflow-hidden px-10 pt-28 pb-24"
       >
         <div
-          class="animate-aurora pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]"
+          class="animate-aurora ambient-decoration pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]"
           :style="{ background: HERO_AURORAS.lime }"
         />
         <div
-          class="animate-aurora-reverse pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px]"
+          class="animate-aurora-reverse ambient-decoration pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px]"
           :style="{ '--np-aurora-dur': '32s', background: HERO_AURORAS.pink }"
         />
         <div
-          class="animate-aurora pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px]"
+          class="animate-aurora ambient-decoration pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px]"
           :style="{ '--np-aurora-dur': '38s', background: HERO_AURORAS.cyan }"
         />
 
@@ -498,7 +498,14 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
                    above: under forced-colors the four cyan brightness tiers
                    collapse to one indistinguishable fill, so `.trip-cell` in
                    style.css redraws the visited/unvisited distinction with a
-                   system-color border + fill instead of losing it outright. -->
+                   system-color border + fill instead of losing it outright.
+                   The fill goes through the `--trip-cell-bg` custom property
+                   (consumed by the `.trip-cell` base rule in style.css)
+                   instead of a `background` set directly here: an inline
+                   style attribute always beats an external stylesheet rule
+                   regardless of selector specificity, so a plain `background`
+                   here would make the forced-colors override underneath it
+                   unreachable, same trap `.bg-clip-text` avoids below. -->
               <div
                 v-for="(state, cellIndex) in TRIP_CELLS"
                 :key="cellIndex"
@@ -507,7 +514,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
                 :data-visited="state !== 'off'"
                 :style="{
                   aspectRatio: '1',
-                  background: TRIP_CELL_COLORS[state],
+                  '--trip-cell-bg': TRIP_CELL_COLORS[state],
                   boxShadow:
                     state === 'on' ? `0 0 8px ${BRAND_ACCENTS.cyan}` : 'none',
                 }"

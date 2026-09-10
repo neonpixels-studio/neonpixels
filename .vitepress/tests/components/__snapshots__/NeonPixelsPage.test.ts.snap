@@ -3,7 +3,7 @@
 exports[`NeonPixelsPage > renders correctly 1`] = `
 "<div data-v-aa442b0f="" class="bg-bg text-fg relative font-mono">
   <!-- drifting grid backdrop -->
-  <div data-v-aa442b0f="" class="animate-drift pointer-events-none fixed inset-0 z-0" style="background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 80px 80px;"></div><!-- header -->
+  <div data-v-aa442b0f="" class="animate-drift ambient-decoration pointer-events-none fixed inset-0 z-0" style="background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 80px 80px;"></div><!-- header -->
   <header data-v-aa442b0f="" class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b px-10 py-[22px] backdrop-blur-md" style="background: #08080ae6;"><a data-v-aa442b0f="" href="#top" class="flex items-center gap-[11px]"><svg data-v-aa442b0f="" width="20" height="20" viewBox="0 0 34 34" class="block flex-none" aria-hidden="true">
         <rect data-v-aa442b0f="" x="0" y="22" width="10" height="10" fill="#22e0ff"></rect>
         <rect data-v-aa442b0f="" x="12" y="11" width="10" height="10" fill="#b8ff2e"></rect>
@@ -17,9 +17,9 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
   <main data-v-aa442b0f="" id="main-content" tabindex="-1">
     <!-- hero -->
     <section data-v-aa442b0f="" id="top" class="relative z-[2] overflow-hidden px-10 pt-28 pb-24">
-      <div data-v-aa442b0f="" class="animate-aurora pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]" style="background: radial-gradient(circle, rgba(184, 255, 46, 0.16), transparent 62%);"></div>
-      <div data-v-aa442b0f="" class="animate-aurora-reverse pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px]" style="--np-aurora-dur: 32s; background: radial-gradient(circle, rgba(255, 46, 166, 0.15), transparent 62%);"></div>
-      <div data-v-aa442b0f="" class="animate-aurora pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px]" style="--np-aurora-dur: 38s; background: radial-gradient(circle, rgba(34, 224, 255, 0.13), transparent 62%);"></div>
+      <div data-v-aa442b0f="" class="animate-aurora ambient-decoration pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]" style="background: radial-gradient(circle, rgba(184, 255, 46, 0.16), transparent 62%);"></div>
+      <div data-v-aa442b0f="" class="animate-aurora-reverse ambient-decoration pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px]" style="--np-aurora-dur: 32s; background: radial-gradient(circle, rgba(255, 46, 166, 0.15), transparent 62%);"></div>
+      <div data-v-aa442b0f="" class="animate-aurora ambient-decoration pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px]" style="--np-aurora-dur: 38s; background: radial-gradient(circle, rgba(34, 224, 255, 0.13), transparent 62%);"></div>
       <div data-v-aa442b0f="" class="relative mx-auto flex max-w-[1180px] flex-col gap-[34px]">
         <div data-v-aa442b0f="" class="flex items-center gap-[14px] text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"><span data-v-aa442b0f="" class="bg-lime h-px w-[26px]" style="box-shadow: 0 0 6px #b8ff2e;"></span> a very small studio · a lot of side projects </div>
         <h1 data-v-aa442b0f="" class="font-display m-0 font-black tracking-[-0.035em] text-[#f4f4f6]" style="line-height: 0.86; text-wrap: balance;"> WE BUILD THE<br data-v-aa442b0f=""><span data-v-aa442b0f="" class="animate-sweep bg-clip-text text-transparent" style="background-image: linear-gradient(90deg, #b8ff2e, #22e0ff, #ff2ea6, #ffc21f, #b8ff2e);">MISSING APPS</span></h1>
@@ -54,7 +54,7 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
          bespoke visual in the #visual slot. reverse alternates the layout. -->
     <section data-v-aa442b0f="" id="grimicorn" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(100deg, #0d1206 0%, #08080a 58%);">
       <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(90deg, #b8ff2e, transparent 65%);"></div>
-      <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora top-[-30%] left-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 28s; background: radial-gradient(circle, rgba(184, 255, 46, 0.18), transparent 62%);"></div>
+      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora top-[-30%] left-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 28s; background: radial-gradient(circle, rgba(184, 255, 46, 0.18), transparent 62%);"></div>
       <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
         <div data-v-6057c22f="" class="flex flex-col gap-5">
           <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[3px] text-bg bg-lime">LIVE</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">01 — agent workflow</span></div>
@@ -76,7 +76,7 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
     </section>
     <section data-v-aa442b0f="" id="wanderist" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(260deg, #04141a 0%, #08080a 58%);">
       <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(270deg, #22e0ff, transparent 65%);"></div>
-      <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-26%] right-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 34s; background: radial-gradient(circle, rgba(34, 224, 255, 0.16), transparent 62%);"></div>
+      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-26%] right-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 34s; background: radial-gradient(circle, rgba(34, 224, 255, 0.16), transparent 62%);"></div>
       <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]">
         <div data-v-aa442b0f="" class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]" style="box-shadow: 0 0 60px rgba(34, 224, 255, 0.1);" role="img" aria-label="Wanderist trip log: 47 of 50 US states visited, 60,000+ miles traveled across 3 countries.">
           <div data-v-aa442b0f="" class="text-wanderist-label flex justify-between text-[11px] tracking-[0.16em] uppercase"><span data-v-aa442b0f="">trip log</span><span data-v-aa442b0f="">47 / 50 states</span></div>
@@ -89,57 +89,64 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
                    above: under forced-colors the four cyan brightness tiers
                    collapse to one indistinguishable fill, so \`.trip-cell\` in
                    style.css redraws the visited/unvisited distinction with a
-                   system-color border + fill instead of losing it outright. -->
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; background: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; background: #0e2831; box-shadow: none;"></div>
+                   system-color border + fill instead of losing it outright.
+                   The fill goes through the \`--trip-cell-bg\` custom property
+                   (consumed by the \`.trip-cell\` base rule in style.css)
+                   instead of a \`background\` set directly here: an inline
+                   style attribute always beats an external stylesheet rule
+                   regardless of selector specificity, so a plain \`background\`
+                   here would make the forced-colors override underneath it
+                   unreachable, same trap \`.bg-clip-text\` avoids below. -->
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; --trip-cell-bg: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; --trip-cell-bg: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; --trip-cell-bg: #0e2831; box-shadow: none;"></div>
           </div>
           <div data-v-aa442b0f="" class="text-wanderist-label flex gap-5 text-[11px]"><span data-v-aa442b0f="">60k+ miles</span><span data-v-aa442b0f="">47 states</span><span data-v-aa442b0f="">3 countries</span></div>
         </div>
@@ -152,7 +159,7 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
     </section>
     <section data-v-aa442b0f="" id="basin" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(100deg, #170f02 0%, #08080a 58%);">
       <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(90deg, #ffc21f, transparent 65%);"></div>
-      <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora bottom-[-34%] left-[2%] h-[520px] w-[520px]" style="--np-aurora-dur: 30s; background: radial-gradient(circle, rgba(255, 194, 31, 0.15), transparent 62%);"></div>
+      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora bottom-[-34%] left-[2%] h-[520px] w-[520px]" style="--np-aurora-dur: 30s; background: radial-gradient(circle, rgba(255, 194, 31, 0.15), transparent 62%);"></div>
       <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
         <div data-v-6057c22f="" class="flex flex-col gap-5">
           <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[2px] border text-amber border-amber">IN PROGRESS</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">03 — syndication</span></div>
@@ -170,7 +177,7 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
     </section>
     <section data-v-aa442b0f="" id="markpost" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(260deg, #180618 0%, #08080a 58%);">
       <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(270deg, #ff2ea6, transparent 65%);"></div>
-      <div class="pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-20%] right-0 h-[540px] w-[540px]" style="--np-aurora-dur: 36s; background: radial-gradient(circle, rgba(255, 46, 166, 0.16), transparent 62%);"></div>
+      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-20%] right-0 h-[540px] w-[540px]" style="--np-aurora-dur: 36s; background: radial-gradient(circle, rgba(255, 46, 166, 0.16), transparent 62%);"></div>
       <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]">
         <div data-v-aa442b0f="" class="grid grid-cols-[1fr_auto_1fr] items-center gap-[18px]" aria-hidden="true">
           <div data-v-aa442b0f="" class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"><span data-v-aa442b0f="" class="text-markpost-label text-[10.5px] tracking-[0.16em] uppercase">in</span><span data-v-aa442b0f="" class="text-fg text-[12.5px]">POST /webhook</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">✉ notes@markpost.io</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">{ "title": "idea" }</span></div>
