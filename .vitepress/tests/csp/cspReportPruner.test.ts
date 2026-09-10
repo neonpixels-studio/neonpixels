@@ -20,17 +20,16 @@ import { sanitizeTimestamp } from "../../../netlify/functions/lib/cspReportStore
 const NOW = new Date("2026-06-15T00:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+function keyFromMsAgo(msAgo: number, suffix: string): string {
+  const receivedAt = new Date(NOW.getTime() - msAgo).toISOString();
+  return `${sanitizeTimestamp(receivedAt)}-${suffix}.json`;
+}
+
 // Builds a key in the same shape violationKey() in cspReportStore.ts
 // produces, timestamped `daysAgo` days before NOW, so tests can construct
 // keys that land clearly on either side of a retention cutoff.
 function keyFromDaysAgo(daysAgo: number, suffix: string): string {
-  const receivedAt = new Date(NOW.getTime() - daysAgo * DAY_MS).toISOString();
-  return `${sanitizeTimestamp(receivedAt)}-${suffix}.json`;
-}
-
-function keyFromMsAgo(msAgo: number, suffix: string): string {
-  const receivedAt = new Date(NOW.getTime() - msAgo).toISOString();
-  return `${sanitizeTimestamp(receivedAt)}-${suffix}.json`;
+  return keyFromMsAgo(daysAgo * DAY_MS, suffix);
 }
 
 // A BlobPrunerClient backed by an in-memory key list, split across the given
@@ -63,6 +62,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("createCspReportPruner", () => {
@@ -292,6 +292,69 @@ describe("createCspReportPruner", () => {
     expect(deletedKeys(client)).toEqual([foundKeys[0], foundKeys[1]]);
   });
 
+  it("never calls delete when the list pass finds nothing before its own budget runs out", async () => {
+    const client: BlobPrunerClient & { delete: ReturnType<typeof vi.fn> } = {
+      delete: vi.fn().mockResolvedValue(undefined),
+      // The very first page is empty and arrives only after the list budget
+      // is already spent — nothing was ever found to prune this run.
+      async *list() {
+        vi.setSystemTime(new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1));
+        yield { blobs: [] };
+        yield { blobs: [{ key: keyFromDaysAgo(1, "never-reached") }] };
+      },
+    };
+    const pruner = createCspReportPruner(client, {
+      retentionDays: 30,
+      maxBlobs: 5000,
+    });
+
+    const result = await pruner.prune();
+
+    expect(result).toEqual({ deleted: 0, remaining: 0, complete: false });
+    expect(client.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes stale keys before over-cap fresh keys when the delete deadline cuts a run short", async () => {
+    // Zero-padded so the lexicographic `.sort()` inside prune() (these all
+    // share the same 40-day-old timestamp) lands in the same order this
+    // array is already in, letting the assertion below compare directly.
+    const staleKeys = Array.from({ length: DELETE_BATCH_SIZE }, (_, index) =>
+      keyFromDaysAgo(40, `stale-${String(index).padStart(2, "0")}`),
+    );
+    const freshKeys = Array.from({ length: 10 }, (_, index) =>
+      keyFromDaysAgo(1, `fresh-${String(index).padStart(2, "0")}`),
+    );
+    let deleteCalls = 0;
+    const deleteMock = vi.fn().mockImplementation(() => {
+      deleteCalls += 1;
+      // Once the first batch (all of staleKeys) finishes, the budget is
+      // spent — the fresh, over-cap batch after it must never be attempted.
+      if (deleteCalls === DELETE_BATCH_SIZE) {
+        vi.setSystemTime(new Date(NOW.getTime() + PRUNE_TIME_BUDGET_MS + 1));
+      }
+      return Promise.resolve();
+    });
+    const client: BlobPrunerClient & { delete: typeof deleteMock } = {
+      delete: deleteMock,
+      async *list() {
+        yield { blobs: [...staleKeys, ...freshKeys].map((key) => ({ key })) };
+      },
+    };
+    const pruner = createCspReportPruner(client, {
+      retentionDays: 30,
+      // Low enough that every fresh key is also over the cap, so
+      // selectKeysToDelete orders them as [...staleKeys, ...freshKeys] —
+      // this proves deleteKeys' batching processes stale keys first.
+      maxBlobs: 0,
+    });
+
+    const result = await pruner.prune();
+
+    expect(result.complete).toBe(false);
+    expect(deleteMock).toHaveBeenCalledTimes(DELETE_BATCH_SIZE);
+    expect(deletedKeys(client)).toEqual(staleKeys);
+  });
+
   it("stops deleting at the time budget and reports an incomplete run", async () => {
     const keys = Array.from({ length: DELETE_BATCH_SIZE * 2 }, (_, index) =>
       keyFromDaysAgo(40, `stale-${index}`),
@@ -400,6 +463,19 @@ describe("positiveIntEnv", () => {
       JSON.stringify({ name: ENV_NAME, raw }),
     );
   });
+
+  it("accepts a plain decimal too large to represent exactly, rather than falling back to the default", () => {
+    // A well-formed but huge override must not be treated as worse than a
+    // milder typo — resolveRetentionDays/resolveMaxBlobs are what clamp it
+    // down to their MAX_* ceiling afterward (see the describe blocks below).
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv(ENV_NAME, "99999999999999999999");
+
+    expect(positiveIntEnv(ENV_NAME, 7)).toBeGreaterThan(
+      Number.MAX_SAFE_INTEGER,
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
 
 describe("resolveRetentionDays", () => {
@@ -422,6 +498,32 @@ describe("resolveRetentionDays", () => {
 
     expect(resolveRetentionDays()).toBe(MAX_RETENTION_DAYS);
   });
+
+  it("clamps an astronomically large override the same way as a milder one, not to the default", () => {
+    // Exceeds Number.MAX_SAFE_INTEGER — the case that previously fell through
+    // to DEFAULT_RETENTION_DAYS instead of MAX_RETENTION_DAYS, making a
+    // bigger typo produce a smaller effective retention window than a
+    // milder one.
+    vi.stubEnv("CSP_REPORT_RETENTION_DAYS", "99999999999999999999");
+
+    expect(resolveRetentionDays()).toBe(MAX_RETENTION_DAYS);
+  });
+
+  it("logs a config-clamped marker with the requested and applied values when clamping", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("CSP_REPORT_RETENTION_DAYS", "1000000000");
+
+    resolveRetentionDays();
+
+    expect(warn).toHaveBeenCalledWith(
+      "csp-report-prune-config-clamped",
+      JSON.stringify({
+        name: "CSP_REPORT_RETENTION_DAYS",
+        requested: 1000000000,
+        applied: MAX_RETENTION_DAYS,
+      }),
+    );
+  });
 });
 
 describe("resolveMaxBlobs", () => {
@@ -443,5 +545,27 @@ describe("resolveMaxBlobs", () => {
     vi.stubEnv("CSP_REPORT_MAX_BLOBS", "999999999");
 
     expect(resolveMaxBlobs()).toBe(MAX_MAX_BLOBS);
+  });
+
+  it("clamps an astronomically large override the same way as a milder one, not to the default", () => {
+    vi.stubEnv("CSP_REPORT_MAX_BLOBS", "99999999999999999999");
+
+    expect(resolveMaxBlobs()).toBe(MAX_MAX_BLOBS);
+  });
+
+  it("logs a config-clamped marker with the requested and applied values when clamping", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("CSP_REPORT_MAX_BLOBS", "999999999");
+
+    resolveMaxBlobs();
+
+    expect(warn).toHaveBeenCalledWith(
+      "csp-report-prune-config-clamped",
+      JSON.stringify({
+        name: "CSP_REPORT_MAX_BLOBS",
+        requested: 999999999,
+        applied: MAX_MAX_BLOBS,
+      }),
+    );
   });
 });

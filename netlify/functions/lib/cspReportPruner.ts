@@ -165,13 +165,16 @@ function throwIfAnyFailed(
 
 type DeletedKeys = { deleted: number; complete: boolean };
 
-// Deletes in fixed-size batches, checking the deadline between batches so a
+// Deletes in fixed-size batches, checking the deadline before each one so a
 // long delete pass yields a partial result instead of running past the
-// Function's own execution limit. Every batch is attempted regardless of
-// earlier failures (mirrors persist() in cspReportStore.ts — one bad key
-// must not stop the rest from being cleaned up); every failure gathered so
-// far is (re-)thrown before returning, whether the loop finishes normally or
-// is cut short by the deadline.
+// Function's own execution limit — the deadline check lives in the loop
+// condition rather than as a branch in the body, so stopping early and
+// finishing normally are the same exit, not two separate return points.
+// Every batch is attempted regardless of earlier failures (mirrors persist()
+// in cspReportStore.ts — one bad key must not stop the rest from being
+// cleaned up); every failure gathered so far is thrown once at the end,
+// whether the loop finished normally or was cut short by the deadline, so a
+// real Blobs error is never swallowed just because time also ran out.
 async function deleteKeys(
   client: BlobPrunerClient,
   keys: string[],
@@ -179,20 +182,18 @@ async function deleteKeys(
 ): Promise<DeletedKeys> {
   let deleted = 0;
   let attempted = 0;
+  let start = 0;
   const failures: PromiseRejectedResult[] = [];
-  for (let start = 0; start < keys.length; start += DELETE_BATCH_SIZE) {
-    if (isPastDeadline(deadlineMs)) {
-      throwIfAnyFailed(failures, attempted);
-      return { deleted, complete: false };
-    }
+  while (start < keys.length && !isPastDeadline(deadlineMs)) {
     const batch = keys.slice(start, start + DELETE_BATCH_SIZE);
     const outcome = await deleteBatch(client, batch);
     attempted += batch.length;
     deleted += outcome.deletedCount;
     failures.push(...outcome.failures);
+    start += batch.length;
   }
   throwIfAnyFailed(failures, attempted);
-  return { deleted, complete: true };
+  return { deleted, complete: start >= keys.length };
 }
 
 // The oldest-first excess beyond maxBlobs. Safe to apply even against a
@@ -215,10 +216,10 @@ function selectKeysToDelete(
   const firstFreshIndex = sortedKeys.findIndex(
     (key) => !isStaleKey(key, cutoffPrefix),
   );
-  const staleKeys =
-    firstFreshIndex === -1 ? sortedKeys : sortedKeys.slice(0, firstFreshIndex);
-  const freshKeys =
-    firstFreshIndex === -1 ? [] : sortedKeys.slice(firstFreshIndex);
+  const splitIndex =
+    firstFreshIndex === -1 ? sortedKeys.length : firstFreshIndex;
+  const staleKeys = sortedKeys.slice(0, splitIndex);
+  const freshKeys = sortedKeys.slice(splitIndex);
   return [...staleKeys, ...overCapKeys(freshKeys, maxBlobs)];
 }
 
@@ -280,19 +281,23 @@ export const MAX_MAX_BLOBS = 1_000_000;
 const PLAIN_DECIMAL_PATTERN = /^\d+$/;
 
 // Parses a positive-integer env var, falling back to `fallback` (and logging
-// a marker) for anything unset, not a plain decimal integer, zero, or beyond
-// Number.MAX_SAFE_INTEGER — so a typo'd or adversarial override degrades to
-// the safe default with a visible trail instead of silently doing nothing,
-// silently disabling a cap, or crashing the run. Exported so this behavior is
-// unit-tested directly, without mocking `@netlify/blobs` just to exercise env
-// parsing.
+// a marker) for anything unset, zero, or not a plain decimal integer — so a
+// typo'd or adversarial override degrades to the safe default with a visible
+// trail instead of silently doing nothing or crashing the run. A value too
+// large to represent exactly as a double is still accepted (as a large but
+// finite number) rather than falling back: `resolveRetentionDays` and
+// `resolveMaxBlobs` clamp it afterward, so an enormous override still lands
+// on the intended MAX_* ceiling instead of unexpectedly dropping all the way
+// to the default — a bigger typo must never produce a smaller effective
+// limit than a milder one. Exported so this behavior is unit-tested
+// directly, without mocking `@netlify/blobs` just to exercise env parsing.
 export function positiveIntEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined) {
     return fallback;
   }
   const parsed = PLAIN_DECIMAL_PATTERN.test(raw.trim()) ? Number(raw) : NaN;
-  if (Number.isSafeInteger(parsed) && parsed > 0) {
+  if (Number.isFinite(parsed) && parsed > 0) {
     return parsed;
   }
   console.warn(
@@ -302,17 +307,34 @@ export function positiveIntEnv(name: string, fallback: number): number {
   return fallback;
 }
 
+// Applies `positiveIntEnv`'s ceiling and logs when it actually changes the
+// value, so an operator who sets e.g. CSP_REPORT_MAX_BLOBS well above
+// MAX_MAX_BLOBS sees why the effective cap is lower than what they asked
+// for, instead of the clamp happening invisibly.
+function clampedEnv(name: string, requested: number, max: number): number {
+  if (requested <= max) {
+    return requested;
+  }
+  console.warn(
+    "csp-report-prune-config-clamped",
+    JSON.stringify({ name, requested, applied: max }),
+  );
+  return max;
+}
+
 // Exported alongside positiveIntEnv so the MAX_RETENTION_DAYS clamp is
 // unit-tested directly too.
 export function resolveRetentionDays(): number {
-  return Math.min(
+  return clampedEnv(
+    "CSP_REPORT_RETENTION_DAYS",
     positiveIntEnv("CSP_REPORT_RETENTION_DAYS", DEFAULT_RETENTION_DAYS),
     MAX_RETENTION_DAYS,
   );
 }
 
 export function resolveMaxBlobs(): number {
-  return Math.min(
+  return clampedEnv(
+    "CSP_REPORT_MAX_BLOBS",
     positiveIntEnv("CSP_REPORT_MAX_BLOBS", DEFAULT_MAX_BLOBS),
     MAX_MAX_BLOBS,
   );

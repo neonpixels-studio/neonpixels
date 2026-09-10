@@ -13,6 +13,7 @@ vi.mock("../../../netlify/functions/lib/cspReportPruner", () => ({
 
 import cspReportPruneHandler, {
   config,
+  HARD_TIMEOUT_MS,
 } from "../../../netlify/functions/csp-report-prune";
 
 const PRUNED_LOG_PREFIX = "csp-report-pruned";
@@ -40,6 +41,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -113,5 +115,25 @@ describe("csp-report-prune Netlify scheduled function", () => {
       PRUNED_LOG_PREFIX,
       JSON.stringify({ deleted: 50, remaining: 200, complete: false }),
     );
+  });
+
+  it("logs a failure marker and replies 500 when the prune run hangs past the hard timeout", async () => {
+    // cspReportPruner's own budgets are cooperative (checked between pages/
+    // batches); this proves the handler's own hard timeout is the backstop
+    // for a single call that hangs longer than that, e.g. a stalled Blobs
+    // request — otherwise Netlify would kill the run at its 30s limit with
+    // no csp-report-prune-failed marker ever written.
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    pruneMock.mockImplementationOnce(() => new Promise(() => {}));
+
+    const responsePromise = cspReportPruneHandler(scheduledRequest());
+    await vi.advanceTimersByTimeAsync(HARD_TIMEOUT_MS);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(500);
+    expect(warn.mock.calls[0][0]).toBe(PRUNE_FAILED_LOG_PREFIX);
+    const logged = JSON.parse(warn.mock.calls[0][1] as string);
+    expect(logged.message).toMatch(/exceeded/);
   });
 });

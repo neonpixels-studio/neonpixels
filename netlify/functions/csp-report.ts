@@ -10,6 +10,7 @@ import {
   type CspViolation,
 } from "../../.vitepress/csp/cspReportCollector";
 import { getCspReportStore } from "./lib/cspReportStore";
+import { withTimeout } from "./lib/withTimeout";
 
 // Netlify Function (v2, web-standard Request/Response) that gathers the CSP
 // violations the Report-Only header sends here, so they land in the function
@@ -88,31 +89,6 @@ function originOf(url: string): string | null {
   }
 }
 
-class PersistTimeoutError extends Error {
-  constructor() {
-    super(`store write exceeded ${PERSIST_TIMEOUT_MS}ms`);
-    this.name = "PersistTimeoutError";
-  }
-}
-
-// Races `work` against a timeout, always clearing the timer so a fast/normal
-// resolution doesn't leave a pending `setTimeout` on the event loop for the
-// rest of PERSIST_TIMEOUT_MS.
-async function withTimeout<Value>(work: Promise<Value>): Promise<Value> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(
-      () => reject(new PersistTimeoutError()),
-      PERSIST_TIMEOUT_MS,
-    );
-  });
-  try {
-    return await Promise.race([work, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 function isOwnOriginViolation(origins: Set<string>) {
   return (violation: CspViolation): boolean => {
     const origin = originOf(violation.documentUrl);
@@ -178,7 +154,11 @@ async function persistViolations(
     return;
   }
   try {
-    await withTimeout(getCspReportStore().persist(ownOriginViolations));
+    await withTimeout(
+      getCspReportStore().persist(ownOriginViolations),
+      PERSIST_TIMEOUT_MS,
+      "csp report store write",
+    );
   } catch (error) {
     console.warn(
       PERSIST_FAILED_LOG_PREFIX,
@@ -254,4 +234,22 @@ export default async (request: Request): Promise<Response> => {
   });
 };
 
-export const config = { path: CSP_REPORT_PATH };
+// The endpoint is public and unauthenticated, so besides the retention/count
+// cap the scheduled pruner (see lib/cspReportPruner.ts) enforces on the
+// Blobs store after the fact, Netlify's own rate limiting bounds the write
+// rate at the source: this is a per-IP+domain cap generous enough for a real
+// browser's violation batch, not a global cap across all callers, so it
+// doesn't stop a distributed flood — only the store-side cap and retention
+// guard that regardless.
+const RATE_LIMIT_WINDOW_SECONDS = 60;
+const RATE_LIMIT_WINDOW_REQUESTS = 60;
+
+export const config = {
+  path: CSP_REPORT_PATH,
+  rateLimit: {
+    action: "rate_limit",
+    aggregateBy: ["ip", "domain"],
+    windowSize: RATE_LIMIT_WINDOW_SECONDS,
+    windowLimit: RATE_LIMIT_WINDOW_REQUESTS,
+  },
+};
