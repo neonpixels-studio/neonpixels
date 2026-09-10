@@ -22,10 +22,10 @@ env:
 
 jobs:
   gitleaks:
-    # Both scan steps below key off the push/PR commit range in the event
-    # payload, which schedule/workflow_dispatch runs don't have. Skip the
-    # job entirely on those triggers rather than running a scan with no
-    # range to check.
+    # main's history is already scanned in full on every push (pinned
+    # gitleaks version), so a scheduled/manual rescan can't surface
+    # anything new. The schedule below exists for npm advisories, which
+    # only the audit job checks — skip gitleaks on those triggers.
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
