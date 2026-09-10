@@ -7,7 +7,10 @@ on:
     branches: [main]
   schedule:
     # Weekly, Monday 06:00 UTC — catches advisories published against
-    # already-merged dependencies during a dormant window between pushes.
+    # already-merged dependencies between pushes. Note: GitHub disables
+    # scheduled workflows after 60 days with no repository activity, so
+    # this isn't a substitute for a proper alerting backstop (e.g.
+    # Dependabot alerts) on a genuinely dormant repo.
     - cron: "0 6 * * 1"
   workflow_dispatch:
 
@@ -19,8 +22,10 @@ env:
 
 jobs:
   gitleaks:
-    # Secret scanning only makes sense against a push or PR commit range;
-    # skip it on schedule/manual runs so the job isn't a silent no-op.
+    # Both scan steps below key off the push/PR commit range in the event
+    # payload, which schedule/workflow_dispatch runs don't have. Skip the
+    # job entirely on those triggers rather than running a scan with no
+    # range to check.
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
