@@ -296,7 +296,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               }"
             >
               <span
-                class="h-[6px] w-[6px]"
+                class="pill-dot h-[6px] w-[6px]"
                 :style="{
                   background: project.color,
                   boxShadow: `0 0 7px ${project.color}`,

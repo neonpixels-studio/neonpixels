@@ -169,6 +169,51 @@ body {
   }
 }
 
+/* Accessibility guard: Windows High Contrast Mode (the `forced-colors` media
+   feature) strips most author colors down to the user's chosen system
+   palette, but it explicitly leaves `background-image` (gradients) alone —
+   so the ambient background decoration below (drifting grid + aurora blobs)
+   would otherwise keep rendering in full, uncontrolled color instead of
+   respecting the user's flat high-contrast preference. The same gap breaks
+   the gradient "wordmark" text (`background-clip: text` + `color:
+   transparent`): engines that don't force a transparent `color` can paint it
+   with no visible fill at all, leaving the heading empty. Small solid-fill
+   indicators (the nav status dot, the accent-pill swatch) rely on
+   `background-color` alone, which forced-colors *does* neutralize to
+   `Canvas` — the same color as the page background — so they can vanish
+   outright too. */
+@media (forced-colors: active) {
+  /* Pure ambient decoration: no content, pointer-events-none, and every
+     instance (hero auroras, each project card's aurora, the drifting grid
+     backdrop) shares these classes. Forced-colors users opted into a flat
+     high-contrast palette, so drop the color noise instead of letting it
+     render uncontrolled. */
+  .animate-drift,
+  .animate-aurora,
+  .animate-aurora-reverse {
+    display: none;
+  }
+
+  /* Gradient-clipped text: fall back to a real, forced-colors-safe fill
+     instead of the clipped gradient so the glyphs are guaranteed visible.
+     `-webkit-text-fill-color` wins in engines that support it; `color` is
+     the fallback for engines that don't (and is what the clipped text used
+     to set to `transparent`). */
+  .bg-clip-text {
+    background-image: none;
+    -webkit-text-fill-color: CanvasText;
+    color: CanvasText;
+  }
+
+  /* Color-only indicator dots (nav status dot, project-accent pill swatch):
+     give the shape a system-color border so it survives even though its
+     fill gets neutralized to Canvas. */
+  .animate-pulse-dot,
+  .pill-dot {
+    border: 1px solid CanvasText;
+  }
+}
+
 /* Keyboard focus ring for every interactive control (WCAG 2.4.7), in one place
    so it also covers the wordmark links and 404 CTAs. `:where()` holds the
    selector at (0,1,0) specificity so a component rule can still override it.

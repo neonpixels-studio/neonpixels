@@ -298,3 +298,56 @@ describe("style.css reduced-motion coverage", () => {
     },
   );
 });
+
+// The `forced-colors: active` block (Windows High Contrast Mode) restyles the
+// ambient decoration, gradient wordmark text, and color-only indicator dots
+// that would otherwise render uncontrolled, vanish, or paint with no visible
+// fill once the OS takes over the palette. Parsed the same way as the
+// reduced-motion block above — matched by its @media opener, then sliced out
+// via `findMatchingBraceIndex` so a naive regex can't be fooled by nested
+// rules — but happy-dom evaluates neither the media feature nor computed CSS,
+// so this asserts against the stylesheet source, same as the focus-ring guard
+// at the top of this file.
+const FORCED_COLORS_QUERY_OPENER =
+  /@media[^{]*\bforced-colors\s*:\s*active\b[^{]*\{/i;
+
+function forcedColorsBlock() {
+  const match = STYLE_CSS_WITHOUT_COMMENTS.match(FORCED_COLORS_QUERY_OPENER);
+  if (!match || match.index === undefined) {
+    return null;
+  }
+  const openBraceIndex = match.index + match[0].length - 1;
+  const closeBraceIndex = findMatchingBraceIndex(
+    STYLE_CSS_WITHOUT_COMMENTS,
+    openBraceIndex,
+  );
+  return STYLE_CSS_WITHOUT_COMMENTS.slice(openBraceIndex + 1, closeBraceIndex);
+}
+
+describe("style.css forced-colors coverage", () => {
+  const block = forcedColorsBlock();
+
+  it("defines a @media (forced-colors: active) block", () => {
+    expect(block).not.toBeNull();
+  });
+
+  it("hides the purely-decorative ambient animations instead of letting them render in uncontrolled color", () => {
+    expect(block).toMatch(
+      /\.animate-drift,\s*\.animate-aurora,\s*\.animate-aurora-reverse\s*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it("gives gradient-clipped wordmark text a real, non-transparent fill", () => {
+    expect(block).toMatch(/\.bg-clip-text\s*\{[^}]*color:\s*CanvasText/);
+    // Guards against a regression back to the exact bug this exists to fix:
+    // a transparent color left un-overridden under forced-colors can paint
+    // the clipped text with no visible fill at all.
+    expect(block).not.toMatch(/\.bg-clip-text\s*\{[^}]*color:\s*transparent/);
+  });
+
+  it("gives color-only indicator dots a system-color border so they can't vanish into Canvas", () => {
+    expect(block).toMatch(
+      /\.animate-pulse-dot,\s*\.pill-dot\s*\{[^}]*border:\s*1px solid CanvasText/,
+    );
+  });
+});
