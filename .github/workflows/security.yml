@@ -6,12 +6,14 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # Weekly, Monday 06:00 UTC — catches advisories published against
-    # already-merged dependencies between pushes. Note: GitHub disables
+    # Weekly, Monday 06:23 UTC (off the hour, since GitHub docs flag
+    # top-of-hour runs as most likely to be delayed/dropped under load).
+    # Catches advisories published against already-merged dependencies
+    # between pushes. Note: on public repos (this one), GitHub disables
     # scheduled workflows after 60 days with no repository activity, so
     # this isn't a substitute for a proper alerting backstop (e.g.
     # Dependabot alerts) on a genuinely dormant repo.
-    - cron: "0 6 * * 1"
+    - cron: "23 6 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -24,7 +26,7 @@ jobs:
   gitleaks:
     # main's history is already scanned in full on every push (pinned
     # gitleaks version), so a scheduled/manual rescan can't surface
-    # anything new. The schedule below exists for npm advisories, which
+    # anything new. The schedule above exists for npm advisories, which
     # only the audit job checks — skip gitleaks on those triggers.
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
