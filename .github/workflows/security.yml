@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Weekly, Monday 06:00 UTC — catches advisories published against
+    # already-merged dependencies during a dormant window between pushes.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,6 +19,9 @@ env:
 
 jobs:
   gitleaks:
+    # Secret scanning only makes sense against a push or PR commit range;
+    # skip it on schedule/manual runs so the job isn't a silent no-op.
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
