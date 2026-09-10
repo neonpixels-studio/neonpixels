@@ -15,9 +15,7 @@ const CELL_SELECTOR = '[data-testid="trip-log-cell"]';
 // alpha suffix; the empty tint carries no cyan. Inspect the `--trip-cell-bg`
 // custom property alone (not the whole style string, which also holds the
 // box-shadow) so a future cyan border or glow on an empty cell can't be
-// miscounted as lit. The fill is set via this custom property rather than
-// `background` directly so the forced-colors override in style.css can win
-// the cascade — see the `.trip-cell` rule and its comment there.
+// miscounted as lit.
 function tripCellBackground(cell: { element: Element }) {
   return (cell.element as HTMLElement).style.getPropertyValue("--trip-cell-bg");
 }
@@ -75,14 +73,11 @@ describe("NeonPixelsPage trip-log heatmap", () => {
     );
   });
 
-  // Regression guard: an earlier version of the forced-colors override set
-  // this fill via a plain `background` in the element's inline style, which
-  // silently made style.css's `.trip-cell[data-visited="true"]` override
-  // unreachable — an inline style attribute always wins over any external
-  // stylesheet rule regardless of selector specificity. Every cell must
-  // route its fill through the `--trip-cell-bg` custom property instead, so
-  // style.css's `.trip-cell { background: var(--trip-cell-bg); }` base rule
-  // (and the forced-colors override that outranks it) stays in control.
+  // An inline `background` attribute always wins over any external
+  // stylesheet rule regardless of selector specificity, which would make
+  // style.css's forced-colors override on `.trip-cell` unreachable. Every
+  // cell must route its fill through the `--trip-cell-bg` custom property
+  // instead, never a plain inline `background`.
   it("sets the cell fill through --trip-cell-bg, never an inline background", () => {
     const cells = wrapper.get(HEATMAP_SELECTOR).findAll(CELL_SELECTOR);
     cells.forEach((cell) => {
@@ -90,5 +85,15 @@ describe("NeonPixelsPage trip-log heatmap", () => {
       expect(element.style.background).toBe("");
       expect(tripCellBackground(cell)).not.toBe("");
     });
+  });
+
+  // The forced-colors fill (style.css's `.trip-cell[data-visited="true"]`)
+  // keys on this attribute, not on --trip-cell-bg, so it needs its own
+  // guard against drifting from the visited count it's meant to mirror.
+  it("marks exactly the visited count of cells data-visited", () => {
+    const visitedCells = wrapper
+      .get(HEATMAP_SELECTOR)
+      .findAll('[data-visited="true"]');
+    expect(visitedCells).toHaveLength(STATES_VISITED);
   });
 });

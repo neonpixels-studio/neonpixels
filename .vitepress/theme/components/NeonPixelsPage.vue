@@ -215,7 +215,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
         <a href="#about" class="nav-link text-fg-subtle">about</a>
         <span class="text-lime flex items-center gap-[7px]">
           <span
-            class="bg-lime animate-pulse-dot h-[7px] w-[7px] rounded-full"
+            class="bg-lime animate-pulse-dot status-dot h-[7px] w-[7px] rounded-full"
             :style="{ boxShadow: NAV_DOT_GLOW }"
           />{{ PROJECTS.length }} projects
         </span>
@@ -493,19 +493,9 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               class="grid grid-cols-[repeat(10,minmax(0,1fr))] gap-1"
               data-testid="trip-log-heatmap"
             >
-              <!-- Unlike the other project visuals' decoration, this cell grid
-                   is the actual content behind the card's role="img"/aria-label
-                   above: under forced-colors the four cyan brightness tiers
-                   collapse to one indistinguishable fill, so `.trip-cell` in
-                   style.css redraws the visited/unvisited distinction with a
-                   system-color border + fill instead of losing it outright.
-                   The fill goes through the `--trip-cell-bg` custom property
-                   (consumed by the `.trip-cell` base rule in style.css)
-                   instead of a `background` set directly here: an inline
-                   style attribute always beats an external stylesheet rule
-                   regardless of selector specificity, so a plain `background`
-                   here would make the forced-colors override underneath it
-                   unreachable, same trap `.bg-clip-text` avoids below. -->
+              <!-- Fill via --trip-cell-bg, not a plain `background`, so the
+                   forced-colors override in style.css's `.trip-cell` rule
+                   can win the cascade — see that rule for why. -->
               <div
                 v-for="(state, cellIndex) in TRIP_CELLS"
                 :key="cellIndex"

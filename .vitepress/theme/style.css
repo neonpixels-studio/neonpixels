@@ -183,20 +183,21 @@ body {
 }
 
 /* Accessibility guard: under Windows High Contrast Mode (the `forced-colors`
-   media feature), spec-compliant engines already null out non-`url()`
-   `background-image` (gradients) and `box-shadow`, so most glows already go
-   away on their own — this block is the safety net for engines that don't,
-   plus the cases forced-colors *can't* fix by itself: the gradient
-   "wordmark" text (`background-clip: text` + `color: transparent`) still
-   needs a real fill once its background is gone, or the glyphs paint with
-   nothing behind them; and small solid `background-color` shapes that carry
-   meaning purely through color (the nav status dot, the accent-pill swatch,
-   the Wanderist trip-log cells) get neutralized to `Canvas` — the same
-   color as the page background — and can vanish outright rather than
-   degrade gracefully. System color keywords (`Canvas`, `CanvasText`,
-   `currentColor`) used below pass through forced-colors unchanged, since
-   they already resolve to whatever color the user's chosen high-contrast
-   theme (or, for `currentColor`, forced-colors itself) already assigned. */
+   media feature), non-`url()` `background-image` (gradients) and
+   `box-shadow` are nulled by the UA itself in spec-compliant engines, ahead
+   of any stylesheet's say in the matter — so most of this theme's glows
+   already go away on their own. What's left, and what this block addresses,
+   is what forced-colors *can't* fix by itself: the gradient "wordmark" text
+   (`background-clip: text` + `color: transparent`) still needs a real fill
+   once its background is gone, or the glyphs paint with nothing behind
+   them; and small solid `background-color` shapes that carry meaning purely
+   through color (the nav status dot, the accent-pill swatch, the Wanderist
+   trip-log cells) get neutralized to `Canvas` — the same color as the page
+   background — and can vanish outright rather than degrade gracefully.
+   System color keywords (`Canvas`, `CanvasText`, `currentColor`) used below
+   pass through forced-colors unchanged, since they already resolve to
+   whatever color the user's chosen high-contrast theme (or, for
+   `currentColor`, forced-colors itself) already assigned. */
 @media (forced-colors: active) {
   /* Pure ambient decoration: no content, pointer-events-none, purely
      atmospheric (hero auroras, each project card's aurora, the drifting
@@ -230,11 +231,14 @@ body {
   }
 
   /* Color-only indicator dots (nav status dot, project-accent pill swatch):
-     give the shape a system-color border so it survives even though its
-     fill gets neutralized to Canvas. */
-  .animate-pulse-dot,
+     give the shape a border so it survives even though its fill gets
+     neutralized to Canvas. `currentColor` rather than a hardcoded system
+     color for the same reason as `.bg-clip-text` above: the pill swatch
+     sits inside a `<a class="pill">`, forced to `LinkText`, so a hardcoded
+     `CanvasText` border would mismatch the pill's own text color. */
+  .status-dot,
   .pill-dot {
-    border: 1px solid CanvasText;
+    border: 1px solid currentColor;
   }
 
   /* Wanderist trip-log heatmap: unlike the other project visuals (pure

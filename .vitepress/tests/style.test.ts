@@ -379,6 +379,20 @@ function rulesMatchingClass(rules: CssRule[], className: string) {
   return rules.filter((rule) => classPattern.test(rule.selectorText));
 }
 
+// Stricter than rulesMatchingClass: only rules where `.${className}` is a
+// whole selector in the comma-separated list (so `.trip-cell[data-visited=
+// "true"]` doesn't count as `.trip-cell`). Needed wherever a bare-class rule
+// and an attribute-qualified rule for the same class carry different
+// declarations that must not be conflated.
+function rulesWithBareSelector(rules: CssRule[], className: string) {
+  const bareSelector = `.${className}`;
+  return rules.filter((rule) =>
+    rule.selectorText
+      .split(",")
+      .some((selector) => selector.trim() === bareSelector),
+  );
+}
+
 function declares(rules: CssRule[], property: string, expectedValue: RegExp) {
   return rules.some((rule) => {
     const value = lastDeclarationValue(rule.body, property);
@@ -426,26 +440,31 @@ describe("style.css forced-colors coverage", () => {
     ).toBe(true);
   });
 
-  it.each(["animate-pulse-dot", "pill-dot"])(
-    "gives %s a system-color border so it can't vanish into Canvas",
+  it.each(["status-dot", "pill-dot"])(
+    "gives %s a border in currentColor so it can't vanish into Canvas or mismatch its surrounding text",
     (className) => {
       expect(
         forcedColorsBlockDeclares(
           className,
           "border",
-          /^1px solid CanvasText\b/i,
+          /^1px solid currentColor\b/i,
         ),
       ).toBe(true);
     },
   );
 
-  it("borders every trip-log cell in a system color", () => {
+  it("borders every plain trip-log cell in a system color", () => {
+    // rulesWithBareSelector, not rulesMatchingClass: the border must live on
+    // the bare `.trip-cell` rule (every cell), not only on the
+    // `[data-visited="true"]` rule (visited cells only) — the latter would
+    // also satisfy a looser class-token match and let an unvisited cell
+    // silently lose its border.
+    const bareTripCellRules = rulesWithBareSelector(
+      forcedColorsRules,
+      "trip-cell",
+    );
     expect(
-      forcedColorsBlockDeclares(
-        "trip-cell",
-        "border",
-        /^1px solid CanvasText\b/i,
-      ),
+      declares(bareTripCellRules, "border", /^1px solid CanvasText\b/i),
     ).toBe(true);
   });
 
@@ -457,12 +476,10 @@ describe("style.css forced-colors coverage", () => {
     expect(declares(visitedRules, "background", /^CanvasText\b/i)).toBe(true);
   });
 
-  // Guards the cascade the visited-cell override above depends on: the
-  // fill must come from a custom property (an inline `background` on the
-  // element would always beat this rule, forced-colors override or not —
-  // see the round-1 regression this exists to catch), and the override
-  // rule must actually carry more specificity than this base rule so it
-  // reliably wins regardless of source order between the two.
+  // Guards the cascade the visited-cell override above depends on: an
+  // inline `background` on the element would beat this rule regardless of
+  // selector specificity, so the base rule must read the fill from a
+  // custom property instead.
   it("reads the trip-log cell fill from a custom property so the forced-colors override can outrank it", () => {
     const baseRule = ALL_CSS_RULES.find(
       (rule) => rule.selectorText.trim() === ".trip-cell",

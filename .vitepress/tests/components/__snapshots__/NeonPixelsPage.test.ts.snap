@@ -9,7 +9,7 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
         <rect data-v-aa442b0f="" x="12" y="11" width="10" height="10" fill="#b8ff2e"></rect>
         <rect data-v-aa442b0f="" x="24" y="0" width="10" height="10" fill="#ff2ea6"></rect>
       </svg><span data-v-aa442b0f="" class="font-display text-[15px] font-black tracking-[-0.01em] text-[#f2f2f4]"> NEON<span data-v-aa442b0f="" class="animate-sweep bg-clip-text text-transparent" style="background-image: linear-gradient(90deg, #b8ff2e, #22e0ff, #ff2ea6, #ffc21f, #b8ff2e); --np-sweep-dur: 7s;">PIXELS</span></span></a>
-    <nav data-v-aa442b0f="" class="text-fg-subtle flex items-center gap-[26px] text-[12.5px]"><a data-v-aa442b0f="" href="#projects" class="nav-link text-fg-subtle">projects</a><a data-v-aa442b0f="" href="#about" class="nav-link text-fg-subtle">about</a><span data-v-aa442b0f="" class="text-lime flex items-center gap-[7px]"><span data-v-aa442b0f="" class="bg-lime animate-pulse-dot h-[7px] w-[7px] rounded-full" style="box-shadow: 0 0 8px #b8ff2e;"></span>4 projects </span></nav>
+    <nav data-v-aa442b0f="" class="text-fg-subtle flex items-center gap-[26px] text-[12.5px]"><a data-v-aa442b0f="" href="#projects" class="nav-link text-fg-subtle">projects</a><a data-v-aa442b0f="" href="#about" class="nav-link text-fg-subtle">about</a><span data-v-aa442b0f="" class="text-lime flex items-center gap-[7px]"><span data-v-aa442b0f="" class="bg-lime animate-pulse-dot status-dot h-[7px] w-[7px] rounded-full" style="box-shadow: 0 0 8px #b8ff2e;"></span>4 projects </span></nav>
   </header>
   <!-- tabindex="-1" keeps <main> out of the Tab order while letting the skip
          link (in AppLayout) move focus here on browsers that don't set the
@@ -84,19 +84,9 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
                  the taller card (vs. the old 3-row strip) is deliberate now that
                  the grid holds all 50 states. -->
           <div data-v-aa442b0f="" class="grid grid-cols-[repeat(10,minmax(0,1fr))] gap-1" data-testid="trip-log-heatmap">
-            <!-- Unlike the other project visuals' decoration, this cell grid
-                   is the actual content behind the card's role="img"/aria-label
-                   above: under forced-colors the four cyan brightness tiers
-                   collapse to one indistinguishable fill, so \`.trip-cell\` in
-                   style.css redraws the visited/unvisited distinction with a
-                   system-color border + fill instead of losing it outright.
-                   The fill goes through the \`--trip-cell-bg\` custom property
-                   (consumed by the \`.trip-cell\` base rule in style.css)
-                   instead of a \`background\` set directly here: an inline
-                   style attribute always beats an external stylesheet rule
-                   regardless of selector specificity, so a plain \`background\`
-                   here would make the forced-colors override underneath it
-                   unreachable, same trap \`.bg-clip-text\` avoids below. -->
+            <!-- Fill via --trip-cell-bg, not a plain \`background\`, so the
+                   forced-colors override in style.css's \`.trip-cell\` rule
+                   can win the cascade — see that rule for why. -->
             <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
             <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
             <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
