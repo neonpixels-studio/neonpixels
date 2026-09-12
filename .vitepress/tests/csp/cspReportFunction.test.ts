@@ -66,6 +66,15 @@ describe("csp-report Netlify function", () => {
     expect(config.path).toBe("/csp-report");
   });
 
+  it("rate-limits per caller, since this endpoint is public and unauthenticated", () => {
+    expect(config.rateLimit).toEqual({
+      action: "rate_limit",
+      aggregateBy: ["ip", "domain"],
+      windowSize: 60,
+      windowLimit: 60,
+    });
+  });
+
   it("accepts a valid report, replies 204 with an empty body, and logs it", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 

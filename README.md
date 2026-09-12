@@ -62,7 +62,14 @@ records them to the function logs **and** persists each accepted,
 same-origin violation to [Netlify Blobs](https://docs.netlify.com/blobs/overview/)
 (store name `csp-reports`, one blob per violation, key
 `<receivedAt ISO timestamp, colons/periods replaced with dashes>-<uuid>.json`)
-so the rollout signal is queryable instead of grep-only. A violation whose
+so the rollout signal is queryable instead of grep-only. Being public and
+unauthenticated, the Function's `config` also sets a Netlify
+[rate limit](https://docs.netlify.com/manage/security/secure-access-to-sites/rate-limiting/)
+(60 requests per 60s, aggregated per IP + domain) so a single caller can't
+write faster than the scheduled pruner below can realistically keep up with;
+it's a per-caller cap, not a global one, so it doesn't stop a distributed
+flood across many IPs — the store-side retention/count cap is what still
+bounds that case. A violation whose
 `document-uri`/`documentURL` doesn't match this site's own origin (Netlify's
 injected `URL`/`DEPLOY_PRIME_URL`, plus the request's own origin — so
 production, branch deploys, previews and `netlify dev` all persist) is still
@@ -92,6 +99,44 @@ enforcing `script-src` (see the `@todo` in `netlify.toml`). The two markers
 matter: a request rejected for an unmodelled content type or an unrecognized
 body shape would otherwise read as "no violations", so a clean run must show
 neither.
+
+Since `/csp-report` is public and unauthenticated, sustained abuse could grow
+the `csp-reports` store without bound. An hourly Netlify scheduled Function
+([`netlify/functions/csp-report-prune.ts`](netlify/functions/csp-report-prune.ts))
+prunes it: blobs older than `CSP_REPORT_RETENTION_DAYS` (default 30, clamped to
+`MAX_RETENTION_DAYS`) are always deleted, and whatever the run saw is then
+trimmed to `CSP_REPORT_MAX_BLOBS` (default 5000, clamped to `MAX_MAX_BLOBS`),
+oldest first — including on a run that couldn't finish listing the whole
+store, since the count it did see is still a valid lower bound on the real
+total. Both are optional site environment variables (set via the Netlify
+dashboard or CLI, not a `.env` file — this repo has none) for tuning the
+window/cap without a code change; neither is required for pruning to run.
+Because the count cap evicts oldest-first with no per-caller identity, a
+single flood larger than `CSP_REPORT_MAX_BLOBS` within one run can still evict
+genuine historical reports along with the flood — a deliberate trade-off
+favoring "the store never grows unbounded" over "every genuine report is
+preserved forever"; the endpoint's own rate limit (above) narrows how much a
+single caller can contribute to that within one hour, but raise the cap
+further if the trade-off stops being acceptable. Netlify scheduled Functions
+have a hard 30s execution limit, so the list and delete passes each run
+against their own wall-clock budget (`LIST_TIME_BUDGET_MS` /
+`PRUNE_TIME_BUDGET_MS`) rather than sharing one deadline — otherwise a slow
+listing pass over a large store could consume the entire run and leave the
+delete pass no time at all. Those budgets are cooperative (checked between
+pages/batches, not during a single slow call), so the handler additionally
+races the whole `prune()` call against a `HARD_TIMEOUT_MS` hard timeout
+(`netlify/functions/lib/withTimeout.ts`, shared with the Blobs-write timeout
+above) that always wins against Netlify's real 30s limit — without it, a
+single hung Blobs call could get the whole run killed with nothing logged.
+No cursor is persisted between runs, but pruning is self-correcting: a key
+that's still stale or still over the cap next hour gets picked up again on
+the next hourly run. The prune strategy is isolated in
+[`netlify/functions/lib/cspReportPruner.ts`](netlify/functions/lib/cspReportPruner.ts)
+behind a minimal `list`/`delete` seam (mirroring `BlobWriter` above), so it is
+unit-tested with a fake client rather than the real Blobs store. A failed or
+incomplete prune run logs a `csp-report-prune-failed` marker or a `complete:
+false` result via `csp-report-pruned` and tries again on the next scheduled
+run; it never blocks or slows the `/csp-report` endpoint itself.
 
 ## Git hooks
 
