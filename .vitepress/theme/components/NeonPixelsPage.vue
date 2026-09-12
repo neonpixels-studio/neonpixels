@@ -153,7 +153,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
   <div class="bg-bg text-fg relative font-mono">
     <!-- drifting grid backdrop -->
     <div
-      class="animate-drift pointer-events-none fixed inset-0 z-0"
+      class="animate-drift ambient-decoration pointer-events-none fixed inset-0 z-0"
       style="
         background-image:
           linear-gradient(#ffffff08 1px, transparent 1px),
@@ -215,7 +215,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
         <a href="#about" class="nav-link text-fg-subtle">about</a>
         <span class="text-lime flex items-center gap-[7px]">
           <span
-            class="bg-lime animate-pulse-dot h-[7px] w-[7px] rounded-full"
+            class="bg-lime animate-pulse-dot status-dot h-[7px] w-[7px] rounded-full"
             :style="{ boxShadow: NAV_DOT_GLOW }"
           />{{ PROJECTS.length }} projects
         </span>
@@ -232,15 +232,15 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
         class="relative z-[2] overflow-hidden px-10 pt-28 pb-24"
       >
         <div
-          class="animate-aurora pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]"
+          class="animate-aurora ambient-decoration pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]"
           :style="{ background: HERO_AURORAS.lime }"
         />
         <div
-          class="animate-aurora-reverse pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px]"
+          class="animate-aurora-reverse ambient-decoration pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px]"
           :style="{ '--np-aurora-dur': '32s', background: HERO_AURORAS.pink }"
         />
         <div
-          class="animate-aurora pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px]"
+          class="animate-aurora ambient-decoration pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px]"
           :style="{ '--np-aurora-dur': '38s', background: HERO_AURORAS.cyan }"
         />
 
@@ -296,7 +296,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               }"
             >
               <span
-                class="h-[6px] w-[6px]"
+                class="pill-dot h-[6px] w-[6px]"
                 :style="{
                   background: project.color,
                   boxShadow: `0 0 7px ${project.color}`,
@@ -493,13 +493,18 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               class="grid grid-cols-[repeat(10,minmax(0,1fr))] gap-1"
               data-testid="trip-log-heatmap"
             >
+              <!-- Fill via --trip-cell-bg, not a plain `background`, so the
+                   forced-colors override in style.css's `.trip-cell` rule
+                   can win the cascade — see that rule for why. -->
               <div
                 v-for="(state, cellIndex) in TRIP_CELLS"
                 :key="cellIndex"
                 data-testid="trip-log-cell"
+                class="trip-cell"
+                :data-visited="state !== 'off'"
                 :style="{
                   aspectRatio: '1',
-                  background: TRIP_CELL_COLORS[state],
+                  '--trip-cell-bg': TRIP_CELL_COLORS[state],
                   boxShadow:
                     state === 'on' ? `0 0 8px ${BRAND_ACCENTS.cyan}` : 'none',
                 }"

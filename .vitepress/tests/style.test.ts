@@ -112,8 +112,11 @@ function extractAnimateClasses(selectorText: string) {
 // last declaration when a property repeats), and matches through to the
 // closing brace so a final declaration missing its trailing `;` still counts.
 // The `(?:^|[;\s])` guard stops `-webkit-animation`/`--animation` custom
-// properties from being read as a plain `animation` declaration.
-function motionValue(body: string, property: string) {
+// properties from being read as a plain `animation` declaration. Named for
+// the property it reads generically, not just motion ones — the
+// forced-colors coverage suite below reuses it for `display`/`border`/
+// `color`/etc.
+function lastDeclarationValue(body: string, property: string) {
   const declarationPattern = new RegExp(
     `(?:^|[;\\s])${property}:\\s*([^;}]+)`,
     "gi",
@@ -125,10 +128,16 @@ function motionValue(body: string, property: string) {
   return matches[matches.length - 1][1].trim();
 }
 
-// Finds the `}` that closes the brace opened at `openBraceIndex`, so the
-// reduced-motion block can be sliced out whole even though it wraps more than
-// one nested rule.
-function findMatchingBraceIndex(source: string, openBraceIndex: number) {
+// Finds the `}` that closes the brace opened at `openBraceIndex`, so a block
+// can be sliced out whole even though it wraps more than one nested rule.
+// `blockName` only flavors the "unbalanced braces" error so a caller scanning
+// a different block (e.g. forced-colors) doesn't get a misleading message
+// naming the reduced-motion block.
+function findMatchingBraceIndex(
+  source: string,
+  openBraceIndex: number,
+  blockName: string,
+) {
   let depth = 0;
   for (let index = openBraceIndex; index < source.length; index += 1) {
     const character = source[index];
@@ -138,7 +147,7 @@ function findMatchingBraceIndex(source: string, openBraceIndex: number) {
     }
   }
   throw new Error(
-    "Unbalanced braces while scanning for the prefers-reduced-motion block",
+    `Unbalanced braces while scanning for the ${blockName} block`,
   );
 }
 
@@ -168,6 +177,7 @@ function splitReducedMotionBlock(source: string) {
     const closeBraceIndex = findMatchingBraceIndex(
       outsideBlock,
       openBraceIndex,
+      "prefers-reduced-motion",
     );
     insideBlocks.unshift(
       outsideBlock.slice(openBraceIndex + 1, closeBraceIndex),
@@ -209,7 +219,7 @@ function collectMotionClassesFromRule(
     return;
   }
   MOTION_PROPERTIES.forEach((property) => {
-    const value = motionValue(rule.body, property);
+    const value = lastDeclarationValue(rule.body, property);
     if (value === null) {
       return;
     }
@@ -297,4 +307,186 @@ describe("style.css reduced-motion coverage", () => {
       expect(disabledClasses.has(key), key).toBe(true);
     },
   );
+});
+
+// The `forced-colors: active` block (Windows High Contrast Mode) restyles the
+// ambient decoration, gradient wordmark text, color-only indicator dots, and
+// the Wanderist trip-log heatmap that would otherwise render uncontrolled,
+// vanish, or paint with no visible fill once the OS takes over the palette.
+// Matched by its @media opener, then sliced out via `findMatchingBraceIndex`
+// so a naive regex can't be fooled by nested rules — happy-dom evaluates
+// neither the media feature nor computed CSS, so this asserts against the
+// stylesheet source, same as the focus-ring guard at the top of this file.
+//
+// Each check below parses the block into rules with `parseCssRules` and reads
+// declarations with `lastDeclarationValue` (both defined above for the
+// reduced-motion suite) rather than regex-matching a hand-written selector
+// list in a fixed order: a `color:` match, for instance, must not also accept
+// `-webkit-text-fill-color:` just because the substring appears inside it,
+// and a future edit that reorders these rules must not fail this suite for a
+// reason that isn't a real regression.
+const FORCED_COLORS_QUERY_OPENER =
+  /@media[^{]*\bforced-colors\s*:\s*active\b[^{]*\{/i;
+
+function extractForcedColorsBlock(source: string): string {
+  const match = source.match(FORCED_COLORS_QUERY_OPENER);
+  if (!match || match.index === undefined) {
+    // Fail loud, same as splitReducedMotionBlock: a query that can no longer
+    // be found must not be silently treated as "nothing to cover".
+    throw new Error(
+      "style.css has no @media (forced-colors: active) block to check coverage against",
+    );
+  }
+  const openBraceIndex = match.index + match[0].length - 1;
+  const closeBraceIndex = findMatchingBraceIndex(
+    source,
+    openBraceIndex,
+    "forced-colors",
+  );
+  return source.slice(openBraceIndex + 1, closeBraceIndex);
+}
+
+// Computed once, at module scope, and caught rather than left to throw during
+// collection — same reasoning as reducedMotionSplitError above: an uncaught
+// throw here would abort this whole file, taking the unrelated suites above
+// down with it instead of failing as one named, attributable test.
+let forcedColorsBlockError: Error | null = null;
+let forcedColorsBlockBody: string | null = null;
+try {
+  forcedColorsBlockBody = extractForcedColorsBlock(STYLE_CSS_WITHOUT_COMMENTS);
+} catch (error) {
+  forcedColorsBlockError =
+    error instanceof Error ? error : new Error(String(error));
+}
+const forcedColorsRules = parseCssRules(forcedColorsBlockBody ?? "");
+// Every rule in the whole file, forced-colors block included — `parseCssRules`
+// treats `@media`'s body as unwrapped content (see its doc comment above), so
+// this is how the "reads the trip-log cell fill from a custom property" check
+// below reaches the plain `.trip-cell` rule that lives outside that block.
+const ALL_CSS_RULES = parseCssRules(STYLE_CSS_WITHOUT_COMMENTS);
+
+// True if some rule matches `className` as a whole class token and declares
+// `property` to a value matching `expectedValue`. The lookahead (not `\b`)
+// is deliberate: `\b` treats `-` as a boundary, so `\.pill\b` would wrongly
+// match inside `.pill-dot`, and `\.animate-aurora\b` would wrongly match
+// inside `.animate-aurora-reverse`. `(?![\w-])` requires the class name not
+// be followed by another word/hyphen character, while still allowing it to
+// be followed by an attribute selector, combinator, comma, or `{` — so
+// `.trip-cell[data-visited="true"]` still counts as `.trip-cell` (a real
+// attribute-qualified instance of that same class), just not `.trip-cell-x`.
+function rulesMatchingClass(rules: CssRule[], className: string) {
+  const classPattern = new RegExp(`\\.${className}(?![\\w-])`);
+  return rules.filter((rule) => classPattern.test(rule.selectorText));
+}
+
+// Stricter than rulesMatchingClass: only rules where `.${className}` is a
+// whole selector in the comma-separated list (so `.trip-cell[data-visited=
+// "true"]` doesn't count as `.trip-cell`). Needed wherever a bare-class rule
+// and an attribute-qualified rule for the same class carry different
+// declarations that must not be conflated.
+function rulesWithBareSelector(rules: CssRule[], className: string) {
+  const bareSelector = `.${className}`;
+  return rules.filter((rule) =>
+    rule.selectorText
+      .split(",")
+      .some((selector) => selector.trim() === bareSelector),
+  );
+}
+
+function declares(rules: CssRule[], property: string, expectedValue: RegExp) {
+  return rules.some((rule) => {
+    const value = lastDeclarationValue(rule.body, property);
+    return value !== null && expectedValue.test(value);
+  });
+}
+
+function forcedColorsBlockDeclares(
+  className: string,
+  property: string,
+  expectedValue: RegExp,
+) {
+  return declares(
+    rulesMatchingClass(forcedColorsRules, className),
+    property,
+    expectedValue,
+  );
+}
+
+describe("style.css forced-colors coverage", () => {
+  it("parses a @media (forced-colors: active) block without error", () => {
+    expect(forcedColorsBlockError).toBeNull();
+  });
+
+  it("defines a @media (forced-colors: active) block", () => {
+    expect(forcedColorsBlockBody).not.toBeNull();
+  });
+
+  it("hides ambient decoration instead of letting it render in whatever color an engine that doesn't null gradient backgrounds leaves it", () => {
+    expect(
+      forcedColorsBlockDeclares("ambient-decoration", "display", /^none\b/i),
+    ).toBe(true);
+  });
+
+  it("gives gradient-clipped wordmark text a real fill that matches its surrounding context instead of a hardcoded color", () => {
+    expect(
+      forcedColorsBlockDeclares("bg-clip-text", "color", /^inherit\b/i),
+    ).toBe(true);
+    expect(
+      forcedColorsBlockDeclares(
+        "bg-clip-text",
+        "-webkit-text-fill-color",
+        /^currentColor\b/i,
+      ),
+    ).toBe(true);
+  });
+
+  it.each(["status-dot", "pill-dot"])(
+    "gives %s a border in currentColor so it can't vanish into Canvas or mismatch its surrounding text",
+    (className) => {
+      expect(
+        forcedColorsBlockDeclares(
+          className,
+          "border",
+          /^1px solid currentColor\b/i,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it("borders every plain trip-log cell in a system color", () => {
+    // rulesWithBareSelector, not rulesMatchingClass: the border must live on
+    // the bare `.trip-cell` rule (every cell), not only on the
+    // `[data-visited="true"]` rule (visited cells only) — the latter would
+    // also satisfy a looser class-token match and let an unvisited cell
+    // silently lose its border.
+    const bareTripCellRules = rulesWithBareSelector(
+      forcedColorsRules,
+      "trip-cell",
+    );
+    expect(
+      declares(bareTripCellRules, "border", /^1px solid CanvasText\b/i),
+    ).toBe(true);
+  });
+
+  it("fills visited trip-log cells so the visited/unvisited distinction survives", () => {
+    const visitedRules = forcedColorsRules.filter((rule) =>
+      /\.trip-cell\[data-visited="true"\]/.test(rule.selectorText),
+    );
+    expect(visitedRules.length).toBeGreaterThan(0);
+    expect(declares(visitedRules, "background", /^CanvasText\b/i)).toBe(true);
+  });
+
+  // Guards the cascade the visited-cell override above depends on: an
+  // inline `background` on the element would beat this rule regardless of
+  // selector specificity, so the base rule must read the fill from a
+  // custom property instead.
+  it("reads the trip-log cell fill from a custom property so the forced-colors override can outrank it", () => {
+    const baseRule = ALL_CSS_RULES.find(
+      (rule) => rule.selectorText.trim() === ".trip-cell",
+    );
+    expect(baseRule).not.toBeUndefined();
+    expect(lastDeclarationValue(baseRule?.body ?? "", "background")).toMatch(
+      /^var\(--trip-cell-bg\)/i,
+    );
+  });
 });

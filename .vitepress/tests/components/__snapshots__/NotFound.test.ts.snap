@@ -6,7 +6,7 @@ exports[`NotFound > renders correctly 1`] = `
        move focus here, keeping bypass-blocks satisfied on 404 as well as /. -->
 <main id="main-content" tabindex="-1" class="bg-bg text-fg relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-16 font-mono sm:px-8">
   <!-- ambient glow -->
-  <div class="animate-aurora pointer-events-none absolute top-[-200px] right-[-160px] h-[680px] w-[680px] blur-[24px]" style="background: radial-gradient(circle, rgba(34, 224, 255, 0.18), rgba(255, 46, 166, 0.09) 45%, transparent 70%);"></div>
+  <div class="animate-aurora ambient-decoration pointer-events-none absolute top-[-200px] right-[-160px] h-[680px] w-[680px] blur-[24px]" style="background: radial-gradient(circle, rgba(34, 224, 255, 0.18), rgba(255, 46, 166, 0.09) 45%, transparent 70%);"></div>
   <div class="relative w-full max-w-[680px] text-center">
     <!-- crumb -->
     <div class="text-lime mb-6 flex items-center justify-center gap-3 text-xs tracking-[0.16em] uppercase"><span class="bg-lime inline-block h-px w-6"></span> error 404 — page not found <span class="bg-lime inline-block h-px w-6"></span></div><!-- big neon 404 -->

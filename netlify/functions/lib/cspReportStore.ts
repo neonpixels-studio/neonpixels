@@ -31,10 +31,16 @@ export type CspReportStore = {
 // Netlify's production Blobs backend accepts a raw ISO timestamp, but
 // `netlify dev` materializes blobs on the local filesystem and most shell/CLI
 // tooling doesn't expect `:` in a path segment, so replace the ISO
-// separators (`:` and `.`) that aren't already dashes.
+// separators (`:` and `.`) that aren't already dashes. Exported so
+// cspReportPruner.ts can compute a same-format cutoff and compare it
+// lexicographically against stored keys, without parsing each key back into
+// a Date.
+export function sanitizeTimestamp(isoTimestamp: string): string {
+  return isoTimestamp.replace(/[:.]/g, "-");
+}
+
 function violationKey(receivedAt: string): string {
-  const sanitizedTimestamp = receivedAt.replace(/[:.]/g, "-");
-  return `${sanitizedTimestamp}-${randomUUID()}.json`;
+  return `${sanitizeTimestamp(receivedAt)}-${randomUUID()}.json`;
 }
 
 function writeViolation(blobWriter: BlobWriter, receivedAt: string) {
