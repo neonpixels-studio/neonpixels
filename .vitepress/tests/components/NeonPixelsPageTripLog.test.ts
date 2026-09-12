@@ -12,12 +12,16 @@ const HEATMAP_SELECTOR = '[data-testid="trip-log-heatmap"]';
 const CELL_SELECTOR = '[data-testid="trip-log-cell"]';
 
 // Every lit brightness (on / mid / low) is the cyan accent, optionally with an
-// alpha suffix; the empty tint carries no cyan. Inspect the background alone
-// (not the whole style string, which also holds the box-shadow) so a future
-// cyan border or glow on an empty cell can't be miscounted as lit.
+// alpha suffix; the empty tint carries no cyan. Inspect the `--trip-cell-bg`
+// custom property alone (not the whole style string, which also holds the
+// box-shadow) so a future cyan border or glow on an empty cell can't be
+// miscounted as lit.
+function tripCellBackground(cell: { element: Element }) {
+  return (cell.element as HTMLElement).style.getPropertyValue("--trip-cell-bg");
+}
+
 function isLitCell(cell: { element: Element }) {
-  const background = (cell.element as HTMLElement).style.background;
-  return background.startsWith(BRAND_ACCENTS.cyan);
+  return tripCellBackground(cell).startsWith(BRAND_ACCENTS.cyan);
 }
 
 describe("NeonPixelsPage trip-log heatmap", () => {
@@ -67,5 +71,29 @@ describe("NeonPixelsPage trip-log heatmap", () => {
     expect(wrapper.get('[role="img"]').text()).toContain(
       `${STATES_VISITED} states`,
     );
+  });
+
+  // An inline `background` attribute always wins over any external
+  // stylesheet rule regardless of selector specificity, which would make
+  // style.css's forced-colors override on `.trip-cell` unreachable. Every
+  // cell must route its fill through the `--trip-cell-bg` custom property
+  // instead, never a plain inline `background`.
+  it("sets the cell fill through --trip-cell-bg, never an inline background", () => {
+    const cells = wrapper.get(HEATMAP_SELECTOR).findAll(CELL_SELECTOR);
+    cells.forEach((cell) => {
+      const element = cell.element as HTMLElement;
+      expect(element.style.background).toBe("");
+      expect(tripCellBackground(cell)).not.toBe("");
+    });
+  });
+
+  // The forced-colors fill (style.css's `.trip-cell[data-visited="true"]`)
+  // keys on this attribute, not on --trip-cell-bg, so it needs its own
+  // guard against drifting from the visited count it's meant to mirror.
+  it("marks exactly the visited count of cells data-visited", () => {
+    const visitedCells = wrapper
+      .get(HEATMAP_SELECTOR)
+      .findAll('[data-visited="true"]');
+    expect(visitedCells).toHaveLength(STATES_VISITED);
   });
 });
