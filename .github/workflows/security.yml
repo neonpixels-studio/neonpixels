@@ -114,7 +114,7 @@ jobs:
       # conclusion (not just job-level `failure()`), so an unrelated failure
       # earlier in the job (checkout, npm ci, a registry blip) doesn't open a
       # misleading "audit failed" issue that then blocks real ones via the
-      # duplicate guard below.
+      # duplicate guard in notify-audit-failure.cjs.
       - name: Notify on scheduled audit failure
         if: |
           failure() && github.event_name == 'schedule' &&
@@ -122,5 +122,5 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const notifyAuditFailure = require("./.github/scripts/notify-audit-failure.js");
+            const notifyAuditFailure = require("./.github/scripts/notify-audit-failure.cjs");
             await notifyAuditFailure({ github, context, core });

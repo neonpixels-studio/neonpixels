@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 // TOML the same way), so this file line-scopes the `audit:` job the way that
 // file line-scopes [build]/[[headers]] tables, rather than pulling in a
 // parser for one file. The duplicate-guard behavior this workflow step
-// depends on lives in .github/scripts/notify-audit-failure.js and is unit-
+// depends on lives in .github/scripts/notify-audit-failure.cjs and is unit-
 // tested against a stubbed github client in notifyAuditFailure.test.ts; this
 // file only covers the YAML wiring (permissions, triggers, which script runs).
 const WORKFLOW_PATH = resolve(process.cwd(), ".github/workflows/security.yml");
@@ -57,20 +57,34 @@ const STEP_NAME_LINE = /^\s*-\s*name:\s*(.+?)\s*$/m;
 // Slices to a single named step within a job block, the same bounded-window
 // approach as readBuildTable()/readGlobalHeadersTable() in netlify.test.ts:
 // stop at the next `- name:` line so a later step's fields can't leak into
-// this one's assertions.
-function readStep(jobBlock: string, name: string) {
+// this one's assertions. Returns undefined (rather than throwing) when the
+// step isn't found, so a test that specifically checks for the step's
+// existence gets a real assertion failure instead of every test in the file
+// being aborted by a throw during setup.
+function findStep(jobBlock: string, name: string) {
   const lines = jobBlock.split("\n");
   const start = lines.findIndex((line) => {
     const match = line.match(STEP_NAME_LINE);
     return match?.[1] === name;
   });
   if (start === -1) {
-    throw new Error(`No step named "${name}" found`);
+    return undefined;
   }
   const rest = lines.slice(start + 1);
   const nextStep = rest.findIndex((line) => STEP_NAME_LINE.test(line));
   const end = nextStep === -1 ? rest.length : nextStep;
   return rest.slice(0, end).join("\n");
+}
+
+// Throwing variant for callers that need the step to exist in order to make
+// any further assertion (e.g. beforeAll below, where every test in the
+// describe block already depends on the step being present).
+function readStep(jobBlock: string, name: string) {
+  const step = findStep(jobBlock, name);
+  if (step === undefined) {
+    throw new Error(`No step named "${name}" found`);
+  }
+  return step;
 }
 
 describe("audit job permissions", () => {
@@ -103,11 +117,12 @@ describe("notify on scheduled audit failure", () => {
   const NOTIFY_STEP_NAME = "Notify on scheduled audit failure";
   const GATE_STEP_NAME = "Audit gate (fail on high or critical advisories)";
 
-  // Resolved lazily in beforeAll rather than at describe-body/module scope:
-  // if the step were ever renamed or removed, throwing during collection
-  // would abort the whole file, taking down "adds a notify step to the audit
-  // job" below along with it — the one test written specifically to surface
-  // that condition.
+  // Resolved lazily in beforeAll (via the throwing readStep) rather than at
+  // describe-body/module scope, so a rename/removal fails inside a test
+  // instead of aborting collection for the whole file. The existence check
+  // itself below uses the non-throwing findStep so it still reports a real
+  // assertion failure rather than being taken out by the same beforeAll it's
+  // meant to diagnose.
   let notifyStep = "";
   let gateStep = "";
 
@@ -117,7 +132,7 @@ describe("notify on scheduled audit failure", () => {
   });
 
   it("adds a notify step to the audit job", () => {
-    expect(() => readStep(AUDIT_JOB, NOTIFY_STEP_NAME)).not.toThrow();
+    expect(findStep(AUDIT_JOB, NOTIFY_STEP_NAME)).not.toBeUndefined();
   });
 
   it("gives the audit gate step an id the notify step can reference", () => {
@@ -156,7 +171,7 @@ describe("notify on scheduled audit failure", () => {
   // behavior-tested there; this only confirms the step wires up to it.
   it("delegates to the extracted, unit-tested notify script", () => {
     expect(notifyStep).toMatch(
-      /require\(["']\.\/\.github\/scripts\/notify-audit-failure\.js["']\)/,
+      /require\(["']\.\/\.github\/scripts\/notify-audit-failure\.cjs["']\)/,
     );
   });
 });
