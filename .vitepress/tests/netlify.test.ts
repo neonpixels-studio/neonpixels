@@ -65,33 +65,48 @@ function readBuildTableValue(key: string) {
   return match[1];
 }
 
-// Strips a trailing TOML comment so a comment-only mention of a key ("#
-// NODE_VERSION = ...") is never mistaken for a live assignment. Quote-aware:
-// a `#` inside a quoted value (e.g. a fragment URL, or an issue reference
-// like "build#42") is legitimate TOML and must not truncate a real
-// assignment that follows it later on the same line. Doesn't handle a
-// backslash-escaped quote inside a double-quoted string, or a triple-quoted
-// multi-line string (both start/end tracking and the per-line assignment
-// count would need to span lines) — no value any of these guards read uses
-// either form today, so treat both as a known gap rather than a
-// silently-covered case.
-function stripComment(line: string) {
-  let openQuote: string | undefined;
-  for (let index = 0; index < line.length; index += 1) {
+// Blanks the interior of every *value* quoted string on a line — a quoted
+// key is left untouched, recognized by its closing quote being immediately
+// followed by `=`. Without this, key-shaped text or a stray `#` inside a
+// value (e.g. a header value mentioning another header's name, or a URL
+// fragment) could be mistaken for a real assignment or a comment marker
+// anywhere in the value, not just flush against its opening quote. Doesn't
+// handle a backslash-escaped quote inside a double-quoted string, or a
+// triple-quoted multi-line string (both would need cross-line state) — no
+// value any of these guards read uses either form today, so treat both as a
+// known gap rather than a silently-covered case.
+function blankQuotedValues(line: string) {
+  let sanitized = "";
+  let index = 0;
+  while (index < line.length) {
     const character = line[index];
-    if (openQuote) {
-      openQuote = character === openQuote ? undefined : openQuote;
+    const isQuoteChar = character === '"' || character === "'";
+    if (!isQuoteChar) {
+      sanitized += character;
+      index += 1;
       continue;
     }
-    if (character === '"' || character === "'") {
-      openQuote = character;
-      continue;
+    const closingIndex = line.indexOf(character, index + 1);
+    if (closingIndex === -1) {
+      sanitized += line.slice(index);
+      break;
     }
-    if (character === "#") {
-      return line.slice(0, index);
-    }
+    const isQuotedKey = /^\s*=/.test(line.slice(closingIndex + 1));
+    sanitized += isQuotedKey
+      ? line.slice(index, closingIndex + 1)
+      : "_".repeat(closingIndex + 1 - index);
+    index = closingIndex + 1;
   }
-  return line;
+  return sanitized;
+}
+
+// Strips a trailing TOML comment so a comment-only mention of a key ("#
+// NODE_VERSION = ...") is never mistaken for a live assignment. Assumes
+// quoted values have already been blanked (see blankQuotedValues), so any
+// `#` remaining is a real comment marker rather than one embedded in a
+// value.
+function stripComment(line: string) {
+  return line.split("#", 1)[0];
 }
 
 type KeyAssignmentOptions = {
@@ -112,9 +127,7 @@ type KeyAssignmentOptions = {
 // walk every match on a line instead of stopping at the first. The quote
 // around the key is captured and backreferenced (rather than matched as an
 // independent `['"]?` on each side) so an unmatched opening quote can't
-// stand in for the required delimiter — without the backreference, a value
-// like `X-Custom = "Cache-Control=none"` would let the value's own opening
-// quote satisfy the pattern and falsely count as a key assignment.
+// stand in for the required delimiter.
 function buildKeyAssignmentPattern(key: string, caseInsensitive: boolean) {
   const escapedKey = escapeForRegExp(key);
   return new RegExp(
@@ -123,21 +136,16 @@ function buildKeyAssignmentPattern(key: string, caseInsensitive: boolean) {
   );
 }
 
-// True when `key` is assigned on this line, in any of the forms above, and
-// the assignment survives comment stripping — so a live pin on a line whose
-// earlier value contains `#` still counts, while a comment-only mention does
-// not.
-function lineHasKeyAssignment(
-  line: string,
-  key: string,
-  { caseInsensitive = false }: KeyAssignmentOptions = {},
-) {
-  const pattern = buildKeyAssignmentPattern(key, caseInsensitive);
-  return pattern.test(stripComment(line));
+// Runs the two sanitizing passes every key-assignment guard needs before
+// matching: blank out quoted values (so key-shaped text or a `#` inside one
+// can't be mistaken for the real thing), then strip whatever comment
+// remains.
+function sanitizeForKeyMatching(line: string) {
+  return stripComment(blankQuotedValues(line));
 }
 
 // Counts live assignments of `key` across every line of `source`, in any
-// TOML form `lineHasKeyAssignment` recognizes, so a `command`/`publish`
+// TOML form `buildKeyAssignmentPattern` recognizes, so a `command`/`publish`
 // override hidden in another table — including inside an inline table — can
 // be compared against the count inside [build]. Counts matches, not
 // matching lines, so two assignments of the same key packed onto one line
@@ -151,9 +159,25 @@ function countKeyDefinitions(
   return source
     .split("\n")
     .reduce(
-      (total, line) => total + [...stripComment(line).matchAll(pattern)].length,
+      (total, line) =>
+        total + [...sanitizeForKeyMatching(line).matchAll(pattern)].length,
       0,
     );
+}
+
+// True when `key` is assigned anywhere on this line, in any of the forms
+// `countKeyDefinitions` recognizes. Delegates rather than re-running
+// `buildKeyAssignmentPattern` + `.test()` itself: a `g`-flagged pattern is
+// stateful via `lastIndex` across repeated `.test()` calls on the *same*
+// RegExp instance, so counting matches and taking `> 0` is the safe way to
+// reuse the same building block without that hazard resurfacing if this
+// function is ever changed to reuse a pattern across calls.
+function lineHasKeyAssignment(
+  line: string,
+  key: string,
+  options: KeyAssignmentOptions = {},
+) {
+  return countKeyDefinitions(line, key, options) > 0;
 }
 
 // The Node version lives in .nvmrc only (read by CI and Netlify alike). This
@@ -417,6 +441,18 @@ describe("shared key-assignment guard helper", () => {
     ).toBe(1);
   });
 
+  // Exercises escapeForRegExp directly: without it, the `.` in this dotted
+  // key would act as a regex wildcard and match the unrelated key below
+  // (`buildXenvironment`, no literal dot) as if it were the real thing.
+  it("treats a regex metacharacter in the key literally", () => {
+    expect(
+      countKeyDefinitions('buildXenvironment = "a"', "build.environment"),
+    ).toBe(0);
+    expect(
+      countKeyDefinitions('build.environment = "a"', "build.environment"),
+    ).toBe(1);
+  });
+
   it("counts two assignments of the same key packed onto one line", () => {
     const config =
       'environment = { preview = { command = "a" }, branch = { command = "b" } }';
@@ -435,13 +471,32 @@ describe("shared key-assignment guard helper", () => {
     ).toBe(1);
   });
 
-  // Without a backreference tying the closing quote to the same character as
-  // the opening one, an unmatched `"` at the start of a value could satisfy
-  // the pattern's optional-quote class and be mistaken for a key delimiter.
-  it("ignores a key name that only appears inside a quoted value", () => {
+  // blankQuotedValues blanks the whole value, not just the character flush
+  // against the opening quote, so key-shaped text anywhere inside a value —
+  // not only right at its start — can't be mistaken for a real assignment.
+  it("ignores a key-shaped substring flush against a value's opening quote", () => {
     expect(
       countKeyDefinitions('X-Custom = "command = sneaky"', "command"),
     ).toBe(0);
+  });
+
+  it("ignores a key-shaped substring in the middle of a value", () => {
+    expect(
+      countKeyDefinitions('X-Custom = "foo, command = bar"', "command"),
+    ).toBe(0);
+    expect(
+      countKeyDefinitions(
+        'X-Note = "see Cache-Control = none"',
+        "Cache-Control",
+        { caseInsensitive: true },
+      ),
+    ).toBe(0);
+  });
+
+  // A quoted *key* must still be recognized as live even though its value is
+  // also quoted — blankQuotedValues only blanks the value half.
+  it("still matches a quoted key whose value is also a quoted string", () => {
+    expect(countKeyDefinitions('"command" = "a, b, c"', "command")).toBe(1);
   });
 });
 
