@@ -58,11 +58,38 @@ function readBuildTableValue(key: string) {
 }
 
 // Strips a trailing TOML comment so a comment-only mention of a key ("#
-// NODE_VERSION = ...") is never mistaken for a live assignment. None of the
-// keys these guards check ever legitimately appear inside a quoted value, so
-// a naive split on the first `#` is safe here.
+// NODE_VERSION = ...") is never mistaken for a live assignment. Quote-aware:
+// a `#` inside a quoted value (e.g. a fragment URL, or an issue reference
+// like "build#42") is legitimate TOML and must not truncate a real
+// assignment that follows it later on the same line. Doesn't handle a
+// backslash-escaped quote inside a double-quoted string — no value any of
+// these guards read contains one today — so treat that as a known gap
+// rather than a silently-covered case.
 function stripComment(line: string) {
-  return line.split("#", 1)[0];
+  let openQuote: string | undefined;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (openQuote) {
+      openQuote = character === openQuote ? undefined : openQuote;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      openQuote = character;
+      continue;
+    }
+    if (character === "#") {
+      return line.slice(0, index);
+    }
+  }
+  return line;
+}
+
+// Regex metacharacters have no meaning in a TOML key, so escape any that
+// appear before interpolating into a pattern — otherwise a key containing
+// one (e.g. a future dotted key passed in whole) would silently change what
+// the pattern matches instead of being matched literally.
+function escapeForRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 type KeyAssignmentOptions = {
@@ -79,11 +106,13 @@ type KeyAssignmentOptions = {
 // (`{ key = ..., other = ... }`). Deliberately not line-anchored — an
 // inline-table entry is a single valid TOML construct that can start
 // mid-line, and a `^`-anchored pattern would let it slip past every guard
-// built on top of it.
+// built on top of it. Always global, so a caller counting occurrences can
+// walk every match on a line instead of stopping at the first.
 function buildKeyAssignmentPattern(key: string, caseInsensitive: boolean) {
+  const escapedKey = escapeForRegExp(key);
   return new RegExp(
-    `(?:^|[\\s{,.])['"]?${key}['"]?\\s*=`,
-    caseInsensitive ? "i" : "",
+    `(?:^|[\\s{,.])['"]?${escapedKey}['"]?\\s*=`,
+    `g${caseInsensitive ? "i" : ""}`,
   );
 }
 
@@ -97,21 +126,27 @@ function lineHasKeyAssignment(
   { caseInsensitive = false }: KeyAssignmentOptions = {},
 ) {
   const pattern = buildKeyAssignmentPattern(key, caseInsensitive);
-  return pattern.test(line) && pattern.test(stripComment(line));
+  return pattern.test(stripComment(line));
 }
 
 // Counts live assignments of `key` across every line of `source`, in any
 // TOML form `lineHasKeyAssignment` recognizes, so a `command`/`publish`
 // override hidden in another table — including inside an inline table — can
-// be compared against the count inside [build].
+// be compared against the count inside [build]. Counts matches, not
+// matching lines, so two assignments of the same key packed onto one line
+// (e.g. two inline tables) aren't undercounted as one.
 function countKeyDefinitions(
   source: string,
   key: string,
-  options: KeyAssignmentOptions = {},
+  { caseInsensitive = false }: KeyAssignmentOptions = {},
 ) {
+  const pattern = buildKeyAssignmentPattern(key, caseInsensitive);
   return source
     .split("\n")
-    .filter((line) => lineHasKeyAssignment(line, key, options)).length;
+    .reduce(
+      (total, line) => total + [...stripComment(line).matchAll(pattern)].length,
+      0,
+    );
 }
 
 // The Node version lives in .nvmrc only (read by CI and Netlify alike). This
@@ -346,10 +381,19 @@ describe("shared key-assignment guard helper", () => {
     expect(countKeyDefinitions('# command = "a"', "command")).toBe(0);
   });
 
-  it("ignores a trailing comment mentioning an unrelated key", () => {
+  it("ignores a key assignment that only appears in a trailing comment", () => {
     expect(
-      countKeyDefinitions('publish = "dist" # not command', "command"),
+      countKeyDefinitions('publish = "dist" # command = "sneaky"', "command"),
     ).toBe(0);
+  });
+
+  it("still counts a live assignment whose earlier value contains a #", () => {
+    expect(
+      countKeyDefinitions(
+        'values = { X-Trace = "build#42", command = "a" }',
+        "command",
+      ),
+    ).toBe(1);
   });
 
   it("matches a single-quoted key", () => {
@@ -358,6 +402,18 @@ describe("shared key-assignment guard helper", () => {
 
   it("matches a double-quoted key", () => {
     expect(countKeyDefinitions('"command" = "a"', "command")).toBe(1);
+  });
+
+  it("matches a dotted key", () => {
+    expect(
+      countKeyDefinitions('build.environment.command = "a"', "command"),
+    ).toBe(1);
+  });
+
+  it("counts two assignments of the same key packed onto one line", () => {
+    const config =
+      'environment = { preview = { command = "a" }, branch = { command = "b" } }';
+    expect(countKeyDefinitions(config, "command")).toBe(2);
   });
 
   it("is case-sensitive by default", () => {
