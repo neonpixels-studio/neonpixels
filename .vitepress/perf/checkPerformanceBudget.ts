@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // CI runs lint, typecheck, tests and build, but nothing budgets real page
@@ -23,6 +23,12 @@ import { fileURLToPath } from "node:url";
 // script and .github/workflows/ci.yml), against the real .vitepress/dist —
 // not part of the vitest suite, which exercises the pure logic below against
 // fixtures instead of paying for a full VitePress build.
+//
+// Executed with plain `node` against this .ts file directly (no ts-node/tsx):
+// Node's native type-stripping needs >=22.6 behind a flag or >=23.6
+// unflagged. CI reads its Node version from .nvmrc (currently 24.16.0), well
+// past that floor — if .nvmrc is ever pinned below 23.6, add
+// `--experimental-strip-types` to the perf:budget script in package.json.
 
 // Resolved against the working directory rather than this module's own
 // location: every npm script in this project (build, test, lint) assumes
@@ -31,7 +37,6 @@ import { fileURLToPath } from "node:url";
 // .github/workflows/ci.yml.
 const DEFAULT_OUT_DIR = resolve(process.cwd(), ".vitepress/dist");
 const INDEX_HTML_FILE = "index.html";
-const IMAGES_DIR_NAME = "images";
 
 // Current build sits at ~156 KB (28.9 KB CSS + ~114.6 KB JS + 13.2 KB font);
 // budgeted with room to grow deliberately, not enough to silently absorb a
@@ -45,6 +50,20 @@ const MAX_IMAGE_BYTES = 300 * 1024;
 
 const PRELOAD_REL_SUBSTRING = "preload";
 const MODULE_SCRIPT_TYPE = "module";
+// Matches an absolute URL (any scheme, e.g. "https://") or a protocol-relative
+// one ("//"). Neither points at a file this build emits, so both are excluded
+// from the critical-asset scrape rather than mis-joined onto outDir.
+const NON_LOCAL_HREF_PATTERN = /^([a-z][a-z0-9+.-]*:)?\/\//i;
+const IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".avif",
+  ".svg",
+  ".ico",
+]);
 
 const MISSING_PATH_CODES = new Set(["ENOENT", "ENOTDIR"]);
 
@@ -67,16 +86,22 @@ function extractAttribute(tag: string, attributeName: string) {
   return match?.[1];
 }
 
-function stripQueryString(href: string) {
-  const queryIndex = href.indexOf("?");
-  if (queryIndex === -1) {
+// Strips a trailing query string and/or fragment so two tags pointing at the
+// same file with different cache-busting params (or a bare "#fragment")
+// dedupe to one on-disk asset instead of two, one of which would fail to stat.
+function stripQueryAndFragment(href: string) {
+  const splitIndex = href.search(/[?#]/);
+  if (splitIndex === -1) {
     return href;
   }
-  return href.slice(0, queryIndex);
+  return href.slice(0, splitIndex);
 }
 
-function isDefinedHref(href: string | undefined): href is string {
-  return Boolean(href);
+function isLocalHref(href: string | undefined): href is string {
+  if (!href) {
+    return false;
+  }
+  return !NON_LOCAL_HREF_PATTERN.test(href);
 }
 
 // Every <link> whose rel includes "preload" — plain preload (the font link),
@@ -84,7 +109,10 @@ function isDefinedHref(href: string | undefined): href is string {
 // (chunk hints) all match that substring — plus the entry
 // `<script type="module">`. Together these are exactly the requests a
 // browser issues before first paint/interactivity; everything else in
-// <head> (icons, canonical, manifest) is deliberately excluded.
+// <head> (icons, canonical, manifest) is deliberately excluded. A
+// cross-origin or protocol-relative href (e.g. a third-party font CDN) is
+// filtered out here rather than mis-resolved onto outDir — this budget can
+// only measure bytes this build actually emits.
 function extractCriticalAssetHrefs(html: string) {
   const preloadLinkHrefs = extractTags(html, "link")
     .filter((tag) =>
@@ -97,9 +125,33 @@ function extractCriticalAssetHrefs(html: string) {
     .map((tag) => extractAttribute(tag, "src"));
 
   const hrefs = [...preloadLinkHrefs, ...moduleScriptSrcs]
-    .filter(isDefinedHref)
-    .map(stripQueryString);
+    .filter(isLocalHref)
+    .map(stripQueryAndFragment);
   return Array.from(new Set(hrefs));
+}
+
+const STYLESHEET_EXTENSION = ".css";
+const SCRIPT_EXTENSION = ".js";
+
+// Guards against the scrape silently finding nothing: if a future VitePress
+// version changes how it marks the stylesheet/entry-script tags (a different
+// `rel`, single-quoted attributes, etc.), `extractCriticalAssetHrefs` would
+// return an empty list and this budget would score 0 bytes as a pass instead
+// of failing loud. At least one stylesheet and one script is exactly what
+// every VitePress build emits today (see the real dist/index.html this
+// budget was tuned against), so their absence means the markup shape moved,
+// not that the page got lighter.
+function assertFoundExpectedAssetTypes(hrefs: string[]) {
+  const hasStylesheet = hrefs.some((href) =>
+    href.endsWith(STYLESHEET_EXTENSION),
+  );
+  const hasEntryScript = hrefs.some((href) => href.endsWith(SCRIPT_EXTENSION));
+  if (hasStylesheet && hasEntryScript) {
+    return;
+  }
+  throw new Error(
+    `Performance budget: parsed ${INDEX_HTML_FILE} but found no critical ${STYLESHEET_EXTENSION}/${SCRIPT_EXTENSION} asset (found: ${hrefs.join(", ") || "nothing"}); the preload/modulepreload markup shape likely changed`,
+  );
 }
 
 function hrefToDistPath(outDir: string, href: string) {
@@ -154,6 +206,7 @@ export function evaluateCriticalAssetBudget(
 ): CriticalAssetBudgetResult {
   const html = readIndexHtml(outDir);
   const hrefs = extractCriticalAssetHrefs(html);
+  assertFoundExpectedAssetTypes(hrefs);
   const files = hrefs.map((href) => ({
     href,
     bytes: statSizeOrThrow(hrefToDistPath(outDir, href), href),
@@ -168,17 +221,14 @@ export function evaluateCriticalAssetBudget(
 }
 
 function listFilesRecursively(directoryPath: string): string[] {
-  const entries = readdirSync(directoryPath, { withFileTypes: true });
-  const filePaths: string[] = [];
-  for (const entry of entries) {
-    const entryPath = join(directoryPath, entry.name);
-    if (entry.isDirectory()) {
-      filePaths.push(...listFilesRecursively(entryPath));
-      continue;
-    }
-    filePaths.push(entryPath);
-  }
-  return filePaths;
+  return readdirSync(directoryPath, { withFileTypes: true }).flatMap(
+    (entry) => {
+      const entryPath = join(directoryPath, entry.name);
+      return entry.isDirectory()
+        ? listFilesRecursively(entryPath)
+        : [entryPath];
+    },
+  );
 }
 
 export interface ImageBudgetViolation {
@@ -192,23 +242,32 @@ export interface ImageBudgetResult {
   withinBudget: boolean;
 }
 
+// Walks the whole build output rather than just outDir/images: a page-body
+// image referenced from markdown or a component goes through Vite's asset
+// pipeline and lands content-hashed under outDir/assets, never under
+// outDir/images (which holds only the static files copied straight from
+// public/images — favicons, manifest icons, the OG card). Filtering by
+// extension instead of location is what actually catches an unoptimized
+// image dropped in anywhere in the built site.
 export function evaluateImageBudget(
   outDir: string,
   budgetBytes: number = MAX_IMAGE_BYTES,
 ): ImageBudgetResult {
-  const imagesDir = join(outDir, IMAGES_DIR_NAME);
-  let imageFiles: string[];
+  let allFiles: string[];
   try {
-    imageFiles = listFilesRecursively(imagesDir);
+    allFiles = listFilesRecursively(outDir);
   } catch (error) {
     if (isMissingPathError(error)) {
       throw new Error(
-        `Performance budget: no ${IMAGES_DIR_NAME}/ dir at ${imagesDir}; run \`npm run build\` first`,
+        `Performance budget: no build output at ${outDir}; run \`npm run build\` first`,
         { cause: error },
       );
     }
     throw error;
   }
+  const imageFiles = allFiles.filter((path) =>
+    IMAGE_EXTENSIONS.has(extname(path).toLowerCase()),
+  );
   const violations = imageFiles
     .map((path) => ({ path, bytes: statSync(path).size }))
     .filter((file) => file.bytes > budgetBytes);
@@ -262,18 +321,35 @@ function printImageReport(result: ImageBudgetResult) {
   }
 }
 
-function main() {
-  const result = evaluatePerformanceBudget(DEFAULT_OUT_DIR);
+const EXIT_SUCCESS = 0;
+const EXIT_FAILURE = 1;
+
+// Exported separately from main() so a test can assert on the exit code a
+// pass/fail build produces without spawning a real `node` subprocess.
+export function runPerformanceBudgetCli(outDir: string): number {
+  const result = evaluatePerformanceBudget(outDir);
   printCriticalAssetReport(result.criticalAssets);
   printImageReport(result.images);
   if (!result.passed) {
     console.error(
       "[perf-budget] performance budget exceeded — see failures above",
     );
-    process.exitCode = 1;
-    return;
+    return EXIT_FAILURE;
   }
   console.log("[perf-budget] within budget");
+  return EXIT_SUCCESS;
+}
+
+function main() {
+  try {
+    process.exitCode = runPerformanceBudgetCli(DEFAULT_OUT_DIR);
+  } catch (error) {
+    console.error(
+      "[perf-budget]",
+      error instanceof Error ? error.message : error,
+    );
+    process.exitCode = EXIT_FAILURE;
+  }
 }
 
 // Only run when invoked directly (`npm run perf:budget` / `node

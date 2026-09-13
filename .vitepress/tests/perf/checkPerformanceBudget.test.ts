@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,7 @@ import {
   evaluateCriticalAssetBudget,
   evaluateImageBudget,
   evaluatePerformanceBudget,
+  runPerformanceBudgetCli,
 } from "../../perf/checkPerformanceBudget";
 
 let workDir = "";
@@ -49,6 +50,13 @@ function buildHtml({
   </head><body></body></html>`;
 }
 
+function writeFullCriticalAssets(byteLength = 100) {
+  writeAsset("../style.css", byteLength);
+  writeAsset("theme.js", byteLength);
+  writeAsset("../font.woff2", byteLength);
+  writeAsset("../app.js", byteLength);
+}
+
 beforeEach(() => {
   workDir = mkdtempSync(join(tmpdir(), "neonpixels-perf-budget-"));
   outDir = join(workDir, "dist");
@@ -84,10 +92,7 @@ describe("evaluateCriticalAssetBudget", () => {
   });
 
   it("passes when the critical asset total is within budget", () => {
-    writeAsset("../style.css", 1000);
-    writeAsset("theme.js", 1000);
-    writeAsset("../font.woff2", 1000);
-    writeAsset("../app.js", 1000);
+    writeFullCriticalAssets(1000);
     writeIndexHtml(buildHtml());
 
     const result = evaluateCriticalAssetBudget(outDir, 5000);
@@ -96,10 +101,7 @@ describe("evaluateCriticalAssetBudget", () => {
   });
 
   it("fails when the critical asset total exceeds budget", () => {
-    writeAsset("../style.css", 3000);
-    writeAsset("theme.js", 3000);
-    writeAsset("../font.woff2", 3000);
-    writeAsset("../app.js", 3000);
+    writeFullCriticalAssets(3000);
     writeIndexHtml(buildHtml());
 
     const result = evaluateCriticalAssetBudget(outDir, 5000);
@@ -109,10 +111,7 @@ describe("evaluateCriticalAssetBudget", () => {
   });
 
   it("dedupes an href referenced by more than one tag", () => {
-    writeAsset("../style.css", 100);
-    writeAsset("theme.js", 100);
-    writeAsset("../font.woff2", 100);
-    writeAsset("../app.js", 100);
+    writeFullCriticalAssets(100);
     writeIndexHtml(
       buildHtml({
         extraHead: `<link rel="modulepreload" href="/assets/app.js">`,
@@ -125,6 +124,40 @@ describe("evaluateCriticalAssetBudget", () => {
       (file) => file.href === "/assets/app.js",
     );
     expect(appJsEntries).toHaveLength(1);
+  });
+
+  it("dedupes the same file referenced with two different cache-busting query strings", () => {
+    writeFullCriticalAssets(100);
+    writeIndexHtml(
+      buildHtml({
+        extraHead: `<link rel="modulepreload" href="/assets/app.js?v=2">`,
+      }),
+    );
+
+    const result = evaluateCriticalAssetBudget(outDir, 10_000);
+
+    const appJsEntries = result.files.filter(
+      (file) => file.href === "/assets/app.js",
+    );
+    expect(appJsEntries).toHaveLength(1);
+  });
+
+  it("ignores a cross-origin or protocol-relative preload instead of mis-resolving it onto outDir", () => {
+    writeFullCriticalAssets(100);
+    writeIndexHtml(
+      buildHtml({
+        extraHead: `
+          <link rel="preload" href="https://fonts.example.com/font.woff2" as="font">
+          <link rel="preload" href="//cdn.example.com/font.woff2" as="font">
+        `,
+      }),
+    );
+
+    const result = evaluateCriticalAssetBudget(outDir, 10_000);
+
+    expect(result.files.some((file) => file.href.includes("example.com"))).toBe(
+      false,
+    );
   });
 
   it("throws a descriptive error when a referenced critical asset is missing from the build output", () => {
@@ -142,6 +175,18 @@ describe("evaluateCriticalAssetBudget", () => {
   it("throws a descriptive error when index.html is missing", () => {
     expect(() => evaluateCriticalAssetBudget(outDir)).toThrow(
       /run `npm run build` first/,
+    );
+  });
+
+  it("throws instead of silently scoring zero when the markup carries no recognizable stylesheet/script tag", () => {
+    // Plain rel="stylesheet" (no "preload") and no <script type="module"> at
+    // all — the shape a VitePress upgrade or config change could produce.
+    writeIndexHtml(
+      `<html><head><link rel="stylesheet" href="/assets/style.css"></head><body></body></html>`,
+    );
+
+    expect(() => evaluateCriticalAssetBudget(outDir)).toThrow(
+      /markup shape likely changed/,
     );
   });
 });
@@ -180,8 +225,32 @@ describe("evaluateImageBudget", () => {
     expect(result.violations).toHaveLength(1);
   });
 
-  it("throws a descriptive error when the images dir is missing", () => {
-    rmSync(imagesDir, { recursive: true, force: true });
+  it("catches an oversized image content-hashed under assets/, not just static files under images/", () => {
+    // This is the real path most page-body images take: Vite's asset
+    // pipeline hashes them into assets/, while images/ holds only the
+    // static files copied straight from public/images (favicons, manifest
+    // icons, the OG card).
+    writeFileSync(
+      join(assetsDir, "hero.DaBcDeFg.png"),
+      Buffer.alloc(5000, "a"),
+    );
+
+    const result = evaluateImageBudget(outDir, 1000);
+
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].path).toContain("hero.DaBcDeFg.png");
+  });
+
+  it("ignores non-image files regardless of size", () => {
+    writeFileSync(join(assetsDir, "framework.js"), Buffer.alloc(5000, "a"));
+
+    const result = evaluateImageBudget(outDir, 1000);
+
+    expect(result.violations).toEqual([]);
+  });
+
+  it("throws a descriptive error when the build output dir itself is missing", () => {
+    rmSync(outDir, { recursive: true, force: true });
 
     expect(() => evaluateImageBudget(outDir)).toThrow(
       /run `npm run build` first/,
@@ -191,10 +260,7 @@ describe("evaluateImageBudget", () => {
 
 describe("evaluatePerformanceBudget", () => {
   it("passes only when both the critical asset and image budgets pass", () => {
-    writeAsset("../style.css", 100);
-    writeAsset("theme.js", 100);
-    writeAsset("../font.woff2", 100);
-    writeAsset("../app.js", 100);
+    writeFullCriticalAssets(100);
     writeIndexHtml(buildHtml());
     writeImage("favicon.svg", 100);
 
@@ -206,10 +272,7 @@ describe("evaluatePerformanceBudget", () => {
   });
 
   it("fails overall when only the image budget is exceeded", () => {
-    writeAsset("../style.css", 100);
-    writeAsset("theme.js", 100);
-    writeAsset("../font.woff2", 100);
-    writeAsset("../app.js", 100);
+    writeFullCriticalAssets(100);
     writeIndexHtml(buildHtml());
     writeImage("unoptimized.png", 10 * 1024 * 1024);
 
@@ -218,5 +281,50 @@ describe("evaluatePerformanceBudget", () => {
     expect(result.passed).toBe(false);
     expect(result.criticalAssets.withinBudget).toBe(true);
     expect(result.images.withinBudget).toBe(false);
+  });
+
+  it("fails overall when only the critical asset budget is exceeded", () => {
+    // 4 files x 70 KB = 280 KB, over the default 240 KB critical-asset budget;
+    // 100 bytes is well under the default 300 KB per-image budget.
+    writeFullCriticalAssets(70 * 1024);
+    writeIndexHtml(buildHtml());
+    writeImage("favicon.svg", 100);
+
+    const result = evaluatePerformanceBudget(outDir);
+
+    expect(result.passed).toBe(false);
+    expect(result.criticalAssets.withinBudget).toBe(false);
+    expect(result.images.withinBudget).toBe(true);
+  });
+});
+
+describe("runPerformanceBudgetCli", () => {
+  it("returns exit code 0 and logs a pass when the build is within budget", () => {
+    writeFullCriticalAssets(100);
+    writeIndexHtml(buildHtml());
+    writeImage("favicon.svg", 100);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const exitCode = runPerformanceBudgetCli(outDir);
+
+    expect(exitCode).toBe(0);
+    expect(logSpy).toHaveBeenCalledWith("[perf-budget] within budget");
+    logSpy.mockRestore();
+  });
+
+  it("returns exit code 1 and logs the failure when the build exceeds budget", () => {
+    writeFullCriticalAssets(100);
+    writeIndexHtml(buildHtml());
+    writeImage("unoptimized.png", 10 * 1024 * 1024);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const exitCode = runPerformanceBudgetCli(outDir);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[perf-budget] performance budget exceeded — see failures above",
+    );
+    vi.restoreAllMocks();
   });
 });
