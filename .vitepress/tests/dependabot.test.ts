@@ -25,6 +25,11 @@ const COUPLED_PACKAGES = ["vite", "vitepress"];
 function readNpmUpdateEntry() {
   const raw = readFileSync(DEPENDABOT_CONFIG_PATH, "utf-8");
   const config = parse(raw);
+
+  if (!Array.isArray(config.updates)) {
+    throw new Error("dependabot.yml has no top-level `updates` array");
+  }
+
   const npmEntry = config.updates.find(
     (update: { "package-ecosystem": string }) =>
       update["package-ecosystem"] === "npm",
@@ -37,6 +42,16 @@ function readNpmUpdateEntry() {
   return npmEntry;
 }
 
+function matchesEveryUpdateType(group: { "update-types"?: string[] }) {
+  // The behavior under test is "majors are included", not "the key is
+  // absent" — an explicit `update-types: [major, minor, patch]` is just as
+  // valid as omitting the key entirely.
+  return (
+    group["update-types"] === undefined ||
+    group["update-types"].includes("major")
+  );
+}
+
 describe("dependabot.yml vite/vitepress grouping", () => {
   it("still documents the vitepress override pin this grouping exists for", () => {
     // If this ever fails, the overrides.vitepress coupling has been removed
@@ -47,9 +62,15 @@ describe("dependabot.yml vite/vitepress grouping", () => {
 
     expect(packageJson.overrides?.vitepress?.vite).toBeDefined();
     expect(packageJson.overrides?.vitepress?.esbuild).toBeDefined();
+    // esbuild is deliberately absent from the group's `patterns`: it's only
+    // ever nested under overrides.vitepress, never a direct dependency, so
+    // Dependabot never opens a version PR for it on its own. If esbuild
+    // ever becomes a direct devDependency, add it to COUPLED_PACKAGES and
+    // to both groups in dependabot.yml.
+    expect(packageJson.devDependencies?.esbuild).toBeUndefined();
   });
 
-  it("groups vite and vitepress together with no update-types filter", () => {
+  it("groups vite and vitepress together for version updates, including majors", () => {
     const npmEntry = readNpmUpdateEntry();
     const coupledGroup = npmEntry.groups?.["vite-vitepress"];
 
@@ -58,12 +79,26 @@ describe("dependabot.yml vite/vitepress grouping", () => {
       expect.arrayContaining(COUPLED_PACKAGES),
     );
     expect(coupledGroup.patterns).toHaveLength(COUPLED_PACKAGES.length);
-    // Omitting `update-types` means the group matches every bump type,
-    // including major — that's what closes the gap this test guards.
-    expect(coupledGroup["update-types"]).toBeUndefined();
+    expect(matchesEveryUpdateType(coupledGroup)).toBe(true);
   });
 
-  it("still groups every other package's minor and patch updates", () => {
+  it("groups vite and vitepress together for security updates too", () => {
+    // A group's patterns apply only to scheduled version updates unless
+    // `applies-to: security-updates` is set. Without a matching security
+    // group, a security-triggered vite/vitepress bump would still ship
+    // solo, defeating the point of the grouping above.
+    const npmEntry = readNpmUpdateEntry();
+    const securityGroup = npmEntry.groups?.["vite-vitepress-security"];
+
+    expect(securityGroup).toBeDefined();
+    expect(securityGroup["applies-to"]).toBe("security-updates");
+    expect(securityGroup.patterns).toEqual(
+      expect.arrayContaining(COUPLED_PACKAGES),
+    );
+    expect(securityGroup.patterns).toHaveLength(COUPLED_PACKAGES.length);
+  });
+
+  it("still groups every other package's minor and patch version updates", () => {
     const npmEntry = readNpmUpdateEntry();
     const generalGroup = npmEntry.groups?.["minor-and-patch"];
 
@@ -71,12 +106,16 @@ describe("dependabot.yml vite/vitepress grouping", () => {
     expect(generalGroup["update-types"]).toEqual(["minor", "patch"]);
   });
 
-  it("lists the coupled group before minor-and-patch, since dependabot assigns a dependency to the first group it matches", () => {
+  it("lists the coupled group first, since dependabot assigns a dependency to the first group it matches", () => {
     const npmEntry = readNpmUpdateEntry();
     const groupNames = Object.keys(npmEntry.groups ?? {});
 
     expect(groupNames).toContain("vite-vitepress");
     expect(groupNames).toContain("minor-and-patch");
+    // Asserted as an absolute position, not merely "before minor-and-patch":
+    // any group inserted above vite-vitepress that also matches vite/vitepress
+    // (e.g. a future catch-all) would silently steal the coupling otherwise.
+    expect(groupNames[0]).toBe("vite-vitepress");
     expect(groupNames.indexOf("vite-vitepress")).toBeLessThan(
       groupNames.indexOf("minor-and-patch"),
     );

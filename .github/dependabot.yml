@@ -23,6 +23,15 @@ updates:
         patterns:
           - "vite"
           - "vitepress"
+      # A group's patterns only apply to scheduled version updates unless
+      # `applies-to: security-updates` is set — the two can't share one
+      # group. Without this, a security-triggered vite/vitepress bump would
+      # still ship solo, missing the whole point above.
+      vite-vitepress-security:
+        applies-to: security-updates
+        patterns:
+          - "vite"
+          - "vitepress"
       minor-and-patch:
         update-types:
           - "minor"
