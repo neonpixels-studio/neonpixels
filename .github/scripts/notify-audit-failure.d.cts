@@ -3,10 +3,20 @@
 // actions/github-script (see .github/workflows/security.yml), not through
 // this repo's Vite/TS toolchain, but notifyAuditFailure.test.ts still wants
 // static types when importing it.
+//
+// Declared with `export default` (rather than the more literally-accurate
+// CJS `export =`) because the only TypeScript consumer of this file is
+// notifyAuditFailure.test.ts via Vite/esbuild's CJS interop, which resolves
+// a `module.exports = fn` shape to a default import; the real runtime
+// consumer (actions/github-script) uses plain Node require() and never sees
+// these types at all. `export =` type-checks correctly for a hypothetical
+// Node-resolution consumer but breaks default-import destructuring of the
+// attached statics under this repo's `moduleResolution: "bundler"` config,
+// which is the only case that actually matters here.
 
 export type GithubIssueOrPullRequest = {
   number: number;
-  title: string;
+  body?: string;
   pull_request?: unknown;
 };
 
@@ -28,6 +38,12 @@ export type NotifyAuditFailureArgs = {
           labels: string[];
           body: string;
         }) => Promise<{ data: { number: number } }>;
+        createComment: (params: {
+          owner: string;
+          repo: string;
+          issue_number: number;
+          body: string;
+        }) => Promise<unknown>;
       };
     };
   };
@@ -48,6 +64,7 @@ declare function notifyAuditFailure(
 declare namespace notifyAuditFailure {
   const AUDIT_FAILURE_LABEL: string;
   const ISSUE_TITLE: string;
+  const ISSUE_MARKER: string;
 }
 
 export default notifyAuditFailure;
