@@ -24,10 +24,12 @@ import { extname, join, resolve } from "node:path";
 // fixtures instead of paying for a full VitePress build.
 //
 // Executed with plain `node` against this .ts file directly (no ts-node/tsx):
-// Node's native type-stripping needs >=22.6 behind a flag or >=23.6
-// unflagged. CI reads its Node version from .nvmrc (currently 24.16.0), well
-// past that floor — if .nvmrc is ever pinned below 23.6, add
-// `--experimental-strip-types` to the perf:budget script in package.json.
+// native type-stripping needs >=22.6 behind a flag or >=23.6 unflagged, and
+// the `import.meta.main` entrypoint guard below needs >=22.18/24.2 (guarded
+// explicitly — see that comment). CI reads its Node version from .nvmrc
+// (currently 24.16.0), well past both floors — if .nvmrc is ever pinned
+// below 23.6, add `--experimental-strip-types` to the perf:budget script in
+// package.json.
 
 // Resolved against the working directory rather than this module's own
 // location: every npm script in this project (build, test, lint) assumes
@@ -63,6 +65,11 @@ const IMAGE_EXTENSIONS = new Set([
   ".avif",
   ".svg",
   ".ico",
+  // Formats an unconverted design export is most likely to arrive as —
+  // exactly the "unoptimized drop-in" this budget exists to catch.
+  ".bmp",
+  ".tiff",
+  ".tif",
 ]);
 
 const MISSING_PATH_CODES = new Set(["ENOENT", "ENOTDIR"]);
@@ -136,11 +143,14 @@ interface CriticalAssetHrefsBySource {
 // only measure bytes this build actually emits.
 //
 // Kept as two separate lists (rather than merged) so
-// `assertFoundExpectedAssetTypes` can require each *source* to have
-// produced something, not just infer it from file extensions — a
-// modulepreload chunk and the entry module script are both ".js", so an
-// extension-only check can't tell "the entry script tag disappeared" from
-// "the entry script tag is still there".
+// `assertFoundExpectedAssetTypes` can require each *source* — preload links
+// vs. the entry module script — to have produced something: a modulepreload
+// chunk and the entry module script are both ".js", so an extension-only
+// check across a merged list can't tell "the entry script tag disappeared"
+// from "the entry script tag is still there". Within `preloadLinkHrefs`
+// itself, that same assertion further requires a stylesheet, a font, and a
+// modulepreload chunk by extension, since a stylesheet link alone would
+// otherwise mask, say, the font preload silently disappearing.
 function extractCriticalAssetHrefs(html: string): CriticalAssetHrefsBySource {
   const preloadLinkHrefs = extractTags(html, "link")
     .filter((tag) =>
@@ -168,28 +178,60 @@ function dedupeHrefs(hrefsBySource: CriticalAssetHrefsBySource) {
   );
 }
 
-// Guards against the scrape silently finding nothing: if a future VitePress
-// version changes how it marks the stylesheet/preload links or the entry
-// script tag (a different `rel`, a dynamic-import bootstrap instead of a
-// top-level `<script type="module">`), the affected list goes empty and this
-// budget would score fewer bytes as a pass instead of failing loud. At least
-// one preloaded link (the stylesheet, at minimum) and one module script is
-// exactly what every VitePress build emits today (see the real
-// dist/index.html this budget was tuned against), so either going empty
-// means the markup shape moved, not that the page got lighter.
+const STYLESHEET_EXTENSION = ".css";
+const FONT_EXTENSION = ".woff2";
+const SCRIPT_EXTENSION = ".js";
+
+// Guards against the scrape silently finding nothing — or finding *less* than
+// it should — in each of the three categories this budget exists to cover:
+// the stylesheet, the critical font preload (the actual subject of the
+// font-preload/self-hosted-font work this issue calls out), and at least one
+// modulepreload chunk, plus the entry module script. Checking `preloadLinkHrefs`
+// only for non-emptiness isn't enough: the stylesheet link alone keeps that
+// list non-empty even if `writeFontPreloadLink` regresses and stops emitting
+// the font `<link>` — exactly the case where this budget most needs to fail
+// loud, since a build missing its font preload also reports a *lower* byte
+// total, i.e. a real regression scored as an improvement. A future markup
+// shape change (different `rel`, a dynamic-import bootstrap instead of a
+// top-level `<script type="module">`) drops one of these to zero, which is
+// what every check below is watching for.
 function assertFoundExpectedAssetTypes(
   hrefsBySource: CriticalAssetHrefsBySource,
 ) {
-  const hasPreloadLink = hrefsBySource.preloadLinkHrefs.length > 0;
-  const hasEntryScript = hrefsBySource.moduleScriptSrcs.length > 0;
-  if (hasPreloadLink && hasEntryScript) {
+  const missing: string[] = [];
+  if (
+    !hrefsBySource.preloadLinkHrefs.some((href) =>
+      href.endsWith(STYLESHEET_EXTENSION),
+    )
+  ) {
+    missing.push(`a preloaded stylesheet (*${STYLESHEET_EXTENSION})`);
+  }
+  if (
+    !hrefsBySource.preloadLinkHrefs.some((href) =>
+      href.endsWith(FONT_EXTENSION),
+    )
+  ) {
+    missing.push(`a preloaded critical font (*${FONT_EXTENSION})`);
+  }
+  if (
+    !hrefsBySource.preloadLinkHrefs.some((href) =>
+      href.endsWith(SCRIPT_EXTENSION),
+    )
+  ) {
+    missing.push("a modulepreload chunk (*.js)");
+  }
+  if (
+    !hrefsBySource.moduleScriptSrcs.some((href) =>
+      href.endsWith(SCRIPT_EXTENSION),
+    )
+  ) {
+    missing.push('an entry <script type="module">');
+  }
+  if (missing.length === 0) {
     return;
   }
   throw new Error(
-    `Performance budget: parsed ${INDEX_HTML_FILE} but found ` +
-      `${hrefsBySource.preloadLinkHrefs.length} preload link(s) and ` +
-      `${hrefsBySource.moduleScriptSrcs.length} module script(s); expected ` +
-      `at least one of each — the preload/modulepreload markup shape likely changed`,
+    `Performance budget: parsed ${INDEX_HTML_FILE} but is missing ${missing.join(", ")}; the preload/modulepreload markup shape likely changed`,
   );
 }
 
@@ -396,12 +438,24 @@ function main() {
 
 // Only run when invoked directly (`npm run perf:budget` / `node
 // checkPerformanceBudget.ts`), not when imported by the vitest suite.
-// `import.meta.main` (Node >=20.11/21.2, unconditionally available on the
-// Node 24 this repo pins via .nvmrc) compares resolved real paths under the
+// `import.meta.main` (Node >=22.18/24.2 — not to be confused with the lower
+// floor for type-stripping above) compares resolved real paths under the
 // hood — unlike a hand-rolled `process.argv[1] === fileURLToPath(import.meta.url)`
 // check, it isn't fooled by a symlink anywhere in the invocation path (e.g.
 // macOS's /tmp -> /private/tmp), which would otherwise make this script a
 // silent no-op that still exits 0.
+//
+// On a Node below that floor `import.meta.main` is `undefined` rather than
+// `false`, which would make this same `if` silently skip main() forever —
+// exactly the failure mode this guard exists to avoid. Fail loud instead of
+// reproducing it: .nvmrc (24.16.0) is comfortably past the floor today, so
+// this only trips if that pin ever regresses.
+if (import.meta.main === undefined) {
+  throw new Error(
+    "Performance budget: import.meta.main is unavailable on this Node version " +
+      "(requires >=22.18 or >=24.2); the entrypoint guard cannot run",
+  );
+}
 if (import.meta.main) {
   main();
 }

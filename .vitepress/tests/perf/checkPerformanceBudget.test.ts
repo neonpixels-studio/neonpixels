@@ -252,6 +252,39 @@ describe("evaluateCriticalAssetBudget", () => {
       /markup shape likely changed/,
     );
   });
+
+  it("throws instead of silently scoring a lower (seemingly better) total when the font preload disappears", () => {
+    // A stylesheet link alone keeps preloadLinkHrefs non-empty, so a
+    // source-level "is the list empty" check would miss exactly this
+    // regression: writeFontPreloadLink stops emitting the font <link>, the
+    // build genuinely gets slower (font discovered late, after CSS parse),
+    // and a naive check would report a *lower*, passing byte total.
+    writeIndexHtml(
+      `<html><head>
+        <link rel="preload stylesheet" href="/assets/style.css" as="style">
+        <link rel="modulepreload" href="/assets/chunks/theme.js">
+        <script type="module" src="/assets/app.js"></script>
+      </head><body></body></html>`,
+    );
+
+    expect(() => evaluateCriticalAssetBudget(outDir)).toThrow(
+      /markup shape likely changed/,
+    );
+  });
+
+  it("throws instead of silently undercounting when the modulepreload chunk hint disappears", () => {
+    writeIndexHtml(
+      `<html><head>
+        <link rel="preload stylesheet" href="/assets/style.css" as="style">
+        <link rel="preload" href="/assets/font.woff2" as="font" type="font/woff2" crossorigin>
+        <script type="module" src="/assets/app.js"></script>
+      </head><body></body></html>`,
+    );
+
+    expect(() => evaluateCriticalAssetBudget(outDir)).toThrow(
+      /markup shape likely changed/,
+    );
+  });
 });
 
 describe("evaluateImageBudget", () => {
@@ -311,6 +344,17 @@ describe("evaluateImageBudget", () => {
     const result = evaluateImageBudget(outDir, 1000);
 
     expect(result.violations).toEqual([]);
+  });
+
+  it("catches an unconverted bmp/tiff export, not just web-ready formats", () => {
+    // Formats an unresized design export is most likely to arrive as before
+    // anyone converts it to something web-ready.
+    writeDistFile("images/screenshot.bmp", 5000);
+    writeDistFile("images/scan.tiff", 5000);
+
+    const result = evaluateImageBudget(outDir, 1000);
+
+    expect(result.violations).toHaveLength(2);
   });
 
   it("throws a descriptive error when the build output dir itself is missing", () => {
