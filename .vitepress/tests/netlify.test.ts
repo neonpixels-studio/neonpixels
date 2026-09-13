@@ -47,9 +47,17 @@ function readBuildTable() {
 
 const BUILD_TABLE = readBuildTable();
 
+// Regex metacharacters have no meaning in a TOML key, so escape any that
+// appear before interpolating into a pattern — otherwise a key containing
+// one (e.g. a dotted key passed in whole) would silently change what the
+// pattern matches instead of being matched literally.
+function escapeForRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function readBuildTableValue(key: string) {
   const match = BUILD_TABLE.match(
-    new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, "m"),
+    new RegExp(`^\\s*${escapeForRegExp(key)}\\s*=\\s*"([^"]*)"`, "m"),
   );
   if (!match) {
     throw new Error(`netlify.toml [build] has no ${key} value`);
@@ -62,9 +70,11 @@ function readBuildTableValue(key: string) {
 // a `#` inside a quoted value (e.g. a fragment URL, or an issue reference
 // like "build#42") is legitimate TOML and must not truncate a real
 // assignment that follows it later on the same line. Doesn't handle a
-// backslash-escaped quote inside a double-quoted string — no value any of
-// these guards read contains one today — so treat that as a known gap
-// rather than a silently-covered case.
+// backslash-escaped quote inside a double-quoted string, or a triple-quoted
+// multi-line string (both start/end tracking and the per-line assignment
+// count would need to span lines) — no value any of these guards read uses
+// either form today, so treat both as a known gap rather than a
+// silently-covered case.
 function stripComment(line: string) {
   let openQuote: string | undefined;
   for (let index = 0; index < line.length; index += 1) {
@@ -84,14 +94,6 @@ function stripComment(line: string) {
   return line;
 }
 
-// Regex metacharacters have no meaning in a TOML key, so escape any that
-// appear before interpolating into a pattern — otherwise a key containing
-// one (e.g. a future dotted key passed in whole) would silently change what
-// the pattern matches instead of being matched literally.
-function escapeForRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 type KeyAssignmentOptions = {
   // TOML keys are themselves case-sensitive, but a key that becomes an HTTP
   // header name (e.g. Cache-Control, X-Robots-Tag) is applied
@@ -107,11 +109,16 @@ type KeyAssignmentOptions = {
 // inline-table entry is a single valid TOML construct that can start
 // mid-line, and a `^`-anchored pattern would let it slip past every guard
 // built on top of it. Always global, so a caller counting occurrences can
-// walk every match on a line instead of stopping at the first.
+// walk every match on a line instead of stopping at the first. The quote
+// around the key is captured and backreferenced (rather than matched as an
+// independent `['"]?` on each side) so an unmatched opening quote can't
+// stand in for the required delimiter — without the backreference, a value
+// like `X-Custom = "Cache-Control=none"` would let the value's own opening
+// quote satisfy the pattern and falsely count as a key assignment.
 function buildKeyAssignmentPattern(key: string, caseInsensitive: boolean) {
   const escapedKey = escapeForRegExp(key);
   return new RegExp(
-    `(?:^|[\\s{,.])['"]?${escapedKey}['"]?\\s*=`,
+    `(?:^|[\\s{,.])(?:(['"])${escapedKey}\\1|${escapedKey})\\s*=`,
     `g${caseInsensitive ? "i" : ""}`,
   );
 }
@@ -426,6 +433,15 @@ describe("shared key-assignment guard helper", () => {
         caseInsensitive: true,
       }),
     ).toBe(1);
+  });
+
+  // Without a backreference tying the closing quote to the same character as
+  // the opening one, an unmatched `"` at the start of a value could satisfy
+  // the pattern's optional-quote class and be mistaken for a key delimiter.
+  it("ignores a key name that only appears inside a quoted value", () => {
+    expect(
+      countKeyDefinitions('X-Custom = "command = sneaky"', "command"),
+    ).toBe(0);
   });
 });
 
@@ -748,18 +764,16 @@ describe("noindex header ownership", () => {
   // overlapping paths netlify.toml wins. A hand-added X-Robots-Tag there would
   // silently win over (or, on preview contexts, mask) the noindex header
   // generated into _headers (see .vitepress/robots), with every _headers
-  // assertion still passing. Case-insensitive (`im`): TOML keys are
-  // case-sensitive but Netlify applies HTTP header names case-insensitively,
-  // so `x-robots-tag` or `X-ROBOTS-TAG` would create the same hazard a
-  // case-sensitive match would miss entirely. Not line-anchored: TOML permits
-  // `-` in a bare key, so an inline-table assignment like
-  // `values = { X-Robots-Tag = "index" }` would sail past a `^`-anchored
-  // match despite setting the header — the exact hazard this guard exists to
-  // block. `['"]?` (not `"?`) since TOML also allows single-quoted literal
-  // keys (`'X-Robots-Tag' = "index"`), which a double-quote-only class would
-  // miss entirely.
+  // assertion still passing. Uses the shared key-assignment helper — the
+  // same one the Cache-Control and NODE_VERSION guards use above — so a
+  // bare, quoted, dotted, or inline-table assignment, in any case, is caught
+  // the same way everywhere in this file instead of via its own ad hoc regex.
   it("does not let netlify.toml declare its own X-Robots-Tag", () => {
-    expect(NETLIFY_CONFIG).not.toMatch(/['"]?X-Robots-Tag['"]?\s*=/i);
+    expect(
+      countKeyDefinitions(NETLIFY_CONFIG, "X-Robots-Tag", {
+        caseInsensitive: true,
+      }),
+    ).toBe(0);
   });
 
   // public/_headers is the hand-written file writeReportOnlyHeaders treats as
