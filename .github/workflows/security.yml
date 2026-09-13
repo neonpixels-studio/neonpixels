@@ -102,6 +102,7 @@ jobs:
       # (no --omit=dev) so the gate can actually fail on a high/critical
       # advisory. `npm run audit` === `npm audit --audit-level=high`.
       - name: Audit gate (fail on high or critical advisories)
+        id: audit_gate
         run: npm run audit
 
       # The audit gate above can fail silently on the Monday cron: nobody
@@ -109,42 +110,17 @@ jobs:
       # can sit unnoticed indefinitely (see issue #109). Scoped to the
       # `schedule` trigger only — a push/pull_request failure is already
       # visible as a failing required check, so opening an issue there would
-      # just be noise on top of that.
+      # just be noise on top of that. Also gated on the audit gate step's own
+      # conclusion (not just job-level `failure()`), so an unrelated failure
+      # earlier in the job (checkout, npm ci, a registry blip) doesn't open a
+      # misleading "audit failed" issue that then blocks real ones via the
+      # duplicate guard below.
       - name: Notify on scheduled audit failure
-        if: failure() && github.event_name == 'schedule'
+        if: |
+          failure() && github.event_name == 'schedule' &&
+          steps.audit_gate.conclusion == 'failure'
         uses: actions/github-script@v7
         with:
           script: |
-            const title = "Scheduled dependency audit failed";
-            const label = "audit-failure";
-
-            // Guard against opening a duplicate issue on every subsequent
-            // Monday the audit stays red — one open issue per failure streak.
-            const { data: openAuditFailures } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: "open",
-              labels: label,
-            });
-            if (openAuditFailures.length > 0) {
-              core.info(
-                `An open audit-failure issue already exists (#${openAuditFailures[0].number}); skipping.`,
-              );
-              return;
-            }
-
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              labels: [label],
-              body: [
-                "The scheduled (Monday) dependency audit failed.",
-                "",
-                `Failed run: ${runUrl}`,
-                "",
-                "Investigate the advisory and re-run the workflow once resolved.",
-                "This issue is a duplicate guard: closing it lets the next failure open a new one.",
-              ].join("\n"),
-            });
+            const notifyAuditFailure = require("./.github/scripts/notify-audit-failure.js");
+            await notifyAuditFailure({ github, context, core });

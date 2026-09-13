@@ -1,11 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 // No YAML parser is a project dependency (see netlify.test.ts, which parses
 // TOML the same way), so this file line-scopes the `audit:` job the way that
 // file line-scopes [build]/[[headers]] tables, rather than pulling in a
-// parser for one file.
+// parser for one file. The duplicate-guard behavior this workflow step
+// depends on lives in .github/scripts/notify-audit-failure.js and is unit-
+// tested against a stubbed github client in notifyAuditFailure.test.ts; this
+// file only covers the YAML wiring (permissions, triggers, which script runs).
 const WORKFLOW_PATH = resolve(process.cwd(), ".github/workflows/security.yml");
 const WORKFLOW = readFileSync(WORKFLOW_PATH, "utf8");
 
@@ -31,6 +34,24 @@ function readAuditJob() {
 
 const AUDIT_JOB = readAuditJob();
 
+const PERMISSIONS_LINE = /^ {4}permissions:\s*$/m;
+
+// Slices to the audit job's own `permissions:` block (4-space indent, keys
+// nested one level deeper at 6 spaces), stopping at the next 4-space-indented
+// key. Bounds assertions to the block itself, not anywhere else in the job
+// (e.g. a `with:` map that happens to contain a same-named key).
+function readAuditJobPermissions(jobBlock: string) {
+  const lines = jobBlock.split("\n");
+  const start = lines.findIndex((line) => PERMISSIONS_LINE.test(line));
+  if (start === -1) {
+    throw new Error("audit job has no `permissions:` block");
+  }
+  const rest = lines.slice(start + 1);
+  const nextKey = rest.findIndex((line) => /^ {4}\S+:\s*$/.test(line));
+  const end = nextKey === -1 ? rest.length : nextKey;
+  return rest.slice(0, end).join("\n");
+}
+
 const STEP_NAME_LINE = /^\s*-\s*name:\s*(.+?)\s*$/m;
 
 // Slices to a single named step within a job block, the same bounded-window
@@ -53,32 +74,58 @@ function readStep(jobBlock: string, name: string) {
 }
 
 describe("audit job permissions", () => {
+  const auditPermissions = readAuditJobPermissions(AUDIT_JOB);
+
   it("declares its own permissions block", () => {
-    expect(AUDIT_JOB).toMatch(/^ {4}permissions:\s*$/m);
+    expect(AUDIT_JOB).toMatch(PERMISSIONS_LINE);
   });
 
   it("grants issues: write, scoped to this job", () => {
-    expect(AUDIT_JOB).toMatch(/^\s*issues:\s*write\s*$/m);
+    expect(auditPermissions).toMatch(/^\s*issues:\s*write\s*$/m);
   });
 
   it("keeps contents: read (job permissions replace, not add to, the default)", () => {
-    expect(AUDIT_JOB).toMatch(/^\s*contents:\s*read\s*$/m);
+    expect(auditPermissions).toMatch(/^\s*contents:\s*read\s*$/m);
+  });
+
+  // The security-relevant property is that issues: write is scoped to the
+  // audit job alone, not merely that it appears somewhere in the file — it
+  // would satisfy a looser check just as well if hoisted onto the
+  // workflow-level default (line 19-20) or added to the gitleaks job, which
+  // has no need to open issues.
+  it("does not grant issues: write outside the audit job", () => {
+    const withoutAuditJob = WORKFLOW.replace(AUDIT_JOB, "");
+    expect(withoutAuditJob).not.toMatch(/^\s*issues:\s*write\s*$/m);
   });
 });
 
 describe("notify on scheduled audit failure", () => {
   const NOTIFY_STEP_NAME = "Notify on scheduled audit failure";
+  const GATE_STEP_NAME = "Audit gate (fail on high or critical advisories)";
+
+  // Resolved lazily in beforeAll rather than at describe-body/module scope:
+  // if the step were ever renamed or removed, throwing during collection
+  // would abort the whole file, taking down "adds a notify step to the audit
+  // job" below along with it — the one test written specifically to surface
+  // that condition.
+  let notifyStep = "";
+  let gateStep = "";
+
+  beforeAll(() => {
+    gateStep = readStep(AUDIT_JOB, GATE_STEP_NAME);
+    notifyStep = readStep(AUDIT_JOB, NOTIFY_STEP_NAME);
+  });
 
   it("adds a notify step to the audit job", () => {
-    expect(AUDIT_JOB).toMatch(STEP_NAME_LINE);
     expect(() => readStep(AUDIT_JOB, NOTIFY_STEP_NAME)).not.toThrow();
   });
 
-  const notifyStep = readStep(AUDIT_JOB, NOTIFY_STEP_NAME);
+  it("gives the audit gate step an id the notify step can reference", () => {
+    expect(gateStep).toMatch(/^\s*id:\s*audit_gate\s*$/m);
+  });
 
   it("only runs when the job failed", () => {
-    const ifLine = notifyStep.match(/^\s*if:\s*(.+)$/m)?.[1] ?? "";
-    expect(ifLine).toContain("failure()");
+    expect(notifyStep).toMatch(/if:\s*\|?\s*\n?\s*failure\(\)/);
   });
 
   // The audit job also runs on push/pull_request, where a failure already
@@ -86,32 +133,30 @@ describe("notify on scheduled audit failure", () => {
   // redundant noise on top of a signal that's already visible. Only the
   // schedule trigger runs unattended.
   it("scopes the notification to the schedule trigger only", () => {
-    const ifLine = notifyStep.match(/^\s*if:\s*(.+)$/m)?.[1] ?? "";
-    expect(ifLine).toMatch(/github\.event_name\s*==\s*'schedule'/);
+    expect(notifyStep).toMatch(/github\.event_name\s*==\s*'schedule'/);
+  });
+
+  // Job-level failure() is true if ANY earlier step failed (checkout, npm
+  // ci, a registry blip), not just the audit gate. Without also checking the
+  // gate step's own conclusion, an unrelated infra flake would open a
+  // misleading "audit failed" issue that then blocks real ones via the
+  // duplicate guard in notify-audit-failure.js.
+  it("also requires the audit gate step itself to have failed", () => {
+    expect(notifyStep).toMatch(
+      /steps\.audit_gate\.conclusion\s*==\s*'failure'/,
+    );
   });
 
   it("opens the issue via the GitHub API rather than a third-party action", () => {
     expect(notifyStep).toMatch(/uses:\s*actions\/github-script@/);
   });
 
-  it("creates the issue with a stable label for the duplicate guard", () => {
-    expect(notifyStep).toMatch(/labels:\s*\[label\]/);
-    expect(notifyStep).toMatch(/const label = "audit-failure"/);
-  });
-
-  it("checks for an existing open issue before creating a new one", () => {
-    expect(notifyStep).toMatch(/issues\.listForRepo/);
-    expect(notifyStep).toMatch(/state:\s*"open"/);
-    // The guard must actually stop execution when a match is found, not just
-    // look one up and ignore the result.
-    expect(notifyStep).toMatch(/openAuditFailures\.length > 0/);
-    expect(notifyStep).toMatch(/return;/);
-  });
-
-  it("creates the issue only after the duplicate check", () => {
-    const listIndex = notifyStep.indexOf("issues.listForRepo");
-    const createIndex = notifyStep.indexOf("issues.create");
-    expect(listIndex).toBeGreaterThan(-1);
-    expect(createIndex).toBeGreaterThan(listIndex);
+  // The duplicate-guard logic itself (labels, open-state check, PR
+  // filtering) lives in .github/scripts/notify-audit-failure.js and is
+  // behavior-tested there; this only confirms the step wires up to it.
+  it("delegates to the extracted, unit-tested notify script", () => {
+    expect(notifyStep).toMatch(
+      /require\(["']\.\/\.github\/scripts\/notify-audit-failure\.js["']\)/,
+    );
   });
 });
