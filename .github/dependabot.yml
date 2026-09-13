@@ -7,19 +7,22 @@ updates:
     assignees:
       - "grimicorn"
     groups:
-      # vite, vitepress, and esbuild are hand-pinned together via the
-      # `overrides.vitepress.{vite,esbuild}` block in package.json (see the
-      # comment in .vitepress/config.ts). Grouping them here — with no
-      # `update-types` filter, so majors are included — keeps every bump to
-      # any of the three in one PR, whatever the bump type, so the pin is
-      # never silently drifted by an ungrouped major landing on its own.
-      # Listed before `minor-and-patch` because Dependabot assigns a
-      # dependency to the first group whose rules it matches.
+      # vite and vitepress are coupled: package.json pins vitepress's bundled
+      # vite/esbuild via `overrides.vitepress.{vite,esbuild}` (see the
+      # comment in .vitepress/config.ts). Dependabot can only bump manifest
+      # entries — it never touches that nested overrides block — so this
+      # grouping doesn't update the pin itself. What it buys: a major bump
+      # to either package (previously excluded from the "minor-and-patch"
+      # group below, and so shipped as its own unremarkable PR) now always
+      # lands in one PR alongside the other, making it obvious a human
+      # should check whether the override still needs adjusting. Omitting
+      # `update-types` means the group matches every bump type. Listed
+      # before `minor-and-patch` because Dependabot assigns a dependency to
+      # the first group whose rules it matches.
       vite-vitepress:
         patterns:
           - "vite"
           - "vitepress"
-          - "esbuild"
       minor-and-patch:
         update-types:
           - "minor"

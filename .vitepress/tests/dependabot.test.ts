@@ -1,15 +1,26 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { parse } from "yaml";
 
 // package.json pins vite/esbuild for vitepress via the `overrides.vitepress`
 // block (see the comment above the `vite` key in .vitepress/config.ts). A
-// major bump to any one of these three, landing on its own, can silently
-// drift that pin — so dependabot.yml must always group them together,
-// including majors, in front of the general minor-and-patch group.
-const DEPENDABOT_CONFIG_PATH = resolve(process.cwd(), ".github/dependabot.yml");
-const COUPLED_OVERRIDE_PACKAGES = ["vite", "vitepress", "esbuild"];
+// major bump to vite or vitepress, landing on its own, previously skipped
+// the "minor-and-patch" group and shipped as an unremarkable solo PR — easy
+// to merge without noticing the override may need adjusting. dependabot.yml
+// must always group these two together, including majors, ahead of the
+// general minor-and-patch group.
+//
+// Anchored to this test file, not process.cwd(), so the reads still resolve
+// if vitest is invoked from a subdirectory or given a custom root.
+const REPO_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
+const DEPENDABOT_CONFIG_PATH = path.join(REPO_ROOT, ".github/dependabot.yml");
+const PACKAGE_JSON_PATH = path.join(REPO_ROOT, "package.json");
+const COUPLED_PACKAGES = ["vite", "vitepress"];
 
 function readNpmUpdateEntry() {
   const raw = readFileSync(DEPENDABOT_CONFIG_PATH, "utf-8");
@@ -27,17 +38,26 @@ function readNpmUpdateEntry() {
 }
 
 describe("dependabot.yml vite/vitepress grouping", () => {
-  it("groups vite, vitepress, and esbuild together with no update-types filter", () => {
+  it("still documents the vitepress override pin this grouping exists for", () => {
+    // If this ever fails, the overrides.vitepress coupling has been removed
+    // from package.json and the vite-vitepress group below (and this whole
+    // test file) should be reconsidered rather than left grouping bumps for
+    // a pin that no longer exists.
+    const packageJson = JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf-8"));
+
+    expect(packageJson.overrides?.vitepress?.vite).toBeDefined();
+    expect(packageJson.overrides?.vitepress?.esbuild).toBeDefined();
+  });
+
+  it("groups vite and vitepress together with no update-types filter", () => {
     const npmEntry = readNpmUpdateEntry();
     const coupledGroup = npmEntry.groups?.["vite-vitepress"];
 
     expect(coupledGroup).toBeDefined();
     expect(coupledGroup.patterns).toEqual(
-      expect.arrayContaining(COUPLED_OVERRIDE_PACKAGES),
+      expect.arrayContaining(COUPLED_PACKAGES),
     );
-    expect(coupledGroup.patterns).toHaveLength(
-      COUPLED_OVERRIDE_PACKAGES.length,
-    );
+    expect(coupledGroup.patterns).toHaveLength(COUPLED_PACKAGES.length);
     // Omitting `update-types` means the group matches every bump type,
     // including major — that's what closes the gap this test guards.
     expect(coupledGroup["update-types"]).toBeUndefined();
@@ -55,6 +75,8 @@ describe("dependabot.yml vite/vitepress grouping", () => {
     const npmEntry = readNpmUpdateEntry();
     const groupNames = Object.keys(npmEntry.groups ?? {});
 
+    expect(groupNames).toContain("vite-vitepress");
+    expect(groupNames).toContain("minor-and-patch");
     expect(groupNames.indexOf("vite-vitepress")).toBeLessThan(
       groupNames.indexOf("minor-and-patch"),
     );
