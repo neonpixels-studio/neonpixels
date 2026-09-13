@@ -12,19 +12,20 @@ import {
 
 let workDir = "";
 let outDir = "";
-let assetsDir = "";
-let imagesDir = "";
 
 function writeIndexHtml(contents: string) {
   writeFileSync(join(outDir, "index.html"), contents);
 }
 
-function writeAsset(name: string, byteLength: number) {
-  writeFileSync(join(assetsDir, name), Buffer.alloc(byteLength, "a"));
-}
-
-function writeImage(name: string, byteLength: number) {
-  writeFileSync(join(imagesDir, name), Buffer.alloc(byteLength, "a"));
+// Writes a fixture file at a path relative to outDir (e.g. "assets/app.js",
+// "images/favicon.svg"), creating any intermediate directories. Named for
+// where it lands rather than "asset"/"image" so the call site reads
+// literally as the on-disk layout instead of requiring the reader to trace
+// "../" segments back to the real path.
+function writeDistFile(relativePath: string, byteLength: number) {
+  const filePath = join(outDir, relativePath);
+  mkdirSync(join(filePath, ".."), { recursive: true });
+  writeFileSync(filePath, Buffer.alloc(byteLength, "a"));
 }
 
 // A trimmed-down but representative <head>: one preload-stylesheet link (the
@@ -51,19 +52,16 @@ function buildHtml({
 }
 
 function writeFullCriticalAssets(byteLength = 100) {
-  writeAsset("../style.css", byteLength);
-  writeAsset("theme.js", byteLength);
-  writeAsset("../font.woff2", byteLength);
-  writeAsset("../app.js", byteLength);
+  writeDistFile("assets/style.css", byteLength);
+  writeDistFile("assets/chunks/theme.js", byteLength);
+  writeDistFile("assets/font.woff2", byteLength);
+  writeDistFile("assets/app.js", byteLength);
 }
 
 beforeEach(() => {
   workDir = mkdtempSync(join(tmpdir(), "neonpixels-perf-budget-"));
   outDir = join(workDir, "dist");
-  assetsDir = join(outDir, "assets", "chunks");
-  imagesDir = join(outDir, "images");
-  mkdirSync(assetsDir, { recursive: true });
-  mkdirSync(imagesDir, { recursive: true });
+  mkdirSync(outDir, { recursive: true });
 });
 
 afterEach(() => {
@@ -72,10 +70,10 @@ afterEach(() => {
 
 describe("evaluateCriticalAssetBudget", () => {
   it("sums only preload/modulepreload links and the module script, ignoring icon/canonical/manifest links and non-module scripts", () => {
-    writeAsset("../style.css", 1000);
-    writeAsset("theme.js", 2000);
-    writeAsset("../font.woff2", 500);
-    writeAsset("../app.js", 250);
+    writeDistFile("assets/style.css", 1000);
+    writeDistFile("assets/chunks/theme.js", 2000);
+    writeDistFile("assets/font.woff2", 500);
+    writeDistFile("assets/app.js", 250);
     writeIndexHtml(buildHtml());
 
     const result = evaluateCriticalAssetBudget(outDir, 10_000);
@@ -97,6 +95,16 @@ describe("evaluateCriticalAssetBudget", () => {
 
     const result = evaluateCriticalAssetBudget(outDir, 5000);
 
+    expect(result.withinBudget).toBe(true);
+  });
+
+  it("passes when the critical asset total sits exactly on the budget boundary", () => {
+    writeFullCriticalAssets(1250);
+    writeIndexHtml(buildHtml());
+
+    const result = evaluateCriticalAssetBudget(outDir, 5000);
+
+    expect(result.totalBytes).toBe(5000);
     expect(result.withinBudget).toBe(true);
   });
 
@@ -142,29 +150,65 @@ describe("evaluateCriticalAssetBudget", () => {
     expect(appJsEntries).toHaveLength(1);
   });
 
-  it("ignores a cross-origin or protocol-relative preload instead of mis-resolving it onto outDir", () => {
+  it("dedupes the same file referenced with a fragment instead of a query string", () => {
+    writeFullCriticalAssets(100);
+    writeIndexHtml(
+      buildHtml({
+        extraHead: `<link rel="modulepreload" href="/assets/app.js#x">`,
+      }),
+    );
+
+    const result = evaluateCriticalAssetBudget(outDir, 10_000);
+
+    const appJsEntries = result.files.filter(
+      (file) => file.href === "/assets/app.js",
+    );
+    expect(appJsEntries).toHaveLength(1);
+  });
+
+  it("matches single-quoted attributes the same as double-quoted ones", () => {
+    writeFullCriticalAssets(100);
+    writeIndexHtml(
+      buildHtml({
+        extraHead: `<link rel='modulepreload' href='/assets/app.js?single-quoted'>`,
+      }),
+    );
+
+    const result = evaluateCriticalAssetBudget(outDir, 10_000);
+
+    const appJsEntries = result.files.filter(
+      (file) => file.href === "/assets/app.js",
+    );
+    expect(appJsEntries).toHaveLength(1);
+  });
+
+  it("ignores a cross-origin, protocol-relative, or data: preload instead of mis-resolving it onto outDir", () => {
     writeFullCriticalAssets(100);
     writeIndexHtml(
       buildHtml({
         extraHead: `
           <link rel="preload" href="https://fonts.example.com/font.woff2" as="font">
           <link rel="preload" href="//cdn.example.com/font.woff2" as="font">
+          <link rel="preload" href="data:font/woff2;base64,AAAA" as="font">
         `,
       }),
     );
 
     const result = evaluateCriticalAssetBudget(outDir, 10_000);
 
-    expect(result.files.some((file) => file.href.includes("example.com"))).toBe(
-      false,
-    );
+    expect(
+      result.files.some(
+        (file) =>
+          file.href.includes("example.com") || file.href.startsWith("data:"),
+      ),
+    ).toBe(false);
   });
 
   it("throws a descriptive error when a referenced critical asset is missing from the build output", () => {
     // style.css, theme.js and font.woff2 are written; app.js is not.
-    writeAsset("../style.css", 100);
-    writeAsset("theme.js", 100);
-    writeAsset("../font.woff2", 100);
+    writeDistFile("assets/style.css", 100);
+    writeDistFile("assets/chunks/theme.js", 100);
+    writeDistFile("assets/font.woff2", 100);
     writeIndexHtml(buildHtml());
 
     expect(() => evaluateCriticalAssetBudget(outDir)).toThrow(
@@ -178,11 +222,30 @@ describe("evaluateCriticalAssetBudget", () => {
     );
   });
 
-  it("throws instead of silently scoring zero when the markup carries no recognizable stylesheet/script tag", () => {
-    // Plain rel="stylesheet" (no "preload") and no <script type="module"> at
-    // all — the shape a VitePress upgrade or config change could produce.
+  it("throws instead of silently scoring zero when no preload link is found", () => {
+    // Plain rel="stylesheet" (no "preload") — the shape a VitePress upgrade
+    // or config change could produce.
     writeIndexHtml(
-      `<html><head><link rel="stylesheet" href="/assets/style.css"></head><body></body></html>`,
+      `<html><head>
+        <link rel="stylesheet" href="/assets/style.css">
+        <script type="module" src="/assets/app.js"></script>
+      </head><body></body></html>`,
+    );
+
+    expect(() => evaluateCriticalAssetBudget(outDir)).toThrow(
+      /markup shape likely changed/,
+    );
+  });
+
+  it("throws instead of silently undercounting when the entry module script disappears but modulepreload chunks remain", () => {
+    // Both the modulepreload chunk and a real entry script are ".js", so an
+    // extension-only check can't tell these apart — this is exactly the
+    // regression assertFoundExpectedAssetTypes exists to catch.
+    writeIndexHtml(
+      `<html><head>
+        <link rel="preload stylesheet" href="/assets/style.css" as="style">
+        <link rel="modulepreload" href="/assets/chunks/theme.js">
+      </head><body></body></html>`,
     );
 
     expect(() => evaluateCriticalAssetBudget(outDir)).toThrow(
@@ -193,8 +256,8 @@ describe("evaluateCriticalAssetBudget", () => {
 
 describe("evaluateImageBudget", () => {
   it("passes when every image is under the per-file budget", () => {
-    writeImage("favicon.svg", 300);
-    writeImage("social-card.png", 900);
+    writeDistFile("images/favicon.svg", 300);
+    writeDistFile("images/social-card.png", 900);
 
     const result = evaluateImageBudget(outDir, 1000);
 
@@ -202,9 +265,17 @@ describe("evaluateImageBudget", () => {
     expect(result.violations).toEqual([]);
   });
 
+  it("passes when an image sits exactly on the per-file budget boundary", () => {
+    writeDistFile("images/favicon.svg", 1000);
+
+    const result = evaluateImageBudget(outDir, 1000);
+
+    expect(result.withinBudget).toBe(true);
+  });
+
   it("flags any image over the per-file budget", () => {
-    writeImage("favicon.svg", 300);
-    writeImage("unoptimized-screenshot.png", 5000);
+    writeDistFile("images/favicon.svg", 300);
+    writeDistFile("images/unoptimized-screenshot.png", 5000);
 
     const result = evaluateImageBudget(outDir, 1000);
 
@@ -214,11 +285,7 @@ describe("evaluateImageBudget", () => {
   });
 
   it("checks images in nested directories too", () => {
-    mkdirSync(join(imagesDir, "nested"), { recursive: true });
-    writeFileSync(
-      join(imagesDir, "nested", "big.png"),
-      Buffer.alloc(5000, "a"),
-    );
+    writeDistFile("images/nested/big.png", 5000);
 
     const result = evaluateImageBudget(outDir, 1000);
 
@@ -230,10 +297,7 @@ describe("evaluateImageBudget", () => {
     // pipeline hashes them into assets/, while images/ holds only the
     // static files copied straight from public/images (favicons, manifest
     // icons, the OG card).
-    writeFileSync(
-      join(assetsDir, "hero.DaBcDeFg.png"),
-      Buffer.alloc(5000, "a"),
-    );
+    writeDistFile("assets/hero.DaBcDeFg.png", 5000);
 
     const result = evaluateImageBudget(outDir, 1000);
 
@@ -242,7 +306,7 @@ describe("evaluateImageBudget", () => {
   });
 
   it("ignores non-image files regardless of size", () => {
-    writeFileSync(join(assetsDir, "framework.js"), Buffer.alloc(5000, "a"));
+    writeDistFile("assets/framework.js", 5000);
 
     const result = evaluateImageBudget(outDir, 1000);
 
@@ -262,7 +326,7 @@ describe("evaluatePerformanceBudget", () => {
   it("passes only when both the critical asset and image budgets pass", () => {
     writeFullCriticalAssets(100);
     writeIndexHtml(buildHtml());
-    writeImage("favicon.svg", 100);
+    writeDistFile("images/favicon.svg", 100);
 
     const result = evaluatePerformanceBudget(outDir);
 
@@ -274,7 +338,7 @@ describe("evaluatePerformanceBudget", () => {
   it("fails overall when only the image budget is exceeded", () => {
     writeFullCriticalAssets(100);
     writeIndexHtml(buildHtml());
-    writeImage("unoptimized.png", 10 * 1024 * 1024);
+    writeDistFile("images/unoptimized.png", 10 * 1024 * 1024);
 
     const result = evaluatePerformanceBudget(outDir);
 
@@ -288,7 +352,7 @@ describe("evaluatePerformanceBudget", () => {
     // 100 bytes is well under the default 300 KB per-image budget.
     writeFullCriticalAssets(70 * 1024);
     writeIndexHtml(buildHtml());
-    writeImage("favicon.svg", 100);
+    writeDistFile("images/favicon.svg", 100);
 
     const result = evaluatePerformanceBudget(outDir);
 
@@ -299,23 +363,26 @@ describe("evaluatePerformanceBudget", () => {
 });
 
 describe("runPerformanceBudgetCli", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("returns exit code 0 and logs a pass when the build is within budget", () => {
     writeFullCriticalAssets(100);
     writeIndexHtml(buildHtml());
-    writeImage("favicon.svg", 100);
+    writeDistFile("images/favicon.svg", 100);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     const exitCode = runPerformanceBudgetCli(outDir);
 
     expect(exitCode).toBe(0);
     expect(logSpy).toHaveBeenCalledWith("[perf-budget] within budget");
-    logSpy.mockRestore();
   });
 
   it("returns exit code 1 and logs the failure when the build exceeds budget", () => {
     writeFullCriticalAssets(100);
     writeIndexHtml(buildHtml());
-    writeImage("unoptimized.png", 10 * 1024 * 1024);
+    writeDistFile("images/unoptimized.png", 10 * 1024 * 1024);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -325,6 +392,5 @@ describe("runPerformanceBudgetCli", () => {
     expect(errorSpy).toHaveBeenCalledWith(
       "[perf-budget] performance budget exceeded — see failures above",
     );
-    vi.restoreAllMocks();
   });
 });

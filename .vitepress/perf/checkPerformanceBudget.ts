@@ -1,6 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 // CI runs lint, typecheck, tests and build, but nothing budgets real page
 // performance despite the font-preload/self-hosted-font/immutable-cache work
@@ -50,10 +49,11 @@ const MAX_IMAGE_BYTES = 300 * 1024;
 
 const PRELOAD_REL_SUBSTRING = "preload";
 const MODULE_SCRIPT_TYPE = "module";
-// Matches an absolute URL (any scheme, e.g. "https://") or a protocol-relative
-// one ("//"). Neither points at a file this build emits, so both are excluded
-// from the critical-asset scrape rather than mis-joined onto outDir.
-const NON_LOCAL_HREF_PATTERN = /^([a-z][a-z0-9+.-]*:)?\/\//i;
+// Matches a URI with an explicit scheme ("https:", "data:", "blob:", ...) or a
+// protocol-relative one ("//"). None of these points at a file this build
+// emits, so all are excluded from the critical-asset scrape rather than
+// mis-joined onto outDir.
+const NON_LOCAL_HREF_PATTERN = /^([a-z][a-z0-9+.-]*:|\/\/)/i;
 const IMAGE_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -75,15 +75,31 @@ function isMissingPathError(error: unknown) {
   );
 }
 
+// Shared by every fs call in this module that should turn "path doesn't
+// exist" into an actionable message (run the build first / the referenced
+// asset is missing) while letting any other error (permissions, etc.)
+// propagate as-is.
+function rethrowMissingPath(error: unknown, message: string): never {
+  if (isMissingPathError(error)) {
+    throw new Error(message, { cause: error });
+  }
+  throw error;
+}
+
 function extractTags(html: string, tagName: string) {
   const tagPattern = new RegExp(`<${tagName}\\b[^>]*>`, "g");
   return html.match(tagPattern) ?? [];
 }
 
+// Accepts both quote styles: VitePress's own output is consistently
+// double-quoted, but a hand-written test fixture or a future template change
+// using single quotes shouldn't silently drop the attribute from the match.
 function extractAttribute(tag: string, attributeName: string) {
-  const attributePattern = new RegExp(`\\b${attributeName}="([^"]*)"`);
+  const attributePattern = new RegExp(
+    `\\b${attributeName}=(?:"([^"]*)"|'([^']*)')`,
+  );
   const match = tag.match(attributePattern);
-  return match?.[1];
+  return match?.[1] ?? match?.[2];
 }
 
 // Strips a trailing query string and/or fragment so two tags pointing at the
@@ -104,6 +120,11 @@ function isLocalHref(href: string | undefined): href is string {
   return !NON_LOCAL_HREF_PATTERN.test(href);
 }
 
+interface CriticalAssetHrefsBySource {
+  preloadLinkHrefs: string[];
+  moduleScriptSrcs: string[];
+}
+
 // Every <link> whose rel includes "preload" — plain preload (the font link),
 // "preload stylesheet" (VitePress's stylesheet tag), and "modulepreload"
 // (chunk hints) all match that substring — plus the entry
@@ -113,47 +134,70 @@ function isLocalHref(href: string | undefined): href is string {
 // cross-origin or protocol-relative href (e.g. a third-party font CDN) is
 // filtered out here rather than mis-resolved onto outDir — this budget can
 // only measure bytes this build actually emits.
-function extractCriticalAssetHrefs(html: string) {
+//
+// Kept as two separate lists (rather than merged) so
+// `assertFoundExpectedAssetTypes` can require each *source* to have
+// produced something, not just infer it from file extensions — a
+// modulepreload chunk and the entry module script are both ".js", so an
+// extension-only check can't tell "the entry script tag disappeared" from
+// "the entry script tag is still there".
+function extractCriticalAssetHrefs(html: string): CriticalAssetHrefsBySource {
   const preloadLinkHrefs = extractTags(html, "link")
     .filter((tag) =>
       (extractAttribute(tag, "rel") ?? "").includes(PRELOAD_REL_SUBSTRING),
     )
-    .map((tag) => extractAttribute(tag, "href"));
+    .map((tag) => extractAttribute(tag, "href"))
+    .filter(isLocalHref)
+    .map(stripQueryAndFragment);
 
   const moduleScriptSrcs = extractTags(html, "script")
     .filter((tag) => extractAttribute(tag, "type") === MODULE_SCRIPT_TYPE)
-    .map((tag) => extractAttribute(tag, "src"));
-
-  const hrefs = [...preloadLinkHrefs, ...moduleScriptSrcs]
+    .map((tag) => extractAttribute(tag, "src"))
     .filter(isLocalHref)
     .map(stripQueryAndFragment);
-  return Array.from(new Set(hrefs));
+
+  return { preloadLinkHrefs, moduleScriptSrcs };
 }
 
-const STYLESHEET_EXTENSION = ".css";
-const SCRIPT_EXTENSION = ".js";
+function dedupeHrefs(hrefsBySource: CriticalAssetHrefsBySource) {
+  return Array.from(
+    new Set([
+      ...hrefsBySource.preloadLinkHrefs,
+      ...hrefsBySource.moduleScriptSrcs,
+    ]),
+  );
+}
 
 // Guards against the scrape silently finding nothing: if a future VitePress
-// version changes how it marks the stylesheet/entry-script tags (a different
-// `rel`, single-quoted attributes, etc.), `extractCriticalAssetHrefs` would
-// return an empty list and this budget would score 0 bytes as a pass instead
-// of failing loud. At least one stylesheet and one script is exactly what
-// every VitePress build emits today (see the real dist/index.html this
-// budget was tuned against), so their absence means the markup shape moved,
-// not that the page got lighter.
-function assertFoundExpectedAssetTypes(hrefs: string[]) {
-  const hasStylesheet = hrefs.some((href) =>
-    href.endsWith(STYLESHEET_EXTENSION),
-  );
-  const hasEntryScript = hrefs.some((href) => href.endsWith(SCRIPT_EXTENSION));
-  if (hasStylesheet && hasEntryScript) {
+// version changes how it marks the stylesheet/preload links or the entry
+// script tag (a different `rel`, a dynamic-import bootstrap instead of a
+// top-level `<script type="module">`), the affected list goes empty and this
+// budget would score fewer bytes as a pass instead of failing loud. At least
+// one preloaded link (the stylesheet, at minimum) and one module script is
+// exactly what every VitePress build emits today (see the real
+// dist/index.html this budget was tuned against), so either going empty
+// means the markup shape moved, not that the page got lighter.
+function assertFoundExpectedAssetTypes(
+  hrefsBySource: CriticalAssetHrefsBySource,
+) {
+  const hasPreloadLink = hrefsBySource.preloadLinkHrefs.length > 0;
+  const hasEntryScript = hrefsBySource.moduleScriptSrcs.length > 0;
+  if (hasPreloadLink && hasEntryScript) {
     return;
   }
   throw new Error(
-    `Performance budget: parsed ${INDEX_HTML_FILE} but found no critical ${STYLESHEET_EXTENSION}/${SCRIPT_EXTENSION} asset (found: ${hrefs.join(", ") || "nothing"}); the preload/modulepreload markup shape likely changed`,
+    `Performance budget: parsed ${INDEX_HTML_FILE} but found ` +
+      `${hrefsBySource.preloadLinkHrefs.length} preload link(s) and ` +
+      `${hrefsBySource.moduleScriptSrcs.length} module script(s); expected ` +
+      `at least one of each — the preload/modulepreload markup shape likely changed`,
   );
 }
 
+// Assumes the site is served from the domain root (VitePress `site.base`,
+// hardcoded to "/" in .vitepress/config.ts and never overridden here). If
+// `base` is ever set to a subpath, every emitted href gains that prefix and
+// every lookup below fails loud with "has no built file at" on an otherwise
+// good build — a maintenance trap worth knowing about, not a live bug.
 function hrefToDistPath(outDir: string, href: string) {
   const relativePath = href.startsWith("/") ? href.slice(1) : href;
   return join(outDir, relativePath);
@@ -164,27 +208,21 @@ function readIndexHtml(outDir: string) {
   try {
     return readFileSync(indexHtmlPath, "utf8");
   } catch (error) {
-    if (isMissingPathError(error)) {
-      throw new Error(
-        `Performance budget: no ${INDEX_HTML_FILE} at ${indexHtmlPath}; run \`npm run build\` first`,
-        { cause: error },
-      );
-    }
-    throw error;
+    rethrowMissingPath(
+      error,
+      `Performance budget: no ${INDEX_HTML_FILE} at ${indexHtmlPath}; run \`npm run build\` first`,
+    );
   }
 }
 
-function statSizeOrThrow(filePath: string, href: string) {
+function statSizeOrThrow(filePath: string, description: string) {
   try {
     return statSync(filePath).size;
   } catch (error) {
-    if (isMissingPathError(error)) {
-      throw new Error(
-        `Performance budget: critical asset "${href}" referenced from ${INDEX_HTML_FILE} has no built file at ${filePath}`,
-        { cause: error },
-      );
-    }
-    throw error;
+    rethrowMissingPath(
+      error,
+      `Performance budget: ${description} has no built file at ${filePath}`,
+    );
   }
 }
 
@@ -205,11 +243,15 @@ export function evaluateCriticalAssetBudget(
   budgetBytes: number = CRITICAL_ASSET_BUDGET_BYTES,
 ): CriticalAssetBudgetResult {
   const html = readIndexHtml(outDir);
-  const hrefs = extractCriticalAssetHrefs(html);
-  assertFoundExpectedAssetTypes(hrefs);
+  const hrefsBySource = extractCriticalAssetHrefs(html);
+  assertFoundExpectedAssetTypes(hrefsBySource);
+  const hrefs = dedupeHrefs(hrefsBySource);
   const files = hrefs.map((href) => ({
     href,
-    bytes: statSizeOrThrow(hrefToDistPath(outDir, href), href),
+    bytes: statSizeOrThrow(
+      hrefToDistPath(outDir, href),
+      `critical asset "${href}" referenced from ${INDEX_HTML_FILE}`,
+    ),
   }));
   const totalBytes = files.reduce((sum, file) => sum + file.bytes, 0);
   return {
@@ -257,19 +299,19 @@ export function evaluateImageBudget(
   try {
     allFiles = listFilesRecursively(outDir);
   } catch (error) {
-    if (isMissingPathError(error)) {
-      throw new Error(
-        `Performance budget: no build output at ${outDir}; run \`npm run build\` first`,
-        { cause: error },
-      );
-    }
-    throw error;
+    rethrowMissingPath(
+      error,
+      `Performance budget: no build output at ${outDir}; run \`npm run build\` first`,
+    );
   }
   const imageFiles = allFiles.filter((path) =>
     IMAGE_EXTENSIONS.has(extname(path).toLowerCase()),
   );
   const violations = imageFiles
-    .map((path) => ({ path, bytes: statSync(path).size }))
+    .map((path) => ({
+      path,
+      bytes: statSizeOrThrow(path, "image discovered during the build scan"),
+    }))
     .filter((file) => file.bytes > budgetBytes);
   return { budgetBytes, violations, withinBudget: violations.length === 0 };
 }
@@ -354,7 +396,12 @@ function main() {
 
 // Only run when invoked directly (`npm run perf:budget` / `node
 // checkPerformanceBudget.ts`), not when imported by the vitest suite.
-const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
-if (isMainModule) {
+// `import.meta.main` (Node >=20.11/21.2, unconditionally available on the
+// Node 24 this repo pins via .nvmrc) compares resolved real paths under the
+// hood — unlike a hand-rolled `process.argv[1] === fileURLToPath(import.meta.url)`
+// check, it isn't fooled by a symlink anywhere in the invocation path (e.g.
+// macOS's /tmp -> /private/tmp), which would otherwise make this script a
+// silent no-op that still exits 0.
+if (import.meta.main) {
   main();
 }
