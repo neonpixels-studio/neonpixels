@@ -47,9 +47,17 @@ function readBuildTable() {
 
 const BUILD_TABLE = readBuildTable();
 
+// Regex metacharacters have no meaning in a TOML key, so escape any that
+// appear before interpolating into a pattern — otherwise a key containing
+// one (e.g. a dotted key passed in whole) would silently change what the
+// pattern matches instead of being matched literally.
+function escapeForRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function readBuildTableValue(key: string) {
   const match = BUILD_TABLE.match(
-    new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, "m"),
+    new RegExp(`^\\s*${escapeForRegExp(key)}\\s*=\\s*"([^"]*)"`, "m"),
   );
   if (!match) {
     throw new Error(`netlify.toml [build] has no ${key} value`);
@@ -57,15 +65,119 @@ function readBuildTableValue(key: string) {
   return match[1];
 }
 
-// Counts top-level `key = ...` assignments (ignoring commented lines), so a
-// `command`/`publish` override in any table can be compared against the count
-// inside [build].
-function countKeyDefinitions(source: string, key: string) {
-  const pattern = new RegExp(`^\\s*${key}\\s*=`);
+// Blanks the interior of every *value* quoted string on a line — a quoted
+// key is left untouched, recognized by its closing quote being immediately
+// followed by `=`. Without this, key-shaped text or a stray `#` inside a
+// value (e.g. a header value mentioning another header's name, or a URL
+// fragment) could be mistaken for a real assignment or a comment marker
+// anywhere in the value, not just flush against its opening quote. Doesn't
+// handle a backslash-escaped quote inside a double-quoted string, or a
+// triple-quoted multi-line string (both would need cross-line state) — no
+// value any of these guards read uses either form today, so treat both as a
+// known gap rather than a silently-covered case.
+function blankQuotedValues(line: string) {
+  let sanitized = "";
+  let index = 0;
+  while (index < line.length) {
+    const character = line[index];
+    const isQuoteChar = character === '"' || character === "'";
+    if (!isQuoteChar) {
+      sanitized += character;
+      index += 1;
+      continue;
+    }
+    const closingIndex = line.indexOf(character, index + 1);
+    if (closingIndex === -1) {
+      sanitized += line.slice(index);
+      break;
+    }
+    const isQuotedKey = /^\s*=/.test(line.slice(closingIndex + 1));
+    sanitized += isQuotedKey
+      ? line.slice(index, closingIndex + 1)
+      : "_".repeat(closingIndex + 1 - index);
+    index = closingIndex + 1;
+  }
+  return sanitized;
+}
+
+// Strips a trailing TOML comment so a comment-only mention of a key ("#
+// NODE_VERSION = ...") is never mistaken for a live assignment. Assumes
+// quoted values have already been blanked (see blankQuotedValues), so any
+// `#` remaining is a real comment marker rather than one embedded in a
+// value.
+function stripComment(line: string) {
+  return line.split("#", 1)[0];
+}
+
+type KeyAssignmentOptions = {
+  // TOML keys are themselves case-sensitive, but a key that becomes an HTTP
+  // header name (e.g. Cache-Control, X-Robots-Tag) is applied
+  // case-insensitively by the browser/CDN regardless of how it's spelled in
+  // the file, so guards over those keys must match case-insensitively too.
+  caseInsensitive?: boolean;
+};
+
+// Builds a pattern matching `key = ` in any form TOML allows the assignment
+// to appear: a bare top-level key, a dotted key (`table.key = ...`), a
+// single- or double-quoted key, or a key nested inside an inline table
+// (`{ key = ..., other = ... }`). Deliberately not line-anchored — an
+// inline-table entry is a single valid TOML construct that can start
+// mid-line, and a `^`-anchored pattern would let it slip past every guard
+// built on top of it. Always global, so a caller counting occurrences can
+// walk every match on a line instead of stopping at the first. The quote
+// around the key is captured and backreferenced (rather than matched as an
+// independent `['"]?` on each side) so an unmatched opening quote can't
+// stand in for the required delimiter.
+function buildKeyAssignmentPattern(key: string, caseInsensitive: boolean) {
+  const escapedKey = escapeForRegExp(key);
+  return new RegExp(
+    `(?:^|[\\s{,.])(?:(['"])${escapedKey}\\1|${escapedKey})\\s*=`,
+    `g${caseInsensitive ? "i" : ""}`,
+  );
+}
+
+// Runs the two sanitizing passes every key-assignment guard needs before
+// matching: blank out quoted values (so key-shaped text or a `#` inside one
+// can't be mistaken for the real thing), then strip whatever comment
+// remains.
+function sanitizeForKeyMatching(line: string) {
+  return stripComment(blankQuotedValues(line));
+}
+
+// Counts live assignments of `key` across every line of `source`, in any
+// TOML form `buildKeyAssignmentPattern` recognizes, so a `command`/`publish`
+// override hidden in another table — including inside an inline table — can
+// be compared against the count inside [build]. Counts matches, not
+// matching lines, so two assignments of the same key packed onto one line
+// (e.g. two inline tables) aren't undercounted as one.
+function countKeyDefinitions(
+  source: string,
+  key: string,
+  { caseInsensitive = false }: KeyAssignmentOptions = {},
+) {
+  const pattern = buildKeyAssignmentPattern(key, caseInsensitive);
   return source
     .split("\n")
-    .filter((line) => !line.trim().startsWith("#"))
-    .filter((line) => pattern.test(line)).length;
+    .reduce(
+      (total, line) =>
+        total + [...sanitizeForKeyMatching(line).matchAll(pattern)].length,
+      0,
+    );
+}
+
+// True when `key` is assigned anywhere on this line, in any of the forms
+// `countKeyDefinitions` recognizes. Delegates rather than re-running
+// `buildKeyAssignmentPattern` + `.test()` itself: a `g`-flagged pattern is
+// stateful via `lastIndex` across repeated `.test()` calls on the *same*
+// RegExp instance, so counting matches and taking `> 0` is the safe way to
+// reuse the same building block without that hazard resurfacing if this
+// function is ever changed to reuse a pattern across calls.
+function lineHasKeyAssignment(
+  line: string,
+  key: string,
+  options: KeyAssignmentOptions = {},
+) {
+  return countKeyDefinitions(line, key, options) > 0;
 }
 
 // The Node version lives in .nvmrc only (read by CI and Netlify alike). This
@@ -76,24 +188,14 @@ function countKeyDefinitions(source: string, key: string) {
 const EXPECTED_NODE_MAJOR = 24;
 const EXACT_NODE_VERSION = /^v?\d+\.\d+\.\d+$/;
 
-// Matches a NODE_VERSION assignment in any form Netlify parses: a section key,
-// a quoted key, a dotted key (`build.environment.NODE_VERSION = ...`), or an
-// inline-table entry (`{ NODE_VERSION = ... }`).
-const NODE_VERSION_PIN = /(?:^|[\s{,.])"?NODE_VERSION"?\s*=/;
-
-// True only when the pin survives comment stripping, so a live pin on a line
-// whose earlier value contains `#` still counts while a comment-only mention
-// ("# NODE_VERSION ...") does not.
-function lineHasLivePin(line: string) {
-  return (
-    NODE_VERSION_PIN.test(line) && NODE_VERSION_PIN.test(line.split("#", 1)[0])
-  );
-}
-
-// Returns the 1-based line number of the pin, or undefined if none, so a
-// failure points at where to look rather than at a comment-stripped fragment.
+// Returns the 1-based line number of a NODE_VERSION pin (in any form
+// Netlify parses: a section key, a quoted key, a dotted key, or an
+// inline-table entry), or undefined if none, so a failure points at where to
+// look rather than at a comment-stripped fragment.
 function findNodeVersionPinLine() {
-  const index = NETLIFY_CONFIG.split("\n").findIndex(lineHasLivePin);
+  const index = NETLIFY_CONFIG.split("\n").findIndex((line) =>
+    lineHasKeyAssignment(line, "NODE_VERSION"),
+  );
   return index === -1 ? undefined : index + 1;
 }
 
@@ -292,6 +394,112 @@ const cspHeaderValue = readHeader(headers, "Content-Security-Policy");
 const { directives: cspDirectives, duplicates: cspDuplicates } =
   parseCsp(cspHeaderValue);
 
+// countKeyDefinitions/lineHasKeyAssignment back every key-assignment guard in
+// this file (the build-only command/publish check, the NODE_VERSION pin
+// check, and the Cache-Control override check). These are their shared,
+// format-level tests; each guard's own describe block additionally exercises
+// the fixture that guard specifically cares about.
+describe("shared key-assignment guard helper", () => {
+  it("counts a bare top-level assignment", () => {
+    expect(countKeyDefinitions('command = "a"', "command")).toBe(1);
+  });
+
+  it("counts an assignment nested inside an inline table", () => {
+    expect(countKeyDefinitions('foo = { command = "a" }', "command")).toBe(1);
+  });
+
+  it("ignores a fully commented-out line", () => {
+    expect(countKeyDefinitions('# command = "a"', "command")).toBe(0);
+  });
+
+  it("ignores a key assignment that only appears in a trailing comment", () => {
+    expect(
+      countKeyDefinitions('publish = "dist" # command = "sneaky"', "command"),
+    ).toBe(0);
+  });
+
+  it("still counts a live assignment whose earlier value contains a #", () => {
+    expect(
+      countKeyDefinitions(
+        'values = { X-Trace = "build#42", command = "a" }',
+        "command",
+      ),
+    ).toBe(1);
+  });
+
+  it("matches a single-quoted key", () => {
+    expect(countKeyDefinitions("'command' = \"a\"", "command")).toBe(1);
+  });
+
+  it("matches a double-quoted key", () => {
+    expect(countKeyDefinitions('"command" = "a"', "command")).toBe(1);
+  });
+
+  it("matches a dotted key", () => {
+    expect(
+      countKeyDefinitions('build.environment.command = "a"', "command"),
+    ).toBe(1);
+  });
+
+  // Exercises escapeForRegExp directly: without it, the `.` in this dotted
+  // key would act as a regex wildcard and match the unrelated key below
+  // (`buildXenvironment`, no literal dot) as if it were the real thing.
+  it("treats a regex metacharacter in the key literally", () => {
+    expect(
+      countKeyDefinitions('buildXenvironment = "a"', "build.environment"),
+    ).toBe(0);
+    expect(
+      countKeyDefinitions('build.environment = "a"', "build.environment"),
+    ).toBe(1);
+  });
+
+  it("counts two assignments of the same key packed onto one line", () => {
+    const config =
+      'environment = { preview = { command = "a" }, branch = { command = "b" } }';
+    expect(countKeyDefinitions(config, "command")).toBe(2);
+  });
+
+  it("is case-sensitive by default", () => {
+    expect(countKeyDefinitions('COMMAND = "a"', "command")).toBe(0);
+  });
+
+  it("matches case-insensitively when requested", () => {
+    expect(
+      countKeyDefinitions('COMMAND = "a"', "command", {
+        caseInsensitive: true,
+      }),
+    ).toBe(1);
+  });
+
+  // blankQuotedValues blanks the whole value, not just the character flush
+  // against the opening quote, so key-shaped text anywhere inside a value —
+  // not only right at its start — can't be mistaken for a real assignment.
+  it("ignores a key-shaped substring flush against a value's opening quote", () => {
+    expect(
+      countKeyDefinitions('X-Custom = "command = sneaky"', "command"),
+    ).toBe(0);
+  });
+
+  it("ignores a key-shaped substring in the middle of a value", () => {
+    expect(
+      countKeyDefinitions('X-Custom = "foo, command = bar"', "command"),
+    ).toBe(0);
+    expect(
+      countKeyDefinitions(
+        'X-Note = "see Cache-Control = none"',
+        "Cache-Control",
+        { caseInsensitive: true },
+      ),
+    ).toBe(0);
+  });
+
+  // A quoted *key* must still be recognized as live even though its value is
+  // also quoted — blankQuotedValues only blanks the value half.
+  it("still matches a quoted key whose value is also a quoted string", () => {
+    expect(countKeyDefinitions('"command" = "a, b, c"', "command")).toBe(1);
+  });
+});
+
 describe("netlify security headers", () => {
   it.each(Object.entries(STATIC_HEADERS))(
     "serves %s with the expected value",
@@ -408,6 +616,45 @@ describe("Node version source of truth", () => {
       : "";
     expect(TOOL_VERSIONS_NODE.test(toolVersions)).toBe(false);
   });
+
+  // lineHasKeyAssignment is the same helper findNodeVersionPinLine runs over
+  // every line of the live netlify.toml; these fixtures exercise the TOML
+  // forms a NODE_VERSION pin could hide in that the guard must not miss.
+  it("detects a pin nested inside an inline table", () => {
+    expect(
+      lineHasKeyAssignment(
+        'environment = { NODE_VERSION = "18" }',
+        "NODE_VERSION",
+      ),
+    ).toBe(true);
+  });
+
+  it("detects a single-quoted key pin", () => {
+    expect(
+      lineHasKeyAssignment("'NODE_VERSION' = \"18\"", "NODE_VERSION"),
+    ).toBe(true);
+  });
+
+  it("detects a double-quoted key pin", () => {
+    expect(lineHasKeyAssignment('"NODE_VERSION" = "18"', "NODE_VERSION")).toBe(
+      true,
+    );
+  });
+
+  it("does not flag a comment-only mention of NODE_VERSION", () => {
+    expect(lineHasKeyAssignment('# NODE_VERSION = "18"', "NODE_VERSION")).toBe(
+      false,
+    );
+  });
+
+  it("still flags a live pin whose value happens to contain a #", () => {
+    expect(
+      lineHasKeyAssignment(
+        'NODE_VERSION = "18" # pinned, see #42',
+        "NODE_VERSION",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("Netlify build compiles the site once", () => {
@@ -443,6 +690,24 @@ describe("Netlify build compiles the site once", () => {
       const occurrences = countKeyDefinitions(NETLIFY_CONFIG, key);
       const inBuild = countKeyDefinitions(BUILD_TABLE, key);
       expect(occurrences).toBe(inBuild);
+    },
+  );
+
+  // A `command`/`publish` override doesn't need its own top-level line to
+  // take effect — a valid TOML inline table hides it just as effectively, so
+  // countKeyDefinitions must walk into inline tables rather than only
+  // matching a line that starts with the key.
+  it.each(["command", "publish"])(
+    "counts %s even when hidden inside an inline table outside [build]",
+    (key) => {
+      const config = [
+        "[build]",
+        `  ${key} = "legit"`,
+        "",
+        "[context.production]",
+        `  environment = { ${key} = "sneaky override" }`,
+      ].join("\n");
+      expect(countKeyDefinitions(config, key)).toBe(2);
     },
   );
 });
@@ -493,16 +758,49 @@ describe("shipped immutable asset caching", () => {
   // block would silently override the /assets/* immutable rule declared in
   // _headers (see build-html.test.ts for the build-verified half of this
   // invariant: that every shipped /assets/ file is content-hashed and that
-  // _headers actually carries the rule). Match an actual Cache-Control
-  // assignment (bare or quoted key), not the bare string, so a comment
-  // mentioning Cache-Control — whole-line or trailing — can't false-trigger
-  // the guard. Any real assignment (overlapping path or not) still fails,
+  // _headers actually carries the rule). Uses the shared key-assignment
+  // helper so a comment mentioning Cache-Control — whole-line or trailing —
+  // can't false-trigger the guard, but a real assignment in any TOML form
+  // (bare, quoted, dotted, or nested in an inline table) still fails it,
   // forcing a deliberate review of the _headers/netlify.toml interaction.
+  // Case-insensitive: TOML keys are case-sensitive but HTTP applies header
+  // names case-insensitively, so `cache-control` or `CACHE-CONTROL` would
+  // create the same override hazard a case-sensitive match would miss (see
+  // issue #111 and the identical reasoning for X-Robots-Tag below).
   //
   // This is a static check of netlify.toml alone, so unlike the build-html.test.ts
   // checks it references, it runs without paying for a VitePress build.
   it("does not let netlify.toml override the immutable asset cache", () => {
-    expect(NETLIFY_CONFIG).not.toMatch(/^\s*"?Cache-Control"?\s*=/m);
+    expect(
+      countKeyDefinitions(NETLIFY_CONFIG, "Cache-Control", {
+        caseInsensitive: true,
+      }),
+    ).toBe(0);
+  });
+
+  // Issue #111: Netlify (and HTTP generally) applies header names
+  // case-insensitively, so a lowercase key is exactly as live a hazard as the
+  // canonical casing.
+  it("catches a lowercase cache-control override", () => {
+    expect(
+      countKeyDefinitions(
+        'cache-control = "public, max-age=1"',
+        "Cache-Control",
+        {
+          caseInsensitive: true,
+        },
+      ),
+    ).toBe(1);
+  });
+
+  // A Cache-Control override doesn't have to be its own top-level line — a
+  // valid TOML inline table hides it just as effectively.
+  it("catches a Cache-Control override nested inside an inline table", () => {
+    const config =
+      '[headers.values]\nvalues = { Cache-Control = "public, max-age=1" }';
+    expect(
+      countKeyDefinitions(config, "Cache-Control", { caseInsensitive: true }),
+    ).toBe(1);
   });
 });
 
@@ -521,18 +819,16 @@ describe("noindex header ownership", () => {
   // overlapping paths netlify.toml wins. A hand-added X-Robots-Tag there would
   // silently win over (or, on preview contexts, mask) the noindex header
   // generated into _headers (see .vitepress/robots), with every _headers
-  // assertion still passing. Case-insensitive (`im`): TOML keys are
-  // case-sensitive but Netlify applies HTTP header names case-insensitively,
-  // so `x-robots-tag` or `X-ROBOTS-TAG` would create the same hazard a
-  // case-sensitive match would miss entirely. Not line-anchored: TOML permits
-  // `-` in a bare key, so an inline-table assignment like
-  // `values = { X-Robots-Tag = "index" }` would sail past a `^`-anchored
-  // match despite setting the header — the exact hazard this guard exists to
-  // block. `['"]?` (not `"?`) since TOML also allows single-quoted literal
-  // keys (`'X-Robots-Tag' = "index"`), which a double-quote-only class would
-  // miss entirely.
+  // assertion still passing. Uses the shared key-assignment helper — the
+  // same one the Cache-Control and NODE_VERSION guards use above — so a
+  // bare, quoted, dotted, or inline-table assignment, in any case, is caught
+  // the same way everywhere in this file instead of via its own ad hoc regex.
   it("does not let netlify.toml declare its own X-Robots-Tag", () => {
-    expect(NETLIFY_CONFIG).not.toMatch(/['"]?X-Robots-Tag['"]?\s*=/i);
+    expect(
+      countKeyDefinitions(NETLIFY_CONFIG, "X-Robots-Tag", {
+        caseInsensitive: true,
+      }),
+    ).toBe(0);
   });
 
   // public/_headers is the hand-written file writeReportOnlyHeaders treats as
