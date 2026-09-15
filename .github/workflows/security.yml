@@ -94,3 +94,36 @@ jobs:
       # advisory. `npm run audit` === `npm audit --audit-level=high`.
       - name: Audit gate (fail on high or critical advisories)
         run: npm run audit
+
+  # A separate job (rather than a failure step tacked onto `audit`) for two
+  # reasons: (1) `audit` runs `npm ci`/`npm audit` over the full dependency
+  # tree, including install lifecycle scripts, with GITHUB_TOKEN visible to
+  # every process in the job — granting that job `issues: write` would hand
+  # issue-create to any malicious postinstall, on the one workflow whose job
+  # is to catch malicious dependencies; and (2) a job-level `if: failure()`
+  # against `needs: audit` fires on ANY failure in that job (checkout, npm
+  # ci, a registry blip, or the audit gate itself), not just the gate step,
+  # so a scheduled run can't fail silently no matter which step breaks (see
+  # issue #109). Scoped to the `schedule` trigger only — a push/pull_request
+  # failure is already visible as a failing required check, so opening an
+  # issue there would just be noise on top of that.
+  notify-audit-failure:
+    needs: audit
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Notify on scheduled audit failure
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const notifyAuditFailure = require("./.github/scripts/notify-audit-failure.cjs");
+            await notifyAuditFailure({ github, context, core });
