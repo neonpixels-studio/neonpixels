@@ -7,10 +7,41 @@ updates:
     assignees:
       - "grimicorn"
     groups:
+      # Dependabot assigns each dependency's update to the first group below
+      # whose rules match it; an update that matches no group ships as its
+      # own solo PR. minor-and-patch is listed first so minor/patch bumps —
+      # for vite/vitepress included — keep landing in the general weekly
+      # PR exactly as before this change.
       minor-and-patch:
         update-types:
           - "minor"
           - "patch"
+      # vite and vitepress are coupled: package.json pins vitepress's bundled
+      # vite/esbuild via `overrides.vitepress.{vite,esbuild}` (see the
+      # comment in .vitepress/config.ts). Dependabot can only bump manifest
+      # entries — it never touches that nested overrides block — so this
+      # grouping doesn't update the pin itself, and it only bundles updates
+      # that land in the same run (if only one of the two has a release
+      # pending, it still ships alone). What it buys: a *major* bump to
+      # either package now falls through minor-and-patch (which excludes
+      # majors) into this group instead of shipping as its own unremarkable
+      # solo PR, making it obvious a human should check whether the override
+      # still needs adjusting. No `update-types` filter here, so this group
+      # would also catch a minor/patch bump if it somehow fell through
+      # minor-and-patch above it.
+      vite-vitepress:
+        patterns:
+          - "vite"
+          - "vitepress"
+      # A group's patterns only apply to scheduled version updates unless
+      # `applies-to: security-updates` is set — the two can't share one
+      # group. Without this, a security-triggered vite/vitepress bump would
+      # still ship solo, missing the whole point above.
+      vite-vitepress-security:
+        applies-to: security-updates
+        patterns:
+          - "vite"
+          - "vitepress"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

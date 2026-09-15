@@ -37,7 +37,8 @@
     "vite": "^8.2.2",
     "vitepress": "^1.6.4",
     "vitest": "^5.0.0",
-    "vue-tsc": "^3.3.11"
+    "vue-tsc": "^3.3.11",
+    "yaml": "^2.9.1"
   },
   "overrides": {
     "vitepress": {
