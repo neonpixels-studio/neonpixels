@@ -138,6 +138,37 @@ incomplete prune run logs a `csp-report-prune-failed` marker or a `complete:
 false` result via `csp-report-pruned` and tries again on the next scheduled
 run; it never blocks or slows the `/csp-report` endpoint itself.
 
+Writing and pruning the store still left no way to read it back, so the
+rollout question it exists to answer — has `script-src` actually stopped
+firing — could only be checked by grepping raw per-violation log lines. A
+second, daily Netlify scheduled Function
+([`netlify/functions/csp-report-summary.ts`](netlify/functions/csp-report-summary.ts))
+reads and aggregates the store: counts of stored violations by
+`effectiveDirective` and by `blockedUri`, plus an explicit rollout signal —
+how many stored violations belong to the `script-src` family (`script-src`
+itself plus the `script-src-elem`/`script-src-attr` sub-directives browsers
+report even though this site never declares them separately) and, if any
+remain, the most recent one. Once that count is 0, `'unsafe-inline'` can be
+dropped from the enforcing `script-src` (see the `@todo` in `netlify.toml`).
+It's scheduled rather than a public route for the same reason the pruner's
+list/delete pass gets away with being unauthenticated: Netlify doesn't expose
+a scheduled Function's route to arbitrary callers, which matters here because
+the summary's most-recent violation embeds attacker-influenced fields
+(`blockedUri`, `sourceFile`, `sample`) that must not be readable at a public,
+unauthenticated endpoint. It's also invokable on demand —
+`netlify functions:invoke csp-report-summary` against a linked site — for an
+ad-hoc rollout check without waiting for the schedule. Like the pruner, the
+read path is isolated in
+[`netlify/functions/lib/cspReportSummary.ts`](netlify/functions/lib/cspReportSummary.ts)
+behind a minimal `list`/`get` seam (`BlobSummaryClient`, mirroring
+`BlobPrunerClient`), so the aggregation is unit-tested with a fake client
+rather than the real Blobs store; a `get()` failure or an unrecognized blob
+shape is counted and logged (`csp-report-summary-fetch-failed` /
+`csp-report-summary-invalid-entry`) rather than aborting the whole run. Each
+run's outcome is logged via `csp-report-summarized`
+(or `csp-report-summary-failed` on error/timeout), mirroring
+`csp-report-pruned`/`csp-report-prune-failed` above.
+
 ## Git hooks
 
 Managed with [Husky](https://typicode.github.io/husky):
