@@ -25,26 +25,37 @@ const PRUNE_FAILED_LOG_PREFIX = "csp-report-prune-failed";
 // already written by the time this can fail. See #123.
 const NOTIFY_FAILED_LOG_PREFIX = "csp-report-prune-notify-failed";
 
-// A short, separate budget for the GitHub notification call, bounded well
-// under HARD_TIMEOUT_MS's remaining headroom: this only runs after prune()
-// has already failed (possibly after consuming most of HARD_TIMEOUT_MS
-// itself), so it must not be able to push the whole run past Netlify's real
-// 30s scheduled-Function limit. A timeout here is caught and logged the same
-// as any other notify failure — the next hourly run's own failure (if the
-// issue persists) gets another chance to notify.
-export const NOTIFY_TIMEOUT_MS = 5000;
-
 const HTTP_OK = 200;
 const HTTP_INTERNAL_SERVER_ERROR = 500;
+
+// Netlify scheduled Functions have a hard 30s execution limit. The prune
+// budget and the notify budget below are sequential, not independent —
+// notify only ever runs after prune() has already failed — so they must
+// share one combined ceiling under 30s rather than each separately assuming
+// the full window. RUN_DEADLINE_MS is that combined ceiling (5s headroom for
+// cold start and the final in-flight batch); HARD_TIMEOUT_MS is what's left
+// for prune() once NOTIFY_TIMEOUT_MS is reserved for the notify call that
+// might follow it.
+const RUN_DEADLINE_MS = 28000;
+
+// A short, separate budget for the GitHub notification call: this only runs
+// after prune() has already failed (possibly after consuming all of
+// HARD_TIMEOUT_MS itself), so it must not be able to push the combined run
+// past RUN_DEADLINE_MS. A timeout here is caught and logged the same as any
+// other notify failure — the next hourly run's own failure (if the issue
+// persists) gets another chance to notify.
+export const NOTIFY_TIMEOUT_MS = 5000;
 
 // cspReportPruner's own list/delete budgets are cooperative: they check the
 // clock between pages/batches, not during a single slow list() page or
 // Promise.allSettled call, so a hung Blobs request could in principle push
 // past those without either one noticing. This hard timeout is the backstop:
 // it always wins the race against Netlify's real 30s scheduled-Function
-// limit, so a hang still produces a logged csp-report-prune-failed marker
-// instead of the run being silently killed with nothing written to the logs.
-export const HARD_TIMEOUT_MS = 28000;
+// limit (even after reserving NOTIFY_TIMEOUT_MS for the notify call that
+// follows a failure), so a hang still produces a logged
+// csp-report-prune-failed marker instead of the run being silently killed
+// with nothing written to the logs.
+export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - NOTIFY_TIMEOUT_MS;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

@@ -257,6 +257,23 @@ describe("sanitizeReportedError", () => {
     expect(sanitized.length).toBeLessThan(600);
     expect(sanitized).toMatch(/… \(truncated\)$/);
   });
+
+  // A leaked credential is not always inside a URL (e.g. echoed from a
+  // header), so this is a second, independent redaction pass rather than
+  // relying on the URL pattern above to also catch it.
+  it("redacts a bearer-style credential with no URL present", () => {
+    expect(
+      sanitizeReportedError(
+        "Netlify Blobs: request rejected, sent header authorization: Bearer nfp_9x7k2m failed",
+      ),
+    ).not.toContain("nfp_9x7k2m");
+  });
+
+  it("redacts a GitHub-style prefixed token", () => {
+    expect(sanitizeReportedError("auth failed for ghp_abcdefghijklmnop")).toBe(
+      "auth failed for [secret redacted]",
+    );
+  });
 });
 
 describe("getPruneFailureNotifier", () => {
@@ -325,6 +342,52 @@ describe("getPruneFailureNotifier", () => {
 
     await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
       /GitHub API GET .* failed: 401/,
+    );
+  });
+
+  it("truncates a large non-OK error body instead of dumping it whole into the thrown message", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch).mockResolvedValue(
+      new Response("x".repeat(10000), { status: 502 }),
+    );
+    const notifier = getPruneFailureNotifier();
+
+    const error = await notifier
+      .notify("blobs unavailable")
+      .catch((caught: Error) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    // The message is "GitHub API GET <path> failed: 502 " (prefix overhead)
+    // plus the capped body — well under the raw 10000-character response.
+    expect((error as Error).message.length).toBeLessThan(700);
+  });
+
+  // A 200 with a body that isn't valid JSON (e.g. an HTML error page from a
+  // proxy in front of the real API) must surface as a clear "GitHub API"
+  // error, not a raw, unattributed SyntaxError from response.json() itself.
+  it("throws a descriptive error when a 200 response isn't valid JSON", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch).mockResolvedValue(
+      new Response("<html>not json</html>", { status: 200 }),
+    );
+    const notifier = getPruneFailureNotifier();
+
+    await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
+      "GitHub API issues list response was not valid JSON",
+    );
+  });
+
+  it("throws a descriptive error when the issues list response is valid JSON but not an array", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ message: "Bad credentials" }), {
+        status: 200,
+      }),
+    );
+    const notifier = getPruneFailureNotifier();
+
+    await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
+      "GitHub API issues list response was not an array",
     );
   });
 });

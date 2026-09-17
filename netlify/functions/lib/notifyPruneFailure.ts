@@ -82,12 +82,26 @@ function isTrackedPruneFailureIssue(
 // notification itself fail (422), which is exactly when it's most needed.
 const MAX_REPORTED_ERROR_LENGTH = 500;
 
+// Two independent redaction passes, not one combined pattern: a URL and a
+// bearer-style credential can each appear without the other (a token in a
+// header, reported without a URL; a URL with no credential in it), so both
+// must run regardless of whether the other matched.
+const URL_PATTERN = /https?:\/\/\S+/g;
+// Matches common token shapes an upstream HTTP client might echo back in an
+// error message: an explicit "Bearer <token>"/"token: <token>" credential,
+// or a GitHub/Netlify-style prefixed token (gh_, ghp_, ghs_, nfp_, etc.)
+// regardless of where it appears in the string.
+const SECRET_PATTERN =
+  /\b(?:bearer|token)[=:\s]+\S+|\bgh[a-z]*_\S+|\bnfp_\S+/gi;
+
 export function sanitizeReportedError(errorMessage: string): string {
-  const withoutUrls = errorMessage.replace(/https?:\/\/\S+/g, "[url redacted]");
-  if (withoutUrls.length <= MAX_REPORTED_ERROR_LENGTH) {
-    return withoutUrls;
+  const redacted = errorMessage
+    .replace(URL_PATTERN, "[url redacted]")
+    .replace(SECRET_PATTERN, "[secret redacted]");
+  if (redacted.length <= MAX_REPORTED_ERROR_LENGTH) {
+    return redacted;
   }
-  return `${withoutUrls.slice(0, MAX_REPORTED_ERROR_LENGTH)}… (truncated)`;
+  return `${redacted.slice(0, MAX_REPORTED_ERROR_LENGTH)}… (truncated)`;
 }
 
 function buildIssueBody(errorMessage: string): string {
@@ -198,12 +212,32 @@ async function githubRequest(path: string, init: FetchInit): Promise<Response> {
     },
   });
   if (!response.ok) {
-    const body = await response.text();
+    // Capped the same as a reported prune error (MAX_REPORTED_ERROR_LENGTH):
+    // an unexpected non-JSON error page (e.g. a proxy/edge 502) can be many
+    // kilobytes, and this message ends up as a single console.warn line in
+    // notifyPruneFailureQuietly — uncapped, it would bury the
+    // csp-report-prune-failed line that precedes it in the Function logs.
+    const body = (await response.text()).slice(0, MAX_REPORTED_ERROR_LENGTH);
     throw new Error(
       `GitHub API ${init.method ?? "GET"} ${path} failed: ${response.status} ${body}`,
     );
   }
   return response;
+}
+
+// `response.json()` throws its own raw SyntaxError on a non-JSON 200 body
+// (e.g. an HTML error page from a proxy in front of the real API) — wrapped
+// here so every caller gets the same clear "GitHub API" error instead of a
+// parser exception with no indication of which request produced it.
+async function parseJson(
+  response: Response,
+  context: string,
+): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    throw new Error(`GitHub API ${context} response was not valid JSON`);
+  }
 }
 
 function createFetchGithubIssuesClient(): GithubIssuesClient {
@@ -213,7 +247,7 @@ function createFetchGithubIssuesClient(): GithubIssuesClient {
         `/repos/${REPO_OWNER}/${REPO_NAME}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=${LIST_PAGE_SIZE}`,
         { method: "GET" },
       );
-      const payload: unknown = await response.json();
+      const payload = await parseJson(response, "issues list");
       // A 200 response isn't proof of the expected shape (a malformed/error
       // payload the caller still marked `ok`) — `.find()` on anything else
       // throws a confusing TypeError deep inside the duplicate-guard check
