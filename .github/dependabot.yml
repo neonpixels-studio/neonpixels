@@ -29,10 +29,20 @@ updates:
       # still needs adjusting. No `update-types` filter here, so this group
       # would also catch a minor/patch bump if it somehow fell through
       # minor-and-patch above it.
+      #
+      # @tailwindcss/vite, @vitejs/plugin-vue, and vitest all declare vite as
+      # a peer dependency. Without them in this group, a vite major could
+      # land in its own PR while one of these peers ships separately (or not
+      # at all that week), leaving mismatched peer ranges installed together
+      # and breaking `npm ci`. Grouping them with vite guarantees they bump
+      # in the same run whenever vite does.
       vite-vitepress:
         patterns:
           - "vite"
           - "vitepress"
+          - "@tailwindcss/vite"
+          - "@vitejs/plugin-vue"
+          - "vitest"
       # A group's patterns only apply to scheduled version updates unless
       # `applies-to: security-updates` is set — the two can't share one
       # group. Without this, a security-triggered vite/vitepress bump would
@@ -42,6 +52,9 @@ updates:
         patterns:
           - "vite"
           - "vitepress"
+          - "@tailwindcss/vite"
+          - "@vitejs/plugin-vue"
+          - "vitest"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

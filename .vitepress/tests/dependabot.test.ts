@@ -23,6 +23,15 @@ const REPO_ROOT = path.resolve(
 const DEPENDABOT_CONFIG_PATH = path.join(REPO_ROOT, ".github/dependabot.yml");
 const PACKAGE_JSON_PATH = path.join(REPO_ROOT, "package.json");
 const COUPLED_PACKAGES = ["vite", "vitepress"];
+// These packages all declare vite as a peer dependency. They ride along in
+// the same coupled group so a vite major bump can't split from them and
+// leave a mismatched peer range installed, breaking `npm ci`.
+const VITE_PEER_PACKAGES = [
+  "@tailwindcss/vite",
+  "@vitejs/plugin-vue",
+  "vitest",
+];
+const GROUPED_PACKAGES = [...COUPLED_PACKAGES, ...VITE_PEER_PACKAGES];
 const ALL_UPDATE_TYPES = ["major", "minor", "patch"];
 
 function readNpmUpdateEntry() {
@@ -91,9 +100,9 @@ describe("dependabot.yml vite/vitepress grouping", () => {
 
     expect(coupledGroup).toBeDefined();
     expect(coupledGroup.patterns).toEqual(
-      expect.arrayContaining(COUPLED_PACKAGES),
+      expect.arrayContaining(GROUPED_PACKAGES),
     );
-    expect(coupledGroup.patterns).toHaveLength(COUPLED_PACKAGES.length);
+    expect(coupledGroup.patterns).toHaveLength(GROUPED_PACKAGES.length);
     expect(matchesEveryUpdateType(coupledGroup)).toBe(true);
   });
 
@@ -108,9 +117,31 @@ describe("dependabot.yml vite/vitepress grouping", () => {
     expect(securityGroup).toBeDefined();
     expect(securityGroup["applies-to"]).toBe("security-updates");
     expect(securityGroup.patterns).toEqual(
-      expect.arrayContaining(COUPLED_PACKAGES),
+      expect.arrayContaining(GROUPED_PACKAGES),
     );
-    expect(securityGroup.patterns).toHaveLength(COUPLED_PACKAGES.length);
+    expect(securityGroup.patterns).toHaveLength(GROUPED_PACKAGES.length);
+  });
+
+  it("also couples vite's peer-dependent packages, which all exist in package.json", () => {
+    // @tailwindcss/vite, @vitejs/plugin-vue, and vitest peer-depend on vite
+    // majors but aren't coupled to vitepress's override pin the way vite
+    // itself is — they're grouped here purely so a vite major can't ship
+    // split from them and break `npm ci` on a mismatched peer range.
+    const npmEntry = readNpmUpdateEntry();
+    const coupledGroup = npmEntry.groups?.["vite-vitepress"];
+    const securityGroup = npmEntry.groups?.["vite-vitepress-security"];
+    const packageJson = JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf-8"));
+    const allDependencies = {
+      ...packageJson.dependencies,
+      ...packageJson.devDependencies,
+      ...packageJson.optionalDependencies,
+    };
+
+    VITE_PEER_PACKAGES.forEach((packageName) => {
+      expect(allDependencies[packageName]).toBeDefined();
+      expect(coupledGroup.patterns).toContain(packageName);
+      expect(securityGroup.patterns).toContain(packageName);
+    });
   });
 
   it("still groups every other package's minor and patch version updates", () => {
