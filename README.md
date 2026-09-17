@@ -148,7 +148,12 @@ reads and aggregates the store: counts of stored violations by
 how many stored violations belong to the `script-src` family (`script-src`
 itself plus the `script-src-elem`/`script-src-attr` sub-directives browsers
 report even though this site never declares them separately) and, if any
-remain, the most recent one. Once that count is 0, `'unsafe-inline'` can be
+remain, the most recent one. The signal only reports `stopped: true` once the
+store has something in it (`totalListed > 0`) with none of that belonging to
+`script-src` and nothing unread (`fetchFailures`/`invalidEntries` both 0) —
+an empty store is exactly what a silently broken collector would also look
+like, so it fails closed rather than reading that the same as a genuinely
+finished rollout. Once it does report stopped, `'unsafe-inline'` can be
 dropped from the enforcing `script-src` (see the `@todo` in `netlify.toml`).
 It's scheduled rather than a public route for the same reason the pruner's
 list/delete pass gets away with being unauthenticated: Netlify doesn't expose
@@ -164,9 +169,16 @@ behind a minimal `list`/`get` seam (`BlobSummaryClient`, mirroring
 `BlobPrunerClient`), so the aggregation is unit-tested with a fake client
 rather than the real Blobs store; a `get()` failure or an unrecognized blob
 shape is counted and logged (`csp-report-summary-fetch-failed` /
-`csp-report-summary-invalid-entry`) rather than aborting the whole run. Each
-run's outcome is logged via `csp-report-summarized`
-(or `csp-report-summary-failed` on error/timeout), mirroring
+`csp-report-summary-invalid-entry`) rather than aborting the whole run — a key
+the pruner deleted mid-walk is tracked separately (`missingEntries`) and never
+logged, since that's routine, not a fault. Each run logs its outcome on two
+lines: `csp-report-summarized` carries the rollout signal and totals, and
+`csp-report-summary-breakdown` carries the `byDirective`/`byBlockedUri`
+counts (capped to the top 20 each) — split and capped because `blockedUri` is
+attacker-influenced free text arriving through a public endpoint, so an
+unbounded breakdown could otherwise grow into a multi-hundred-KB single log
+line and risk the rollout signal itself being truncated. A run that errors or
+times out logs `csp-report-summary-failed` instead, mirroring
 `csp-report-pruned`/`csp-report-prune-failed` above.
 
 ## Git hooks

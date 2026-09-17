@@ -89,6 +89,15 @@ async function listAllKeys(client: BlobSummaryClient): Promise<string[]> {
   return keys;
 }
 
+// cspReportStore.ts always writes `receivedAt` as `new Date().toISOString()`
+// (see violationKey/persist in that file) — it is never taken from the
+// request body, so this isn't a defense against a forged value, only against
+// shape drift (a future migration or a hand-edited blob storing something
+// else). `mostRecentOf` below depends on lexicographic ISO ordering, so a
+// non-ISO string sorting arbitrarily against real timestamps would silently
+// point `rollout.mostRecent` at the wrong violation.
+const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 // Checked against every field StoredCspViolation declares, not just the ones
 // this module reads today: a half-shaped record (missing `sample` or
 // `disposition`, say) must not be accepted as `ok` and forwarded — with
@@ -108,7 +117,8 @@ function isStoredCspViolation(value: unknown): value is StoredCspViolation {
     (record.lineNumber === null || typeof record.lineNumber === "number") &&
     (record.columnNumber === null || typeof record.columnNumber === "number") &&
     typeof record.sample === "string" &&
-    typeof record.receivedAt === "string"
+    typeof record.receivedAt === "string" &&
+    ISO_TIMESTAMP_PATTERN.test(record.receivedAt)
   );
 }
 
@@ -181,9 +191,28 @@ function countStatus(
   return outcomes.filter((outcome) => outcome.status === status).length;
 }
 
+// Plain code-unit ordering rather than `localeCompare`: directive names are
+// ASCII, but blocked-uri keys are attacker-supplied and can contain
+// non-ASCII text, and `localeCompare` output for that depends on the host's
+// ICU data — a small-ICU Node build could order the same store differently
+// than a full-ICU one. A tie-break only needs to be deterministic, not
+// locale-aware.
+function byKeyAscending(
+  first: { key: string },
+  second: { key: string },
+): number {
+  if (first.key < second.key) {
+    return -1;
+  }
+  if (first.key > second.key) {
+    return 1;
+  }
+  return 0;
+}
+
 // Counts violations by an arbitrary field, then orders the result descending
-// by count (alphabetically on a tie) so both the directive and blocked-uri
-// breakdowns share one sort rule instead of drifting apart.
+// by count (tie-broken by byKeyAscending) so both the directive and
+// blocked-uri breakdowns share one sort rule instead of drifting apart.
 function sortedCountsBy(
   violations: StoredCspViolation[],
   keyOf: (_violation: StoredCspViolation) => string,
@@ -195,7 +224,10 @@ function sortedCountsBy(
   }
   return [...counts.entries()]
     .map(([key, count]) => ({ key, count }))
-    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+    .sort(
+      (first, second) =>
+        second.count - first.count || byKeyAscending(first, second),
+    );
 }
 
 function aggregateByDirective(
@@ -249,11 +281,15 @@ function mostRecentOf(
   );
 }
 
-type SummaryCompleteness = { fetchFailures: number; invalidEntries: number };
+type SummaryCompleteness = {
+  totalListed: number;
+  fetchFailures: number;
+  invalidEntries: number;
+};
 
 function summarizeRollout(
   violations: StoredCspViolation[],
-  { fetchFailures, invalidEntries }: SummaryCompleteness,
+  { totalListed, fetchFailures, invalidEntries }: SummaryCompleteness,
 ): RolloutSignal {
   const matches = violations.filter((violation) =>
     isRolloutDirective(violation.effectiveDirective),
@@ -262,14 +298,21 @@ function summarizeRollout(
     directive: ROLLOUT_DIRECTIVE,
     count: matches.length,
     mostRecent: mostRecentOf(matches),
-    // Fails closed: a violation hidden behind a failed fetch or an
-    // unparsed/corrupted blob might have been script-src, so a summary that
-    // couldn't read everything it listed must never claim the rollout is
-    // clean — this signal is what the README says authorizes dropping
-    // 'unsafe-inline' from the enforcing script-src, so a false "stopped"
-    // here would weaken a live security header on bad evidence.
+    // Fails closed on two distinct kinds of missing evidence: a violation
+    // hidden behind a failed fetch or an unparsed/corrupted blob might have
+    // been script-src (fetchFailures/invalidEntries), and an empty store
+    // (totalListed === 0) is exactly what the collector silently breaking
+    // (a 500 from /csp-report, a mistyped report-uri, an over-eager prune)
+    // would also look like — indistinguishable from a genuinely finished
+    // rollout without this check. This signal is what the README says
+    // authorizes dropping 'unsafe-inline' from the enforcing script-src, so
+    // a false "stopped" here would weaken a live security header on bad
+    // evidence.
     stopped:
-      matches.length === 0 && fetchFailures === 0 && invalidEntries === 0,
+      totalListed > 0 &&
+      matches.length === 0 &&
+      fetchFailures === 0 &&
+      invalidEntries === 0,
   };
 }
 
@@ -325,6 +368,7 @@ export function createCspReportSummary(
         byDirective: aggregateByDirective(violations),
         byBlockedUri: aggregateByBlockedUri(violations),
         rollout: summarizeRollout(violations, {
+          totalListed: keys.length,
           fetchFailures,
           invalidEntries,
         }),

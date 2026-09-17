@@ -51,7 +51,12 @@ afterEach(() => {
 });
 
 describe("createCspReportSummary", () => {
-  it("returns an empty summary for an empty store", async () => {
+  it("returns an empty summary for an empty store, but does not report the rollout as stopped", async () => {
+    // An empty store is exactly what a silently broken collector (a 500
+    // from /csp-report, a mistyped report-uri, an over-eager prune) would
+    // also produce — indistinguishable from a genuinely finished rollout
+    // without positive evidence the store has anything in it at all, so
+    // `stopped` requires totalListed > 0 (see summarizeRollout).
     const client = fakeClient([], {});
     const summary = await createCspReportSummary(client).summarize();
 
@@ -64,7 +69,7 @@ describe("createCspReportSummary", () => {
         directive: ROLLOUT_DIRECTIVE,
         count: 0,
         mostRecent: null,
-        stopped: true,
+        stopped: false,
       },
       fetchFailures: 0,
       missingEntries: 0,
@@ -257,6 +262,23 @@ describe("createCspReportSummary", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it("still reports the rollout as stopped when the only unread evidence is a missing (pruned) key, not a fetch failure or invalid entry", async () => {
+    // missingEntries is deliberately excluded from the fail-closed gate in
+    // summarizeRollout — a key the pruner already deleted has aged out of
+    // the retention window, not evidence of a hidden violation — so this
+    // pins that asymmetry against the fetchFailures/invalidEntries cases
+    // above instead of leaving it able to drift either way unnoticed.
+    const client = fakeClient([["style", "gone"]], {
+      style: violation({ effectiveDirective: "style-src" }),
+    });
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.missingEntries).toBe(1);
+    expect(summary.rollout.count).toBe(0);
+    expect(summary.rollout.stopped).toBe(true);
+  });
+
   it("rejects a fetched entry missing a required StoredCspViolation field as invalid", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { sample: _sample, ...missingSample } = violation();
@@ -272,7 +294,26 @@ describe("createCspReportSummary", () => {
     );
   });
 
-  it("fetches in batches rather than firing every get() at once", async () => {
+  it("rejects a receivedAt that isn't a real ISO timestamp as invalid", async () => {
+    // mostRecentOf relies on lexicographic ISO ordering (see that function);
+    // a non-ISO string would sort arbitrarily against real timestamps
+    // instead of failing the shape check outright.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const client = fakeClient([["bad"]], {
+      bad: violation({ receivedAt: "not-a-timestamp" }),
+    });
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.totalViolations).toBe(0);
+    expect(summary.invalidEntries).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      "csp-report-summary-invalid-entry",
+      JSON.stringify({ key: "bad" }),
+    );
+  });
+
+  it("fetches in batches of exactly FETCH_BATCH_SIZE rather than sequentially or all at once", async () => {
     const keys = Array.from(
       { length: FETCH_BATCH_SIZE + 10 },
       (_, index) => `key-${index}`,
@@ -292,7 +333,12 @@ describe("createCspReportSummary", () => {
     const summary = await createCspReportSummary(client).summarize();
 
     expect(summary.totalViolations).toBe(keys.length);
-    expect(maxConcurrent).toBeLessThanOrEqual(FETCH_BATCH_SIZE);
+    expect(client.get).toHaveBeenCalledTimes(keys.length);
+    // Exact, not <=: a regression to sequential fetching would peak at 1
+    // (still <= FETCH_BATCH_SIZE), and raising FETCH_BATCH_SIZE to cover the
+    // whole key set would make this pass for the wrong reason too, since a
+    // looser assertion would compare the constant against itself either way.
+    expect(maxConcurrent).toBe(FETCH_BATCH_SIZE);
   });
 
   it("reports the rollout as not stopped when a fetch failure could be hiding a script-src violation", async () => {

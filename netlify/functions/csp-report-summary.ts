@@ -1,4 +1,7 @@
-import { getCspReportSummary } from "./lib/cspReportSummary";
+import {
+  getCspReportSummary,
+  type CspReportSummary,
+} from "./lib/cspReportSummary";
 import { withTimeout } from "./lib/withTimeout";
 
 // Netlify scheduled Function (v2) that reads and aggregates the csp-reports
@@ -25,7 +28,18 @@ import { withTimeout } from "./lib/withTimeout";
 // changes on the order of days/weeks, without paying to walk the whole store
 // every hour.
 
+// The decision-relevant fields (rollout signal + totals), logged first and
+// on their own line so they're never at risk of truncation from a large
+// breakdown line (see SUMMARY_BREAKDOWN_LOG_PREFIX below) — this is the
+// output the whole Function exists to produce.
 const SUMMARIZED_LOG_PREFIX = "csp-report-summarized";
+// The byDirective/byBlockedUri breakdowns, logged separately and capped
+// (see BREAKDOWN_TOP_N): blockedUri is attacker-influenced free text coming
+// through a public, unauthenticated endpoint (see csp-report.ts), so a
+// flood of distinct blocked URIs up to CSP_REPORT_MAX_BLOBS (5000 by
+// default — see cspReportPruner.ts) would otherwise put an unbounded,
+// hundreds-of-KB array on one log line.
+const SUMMARY_BREAKDOWN_LOG_PREFIX = "csp-report-summary-breakdown";
 // Logged when the summary run itself fails (Blobs outage, missing context,
 // hard timeout, etc.). Distinct from PERSIST_FAILED_LOG_PREFIX in
 // csp-report.ts and PRUNE_FAILED_LOG_PREFIX in csp-report-prune.ts — this is
@@ -33,8 +47,34 @@ const SUMMARIZED_LOG_PREFIX = "csp-report-summarized";
 // modes don't get conflated when grepping the logs.
 const SUMMARY_FAILED_LOG_PREFIX = "csp-report-summary-failed";
 
+// Enough to see the loudest offenders without risking the same unbounded-line
+// problem the breakdowns are split out to avoid; the full counts are still
+// derivable by summing (see totalViolations) even when truncated.
+const BREAKDOWN_TOP_N = 20;
+
 const HTTP_OK = 200;
 const HTTP_INTERNAL_SERVER_ERROR = 500;
+
+function logSummary(summary: CspReportSummary): void {
+  console.log(
+    SUMMARIZED_LOG_PREFIX,
+    JSON.stringify({
+      rollout: summary.rollout,
+      totalListed: summary.totalListed,
+      totalViolations: summary.totalViolations,
+      fetchFailures: summary.fetchFailures,
+      missingEntries: summary.missingEntries,
+      invalidEntries: summary.invalidEntries,
+    }),
+  );
+  console.log(
+    SUMMARY_BREAKDOWN_LOG_PREFIX,
+    JSON.stringify({
+      byDirective: summary.byDirective.slice(0, BREAKDOWN_TOP_N),
+      byBlockedUri: summary.byBlockedUri.slice(0, BREAKDOWN_TOP_N),
+    }),
+  );
+}
 
 // cspReportSummary has no cooperative time budget of its own — a run's cost
 // scales with store size the same way pruning's does, but summarizing does a
@@ -53,7 +93,7 @@ export default async (_request: Request): Promise<Response> => {
       HARD_TIMEOUT_MS,
       "csp report summary run",
     );
-    console.log(SUMMARIZED_LOG_PREFIX, JSON.stringify(summary));
+    logSummary(summary);
     return new Response(null, { status: HTTP_OK });
   } catch (error) {
     console.warn(

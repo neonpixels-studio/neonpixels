@@ -17,6 +17,7 @@ import cspReportSummaryHandler, {
 } from "../../../netlify/functions/csp-report-summary";
 
 const SUMMARIZED_LOG_PREFIX = "csp-report-summarized";
+const SUMMARY_BREAKDOWN_LOG_PREFIX = "csp-report-summary-breakdown";
 const SUMMARY_FAILED_LOG_PREFIX = "csp-report-summary-failed";
 
 const EMPTY_SUMMARY = {
@@ -66,23 +67,64 @@ describe("csp-report-summary Netlify scheduled function", () => {
     expect(config.schedule).toBe("@daily");
   });
 
-  it("summarizes the store, replies 200, and logs the outcome", async () => {
+  it("summarizes the store, replies 200, and logs the decision-relevant fields and breakdowns as separate lines", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const summary = {
       ...EMPTY_SUMMARY,
       totalListed: 2,
       totalViolations: 2,
       byDirective: [{ directive: "style-src", count: 2 }],
+      byBlockedUri: [{ blockedUri: "inline", count: 2 }],
     };
     summarizeMock.mockResolvedValueOnce(summary);
 
     const response = await cspReportSummaryHandler(scheduledRequest());
 
     expect(response.status).toBe(200);
+    // The rollout signal and totals are logged on their own line — the
+    // output the whole Function exists to produce — so they're never at
+    // risk of truncation from a large byBlockedUri breakdown (see the next
+    // assertion and the "caps the byDirective/byBlockedUri breakdowns" test
+    // below).
     expect(log).toHaveBeenCalledWith(
       SUMMARIZED_LOG_PREFIX,
-      JSON.stringify(summary),
+      JSON.stringify({
+        rollout: summary.rollout,
+        totalListed: summary.totalListed,
+        totalViolations: summary.totalViolations,
+        fetchFailures: summary.fetchFailures,
+        missingEntries: summary.missingEntries,
+        invalidEntries: summary.invalidEntries,
+      }),
     );
+    expect(log).toHaveBeenCalledWith(
+      SUMMARY_BREAKDOWN_LOG_PREFIX,
+      JSON.stringify({
+        byDirective: summary.byDirective,
+        byBlockedUri: summary.byBlockedUri,
+      }),
+    );
+  });
+
+  it("caps the byDirective/byBlockedUri breakdowns rather than logging an unbounded array", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const byBlockedUri = Array.from({ length: 30 }, (_, index) => ({
+      blockedUri: `https://evil.example/${index}.js`,
+      count: 1,
+    }));
+    summarizeMock.mockResolvedValueOnce({
+      ...EMPTY_SUMMARY,
+      byBlockedUri,
+    });
+
+    await cspReportSummaryHandler(scheduledRequest());
+
+    const breakdownCall = log.mock.calls.find(
+      (call) => call[0] === SUMMARY_BREAKDOWN_LOG_PREFIX,
+    );
+    const logged = JSON.parse(breakdownCall?.[1] as string);
+    expect(logged.byBlockedUri).toHaveLength(20);
+    expect(logged.byBlockedUri).toEqual(byBlockedUri.slice(0, 20));
   });
 
   it("replies 500 and logs a failure marker when the summary run fails", async () => {
