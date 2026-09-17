@@ -35,8 +35,12 @@ const HTTP_INTERNAL_SERVER_ERROR = 500;
 // the full window. RUN_DEADLINE_MS is that combined ceiling (5s headroom for
 // cold start and the final in-flight batch); HARD_TIMEOUT_MS is what's left
 // for prune() once NOTIFY_TIMEOUT_MS is reserved for the notify call that
-// might follow it.
-const RUN_DEADLINE_MS = 28000;
+// might follow it. Exported so cspReportPruneFunction.test.ts can pin the
+// full ordering invariant: cspReportPruner's own PRUNE_TIME_BUDGET_MS <
+// HARD_TIMEOUT_MS < RUN_DEADLINE_MS — a normal partial run (store too large
+// to finish in one pass) must exit gracefully via PRUNE_TIME_BUDGET_MS well
+// before HARD_TIMEOUT_MS would kill it and report it as a failure.
+export const RUN_DEADLINE_MS = 28000;
 
 // A short, separate budget for the GitHub notification call: this only runs
 // after prune() has already failed (possibly after consuming all of

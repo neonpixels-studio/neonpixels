@@ -274,6 +274,17 @@ describe("sanitizeReportedError", () => {
       "auth failed for [secret redacted]",
     );
   });
+
+  // The secret pattern requires a credential-shaped (12+ char) run after
+  // "token"/"bearer" specifically so ordinary English isn't mistaken for a
+  // credential and redacted into an uninformative issue body — this is the
+  // single most likely real prune failure message (an expired/invalid PAT).
+  it("does not redact ordinary English containing the word token or bearer", () => {
+    expect(sanitizeReportedError("token expired")).toBe("token expired");
+    expect(sanitizeReportedError("auth token is invalid")).toBe(
+      "auth token is invalid",
+    );
+  });
 });
 
 describe("getPruneFailureNotifier", () => {

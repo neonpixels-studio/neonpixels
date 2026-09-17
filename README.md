@@ -164,6 +164,11 @@ GitHub; a missing/invalid token is caught and logged as a
 500 response. The duplicate-guard logic is isolated behind a
 `GithubIssuesClient` seam (mirroring `BlobWriter`/`BlobPrunerClient` above),
 so it is unit-tested against a fake client rather than the real GitHub API.
+**Setup:** the `csp-prune-failure` label must already exist on the repo
+before the first failure — create it once
+(`gh label create csp-prune-failure --color B60205 --description "The scheduled csp-report-prune Function failed"`)
+— since this notifier only applies the label to issues it creates, it never
+creates the label itself.
 
 ## Git hooks
 

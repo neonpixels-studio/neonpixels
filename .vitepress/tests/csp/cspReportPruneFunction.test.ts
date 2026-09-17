@@ -17,9 +17,19 @@ const {
   notifyMock: vi.fn(),
   getPruneFailureNotifierMock: vi.fn(),
 }));
-vi.mock("../../../netlify/functions/lib/cspReportPruner", () => ({
-  getCspReportPruner: getCspReportPrunerMock,
-}));
+vi.mock(
+  "../../../netlify/functions/lib/cspReportPruner",
+  async (importOriginal) => ({
+    // Keeps the real PRUNE_TIME_BUDGET_MS export (needed for the
+    // timeout-ordering invariant test below) while still stubbing out
+    // getCspReportPruner, the one piece of Blobs-touching behavior this file
+    // isn't about.
+    ...(await importOriginal<
+      typeof import("../../../netlify/functions/lib/cspReportPruner")
+    >()),
+    getCspReportPruner: getCspReportPrunerMock,
+  }),
+);
 vi.mock("../../../netlify/functions/lib/notifyPruneFailure", () => ({
   getPruneFailureNotifier: getPruneFailureNotifierMock,
 }));
@@ -28,7 +38,9 @@ import cspReportPruneHandler, {
   config,
   HARD_TIMEOUT_MS,
   NOTIFY_TIMEOUT_MS,
+  RUN_DEADLINE_MS,
 } from "../../../netlify/functions/csp-report-prune";
+import { PRUNE_TIME_BUDGET_MS } from "../../../netlify/functions/lib/cspReportPruner";
 
 const PRUNED_LOG_PREFIX = "csp-report-pruned";
 const PRUNE_FAILED_LOG_PREFIX = "csp-report-prune-failed";
@@ -199,5 +211,20 @@ describe("csp-report-prune Netlify scheduled function", () => {
     expect(warn.mock.calls[1][0]).toBe(NOTIFY_FAILED_LOG_PREFIX);
     const logged = JSON.parse(warn.mock.calls[1][1] as string);
     expect(logged.message).toMatch(/exceeded/);
+  });
+
+  // Pins the three-way budget ordering this handler depends on. Without it,
+  // lowering HARD_TIMEOUT_MS (e.g. to make room for NOTIFY_TIMEOUT_MS) could
+  // silently drop it below cspReportPruner's own PRUNE_TIME_BUDGET_MS — which
+  // would turn every normal partial run (a store too large to finish
+  // listing/deleting in one pass, meant to exit gracefully with
+  // `complete: false` and retry next hour) into a false failure alarm, since
+  // the adapter's hard timeout would win the race before the pruner's own
+  // cooperative deadline ever gets to.
+  it("keeps the pruner's cooperative budget below the adapter's hard timeout, and both below the run deadline", () => {
+    expect(PRUNE_TIME_BUDGET_MS).toBeLessThan(HARD_TIMEOUT_MS);
+    expect(HARD_TIMEOUT_MS + NOTIFY_TIMEOUT_MS).toBeLessThanOrEqual(
+      RUN_DEADLINE_MS,
+    );
   });
 });

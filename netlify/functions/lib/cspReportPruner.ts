@@ -63,11 +63,17 @@ export type PrunerOptions = {
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // Netlify scheduled Functions have a hard 30s execution limit (unlike a
-// regular synchronous Function's default). PRUNE_TIME_BUDGET_MS leaves 5s of
-// headroom under that for cold start and the final in-flight batch;
-// LIST_TIME_BUDGET_MS caps listing at half of that so a large store can never
-// consume the entire run and starve the delete pass of any time at all.
-export const PRUNE_TIME_BUDGET_MS = 25000;
+// regular synchronous Function's default). The adapter (csp-report-prune.ts)
+// races this whole prune() call against its own HARD_TIMEOUT_MS backstop, so
+// this budget must stay strictly under that — otherwise a normal partial run
+// (a store too large to finish in one pass, which is meant to exit
+// gracefully here with `complete: false` and retry next hour) would instead
+// get killed by the adapter's timeout and reported as a failure. See the
+// invariant PRUNE_TIME_BUDGET_MS < HARD_TIMEOUT_MS < RUN_DEADLINE_MS,
+// asserted in cspReportPruneFunction.test.ts. LIST_TIME_BUDGET_MS caps
+// listing at half of this budget so a large store can never consume the
+// entire run and starve the delete pass of any time at all.
+export const PRUNE_TIME_BUDGET_MS = 20000;
 export const LIST_TIME_BUDGET_MS = Math.floor(PRUNE_TIME_BUDGET_MS / 2);
 
 // Deletes are chunked rather than fired all at once so a store with tens of

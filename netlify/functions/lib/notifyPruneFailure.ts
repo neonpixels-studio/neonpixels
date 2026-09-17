@@ -88,11 +88,16 @@ const MAX_REPORTED_ERROR_LENGTH = 500;
 // must run regardless of whether the other matched.
 const URL_PATTERN = /https?:\/\/\S+/g;
 // Matches common token shapes an upstream HTTP client might echo back in an
-// error message: an explicit "Bearer <token>"/"token: <token>" credential,
-// or a GitHub/Netlify-style prefixed token (gh_, ghp_, ghs_, nfp_, etc.)
-// regardless of where it appears in the string.
+// error message: an explicit "Bearer <token>"/"token: <token>" credential
+// (requiring 12+ credential-shaped characters after the connector, so
+// ordinary English like "token expired" or "auth token is invalid" isn't
+// mistaken for one and redacted into uselessness — a real bearer token/PAT
+// is always far longer than any word that would legitimately follow "token"
+// or "bearer" in a human-readable error message), or a GitHub/Netlify-style
+// prefixed token (gh_, ghp_, ghs_, nfp_, etc., unconditionally, since that
+// prefix alone is already a strong enough signal regardless of length).
 const SECRET_PATTERN =
-  /\b(?:bearer|token)[=:\s]+\S+|\bgh[a-z]*_\S+|\bnfp_\S+/gi;
+  /\b(?:bearer|token)[=:\s]+[A-Za-z0-9_\-.+/]{12,}=*|\bgh[a-z]*_\S+|\bnfp_\S+/gi;
 
 export function sanitizeReportedError(errorMessage: string): string {
   const redacted = errorMessage
@@ -120,7 +125,13 @@ function buildIssueBody(errorMessage: string): string {
 // a day would bury the original diagnosis under ~24 near-identical "still
 // failing" comments. Re-notify at most this often — GitHub bumps an issue's
 // updated_at on every comment (not just edits), so this needs no extra API
-// call to check.
+// call to check. Trade-off: updated_at also moves on a human's own comment
+// (e.g. "looking into this"), which silences this notifier for the same
+// window even if the failure's error message changes in the meantime — a
+// deliberate choice to keep this at one API call per run rather than a
+// second `listComments` call to track this notifier's own last-comment time
+// specifically. If that gap matters in practice, track it via a
+// timestamped marker in each of this notifier's own comments instead.
 const RENOTIFY_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 function isWithinRenotifyWindow(issue: GithubIssueOrPullRequest): boolean {
