@@ -39,14 +39,17 @@ function readAllDirectDependencies() {
   };
 }
 
-// Any direct dependency that declares vite as a peer dependency needs to
-// ride in the same Dependabot group as vite: otherwise a vite major (or one
-// of these packages' own minor release widening its supported vite range)
-// can land split from the others in a given run, installing a mismatched
-// peer range together and breaking `npm ci`. Derived from each package's
+// Any direct dependency with a required (non-optional) peer dependency on
+// vite needs to ride in the same Dependabot group as vite: a vite major that
+// outgrows one of these ranges must land together with that package's
+// compatible release rather than splitting across two PRs and installing a
+// mismatched peer range, breaking `npm ci`. Derived from each package's
 // installed manifest — rather than hand-maintained — so a newly added
 // vite-peer package is caught automatically instead of silently missing
-// from the group's patterns.
+// from the group's patterns. Requires `npm ci` to have run first; throws
+// rather than silently under-counting if a listed dependency isn't
+// installed, since a missing package would otherwise read as "not a vite
+// peer" and mask a real gap in the group.
 function findVitePeerDependents() {
   const allDependencies = readAllDirectDependencies();
 
@@ -59,11 +62,17 @@ function findVitePeerDependents() {
     );
 
     if (!existsSync(manifestPath)) {
-      return false;
+      throw new Error(
+        `${packageName} is listed in package.json but not installed under node_modules/ — run npm ci before this suite.`,
+      );
     }
 
     const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
-    return manifest.peerDependencies?.vite !== undefined;
+    const hasVitePeer = manifest.peerDependencies?.vite !== undefined;
+    const vitePeerIsOptional =
+      manifest.peerDependenciesMeta?.vite?.optional === true;
+
+    return hasVitePeer && !vitePeerIsOptional;
   });
 }
 
@@ -111,7 +120,7 @@ describe("dependabot.yml vite/vitepress grouping", () => {
     // from package.json and the vite-vitepress group below (and this whole
     // test file) should be reconsidered rather than left grouping bumps for
     // a pin that no longer exists.
-    const packageJson = JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf-8"));
+    const packageJson = readPackageJson();
 
     expect(packageJson.overrides?.vitepress?.vite).toBeDefined();
     expect(packageJson.overrides?.vitepress?.esbuild).toBeDefined();
@@ -130,8 +139,11 @@ describe("dependabot.yml vite/vitepress grouping", () => {
   it("groups vite, vitepress, and vite's peer-dependent packages together for version updates, including majors", () => {
     const npmEntry = readNpmUpdateEntry();
     const coupledGroup = npmEntry.groups?.["vite-vitepress"];
-    const groupedPackages = [...COUPLED_PACKAGES, ...findVitePeerDependents()];
+    const groupedPackages = [
+      ...new Set([...COUPLED_PACKAGES, ...findVitePeerDependents()]),
+    ];
 
+    expect(groupedPackages.length).toBeGreaterThan(COUPLED_PACKAGES.length);
     expect(coupledGroup).toBeDefined();
     expect(coupledGroup.patterns).toEqual(
       expect.arrayContaining(groupedPackages),
@@ -147,33 +159,17 @@ describe("dependabot.yml vite/vitepress grouping", () => {
     // solo, defeating the point of the grouping above.
     const npmEntry = readNpmUpdateEntry();
     const securityGroup = npmEntry.groups?.["vite-vitepress-security"];
-    const groupedPackages = [...COUPLED_PACKAGES, ...findVitePeerDependents()];
+    const groupedPackages = [
+      ...new Set([...COUPLED_PACKAGES, ...findVitePeerDependents()]),
+    ];
 
+    expect(groupedPackages.length).toBeGreaterThan(COUPLED_PACKAGES.length);
     expect(securityGroup).toBeDefined();
     expect(securityGroup["applies-to"]).toBe("security-updates");
     expect(securityGroup.patterns).toEqual(
       expect.arrayContaining(groupedPackages),
     );
     expect(securityGroup.patterns).toHaveLength(groupedPackages.length);
-  });
-
-  it("excludes vite's peer-dependent packages from minor-and-patch so they always fall through to vite-vitepress", () => {
-    // These packages often widen their supported vite range in a MINOR
-    // release of their own (not just a major). minor-and-patch has no
-    // `patterns`, so it's a catch-all for every minor/patch bump — without
-    // this exclusion, that release would land in the general weekly PR
-    // instead of alongside a same-run vite bump in vite-vitepress, right
-    // back to the split-peer-range failure this whole change exists to
-    // prevent.
-    const npmEntry = readNpmUpdateEntry();
-    const generalGroup = npmEntry.groups?.["minor-and-patch"];
-    const vitePeerDependents = findVitePeerDependents();
-
-    expect(generalGroup).toBeDefined();
-    expect(vitePeerDependents.length).toBeGreaterThan(0);
-    vitePeerDependents.forEach((packageName) => {
-      expect(generalGroup["exclude-patterns"]).toContain(packageName);
-    });
   });
 
   it("still groups every other package's minor and patch version updates", () => {

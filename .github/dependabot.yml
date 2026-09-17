@@ -12,26 +12,10 @@ updates:
       # own solo PR. minor-and-patch is listed first so minor/patch bumps —
       # for vite/vitepress included — keep landing in the general weekly
       # PR exactly as before this change.
-      #
-      # @tailwindcss/vite, @vitejs/plugin-vue, and vitest peer-depend on vite
-      # and often widen that peer range in a MINOR release of their own, not
-      # just a major (e.g. vitest 5.1.0 bumping its supported vite range).
-      # Without excluding them here, that minor release would still match
-      # this catch-all group (it has no `patterns`) and could ship in the
-      # general weekly PR the same run a vite major falls through to
-      # vite-vitepress below — landing split, with mismatched peer ranges
-      # installed together, breaking `npm ci`. Excluding them forces every
-      # bump to these three (major, minor, or patch) down into vite-vitepress
-      # instead, so they always land in the same run as any pending vite
-      # bump.
       minor-and-patch:
         update-types:
           - "minor"
           - "patch"
-        exclude-patterns:
-          - "@tailwindcss/vite"
-          - "@vitejs/plugin-vue"
-          - "vitest"
       # vite and vitepress are coupled: package.json pins vitepress's bundled
       # vite/esbuild via `overrides.vitepress.{vite,esbuild}` (see the
       # comment in .vitepress/config.ts). Dependabot can only bump manifest
@@ -47,13 +31,17 @@ updates:
       # minor-and-patch above it.
       #
       # @tailwindcss/vite, @vitejs/plugin-vue, and vitest all declare vite as
-      # a peer dependency (see the exclude-patterns note on minor-and-patch
-      # above for why their minor/patch releases land here too). Grouping
-      # them with vite means: whenever vite has a pending update in the same
-      # Dependabot run, these three land in that same PR rather than a
-      # separate one with a stale peer range. If none of them has an update
-      # pending that run, they simply don't appear — this group doesn't
-      # force a bump that isn't otherwise available.
+      # a required peer dependency, ranged by vite major (e.g. vitest 5.0.0
+      # supports vite ^6 || ^7 || ^8). A vite *major* bump — the case that
+      # actually risks outgrowing those ranges — falls through minor-and-patch
+      # the same way vitepress's does, so it lands in this group together
+      # with any of these three that also has a pending update that run,
+      # instead of shipping split with a stale peer range and breaking
+      # `npm ci`. Known residual gap: if one of these three needs its own
+      # ordinary minor/patch release to widen its peer range (rather than
+      # already supporting the new vite major ahead of time, which is the
+      # common case above), that release still matches minor-and-patch above
+      # and ships in the general PR, unchanged from before this group existed.
       vite-vitepress:
         patterns:
           - "vite"
