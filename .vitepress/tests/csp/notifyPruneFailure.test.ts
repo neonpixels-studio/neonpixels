@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import {
   createPruneFailureNotifier,
   getPruneFailureNotifier,
+  sanitizeReportedError,
   GITHUB_TOKEN_ENV_VAR,
   PRUNE_FAILURE_LABEL,
   PRUNE_FAILURE_ISSUE_TITLE,
@@ -20,7 +21,7 @@ import {
 type GithubStubOptions = {
   existingIssues?: GithubIssueOrPullRequest[];
   listOpenIssuesByLabelImpl?: () => Promise<GithubIssueOrPullRequest[]>;
-  createIssueImpl?: () => Promise<{ number: number }>;
+  createIssueImpl?: () => Promise<void>;
 };
 
 function buildGithubClientStub({
@@ -38,19 +39,25 @@ function buildGithubClientStub({
       : vi.fn().mockResolvedValue(existingIssues),
     createIssue: createIssueImpl
       ? vi.fn().mockImplementation(createIssueImpl)
-      : vi.fn().mockResolvedValue({ number: 99 }),
+      : vi.fn().mockResolvedValue(undefined),
     createComment: vi.fn().mockResolvedValue(undefined),
   };
 }
 
 // A tracked issue is one this notifier itself opened: carries the marker in
 // its body (the label alone isn't a reliable match — see the "unrelated
-// issue" tests below).
-function trackedIssue(number: number): GithubIssueOrPullRequest {
+// issue" tests below). Defaults `updated_at` to well outside the re-notify
+// throttle window so existing comment tests aren't coupled to it; tests of
+// the throttle itself override it explicitly.
+function trackedIssue(
+  number: number,
+  updatedAt = "2020-01-01T00:00:00.000Z",
+): GithubIssueOrPullRequest {
   return {
     number,
     body: `${PRUNE_FAILURE_ISSUE_MARKER}\nOriginal failure body.`,
     pull_request: undefined,
+    updated_at: updatedAt,
   };
 }
 
@@ -179,6 +186,76 @@ describe("createPruneFailureNotifier", () => {
     await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
       "issues disabled",
     );
+  });
+
+  // The pruner runs hourly; without a throttle, a multi-hour failure streak
+  // would pile up one near-identical "still failing" comment per run and
+  // bury the original diagnosis.
+  it("does not re-comment on a tracked issue that was updated within the re-notify window", async () => {
+    const client = buildGithubClientStub({
+      existingIssues: [trackedIssue(7, new Date().toISOString())],
+    });
+    const notifier = createPruneFailureNotifier(client);
+
+    await notifier.notify("blobs unavailable");
+
+    expect(client.createComment).not.toHaveBeenCalled();
+    expect(client.createIssue).not.toHaveBeenCalled();
+  });
+
+  it("comments again once the tracked issue's last update is outside the re-notify window", async () => {
+    const client = buildGithubClientStub({
+      // Well past even a generous re-notify window (default trackedIssue
+      // timestamp — see the helper above).
+      existingIssues: [trackedIssue(7)],
+    });
+    const notifier = createPruneFailureNotifier(client);
+
+    await notifier.notify("blobs unavailable");
+
+    expect(client.createComment).toHaveBeenCalledTimes(1);
+  });
+
+  it("comments when the tracked issue has no updated_at at all", async () => {
+    const client = buildGithubClientStub({
+      existingIssues: [
+        {
+          number: 7,
+          body: PRUNE_FAILURE_ISSUE_MARKER,
+          pull_request: undefined,
+        },
+      ],
+    });
+    const notifier = createPruneFailureNotifier(client);
+
+    await notifier.notify("blobs unavailable");
+
+    expect(client.createComment).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sanitizeReportedError", () => {
+  it("passes short, plain messages through unchanged", () => {
+    expect(sanitizeReportedError("blobs unavailable")).toBe(
+      "blobs unavailable",
+    );
+  });
+
+  it("redacts URLs, which can carry request context or credentials in a query string", () => {
+    expect(
+      sanitizeReportedError(
+        "request to https://blobs.example.com/store?token=secret failed",
+      ),
+    ).toBe("request to [url redacted] failed");
+  });
+
+  it("truncates a message longer than the reported-error cap", () => {
+    const longMessage = "x".repeat(1000);
+
+    const sanitized = sanitizeReportedError(longMessage);
+
+    expect(sanitized.length).toBeLessThan(600);
+    expect(sanitized).toMatch(/… \(truncated\)$/);
   });
 });
 

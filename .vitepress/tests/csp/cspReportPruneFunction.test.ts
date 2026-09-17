@@ -27,6 +27,7 @@ vi.mock("../../../netlify/functions/lib/notifyPruneFailure", () => ({
 import cspReportPruneHandler, {
   config,
   HARD_TIMEOUT_MS,
+  NOTIFY_TIMEOUT_MS,
 } from "../../../netlify/functions/csp-report-prune";
 
 const PRUNED_LOG_PREFIX = "csp-report-pruned";
@@ -175,6 +176,28 @@ describe("csp-report-prune Netlify scheduled function", () => {
     expect(response.status).toBe(500);
     expect(warn.mock.calls[0][0]).toBe(PRUNE_FAILED_LOG_PREFIX);
     const logged = JSON.parse(warn.mock.calls[0][1] as string);
+    expect(logged.message).toMatch(/exceeded/);
+  });
+
+  it("gives up on a hanging notifier and still replies 500", async () => {
+    // The notifier has its own short budget (NOTIFY_TIMEOUT_MS), separate
+    // from the pruner's HARD_TIMEOUT_MS: it only runs after a prune failure,
+    // so it must not be able to push the whole run past Netlify's real 30s
+    // scheduled-Function limit — see NOTIFY_TIMEOUT_MS in
+    // csp-report-prune.ts.
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    pruneMock.mockRejectedValueOnce(new Error("blobs unavailable"));
+    notifyMock.mockImplementationOnce(() => new Promise(() => {}));
+
+    const responsePromise = cspReportPruneHandler(scheduledRequest());
+    await vi.advanceTimersByTimeAsync(NOTIFY_TIMEOUT_MS);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(500);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[1][0]).toBe(NOTIFY_FAILED_LOG_PREFIX);
+    const logged = JSON.parse(warn.mock.calls[1][1] as string);
     expect(logged.message).toMatch(/exceeded/);
   });
 });

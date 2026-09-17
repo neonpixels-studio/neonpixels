@@ -32,7 +32,7 @@ const NOTIFY_FAILED_LOG_PREFIX = "csp-report-prune-notify-failed";
 // 30s scheduled-Function limit. A timeout here is caught and logged the same
 // as any other notify failure — the next hourly run's own failure (if the
 // issue persists) gets another chance to notify.
-const NOTIFY_TIMEOUT_MS = 5000;
+export const NOTIFY_TIMEOUT_MS = 5000;
 
 const HTTP_OK = 200;
 const HTTP_INTERNAL_SERVER_ERROR = 500;
@@ -46,6 +46,32 @@ const HTTP_INTERNAL_SERVER_ERROR = 500;
 // instead of the run being silently killed with nothing written to the logs.
 export const HARD_TIMEOUT_MS = 28000;
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// Best-effort: a broken notifier (bad/missing PRUNE_FAILURE_GITHUB_TOKEN,
+// GitHub API outage, hang past NOTIFY_TIMEOUT_MS) must not crash the handler
+// or turn the real 500 (the prune failure this reports) into an unhandled
+// exception — see NOTIFY_FAILED_LOG_PREFIX above. A single flat try/catch
+// (no nested control flow inside the handler's own catch block).
+async function notifyPruneFailureQuietly(
+  pruneErrorMessage: string,
+): Promise<void> {
+  try {
+    await withTimeout(
+      getPruneFailureNotifier().notify(pruneErrorMessage),
+      NOTIFY_TIMEOUT_MS,
+      "csp report prune failure notify",
+    );
+  } catch (notifyError) {
+    console.warn(
+      NOTIFY_FAILED_LOG_PREFIX,
+      JSON.stringify({ message: errorMessage(notifyError) }),
+    );
+  }
+}
+
 export default async (_request: Request): Promise<Response> => {
   try {
     const result = await withTimeout(
@@ -56,28 +82,9 @@ export default async (_request: Request): Promise<Response> => {
     console.log(PRUNED_LOG_PREFIX, JSON.stringify(result));
     return new Response(null, { status: HTTP_OK });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     console.warn(PRUNE_FAILED_LOG_PREFIX, JSON.stringify({ message }));
-    // Best-effort: a broken notifier must not crash the handler or turn the
-    // real 500 (the prune failure above) into an unhandled exception — see
-    // NOTIFY_FAILED_LOG_PREFIX above.
-    try {
-      await withTimeout(
-        getPruneFailureNotifier().notify(message),
-        NOTIFY_TIMEOUT_MS,
-        "csp report prune failure notify",
-      );
-    } catch (notifyError) {
-      console.warn(
-        NOTIFY_FAILED_LOG_PREFIX,
-        JSON.stringify({
-          message:
-            notifyError instanceof Error
-              ? notifyError.message
-              : String(notifyError),
-        }),
-      );
-    }
+    await notifyPruneFailureQuietly(message);
     return new Response(null, { status: HTTP_INTERNAL_SERVER_ERROR });
   }
 };

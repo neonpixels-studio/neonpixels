@@ -40,6 +40,10 @@ export type GithubIssueOrPullRequest = {
   number: number;
   body?: string;
   pull_request?: unknown;
+  // GitHub bumps this on every comment (not just edits), so it doubles as
+  // "when was this issue last touched" without a second API call to list
+  // comments. Used to throttle re-notification below.
+  updated_at?: string;
 };
 
 // The three GitHub capabilities the notifier needs, so tests can inject a
@@ -50,7 +54,7 @@ export type GithubIssuesClient = {
     title: string;
     labels: string[];
     body: string;
-  }): Promise<{ number: number }>;
+  }): Promise<void>;
   createComment(_issueNumber: number, _body: string): Promise<void>;
 };
 
@@ -68,16 +72,52 @@ function isTrackedPruneFailureIssue(
   );
 }
 
+// The pruner catches errors from `@netlify/blobs`/`fetch`/`withTimeout`
+// itself, so the error text reported here isn't a closed set — an upstream
+// HTTP client can surface request URLs (potentially carrying credentials in
+// a query string) in its message. Redacted and length-capped before it's
+// published into a GitHub issue body/comment on a repo that may be public.
+// The cap also keeps this under GitHub's ~65536-char issue/comment body
+// limit — an uncapped message on a large failure would otherwise make the
+// notification itself fail (422), which is exactly when it's most needed.
+const MAX_REPORTED_ERROR_LENGTH = 500;
+
+export function sanitizeReportedError(errorMessage: string): string {
+  const withoutUrls = errorMessage.replace(/https?:\/\/\S+/g, "[url redacted]");
+  if (withoutUrls.length <= MAX_REPORTED_ERROR_LENGTH) {
+    return withoutUrls;
+  }
+  return `${withoutUrls.slice(0, MAX_REPORTED_ERROR_LENGTH)}… (truncated)`;
+}
+
 function buildIssueBody(errorMessage: string): string {
   return [
     PRUNE_FAILURE_ISSUE_MARKER,
     "The hourly csp-report-prune scheduled Function failed.",
     "",
-    `Error: ${errorMessage}`,
+    `Error: ${sanitizeReportedError(errorMessage)}`,
     "",
     "Check the Netlify Function logs for the full `csp-report-prune-failed` entry.",
     "This issue is a duplicate guard: closing it lets the next failure open a new one.",
   ].join("\n");
+}
+
+// The pruner runs hourly; without throttling, a failure streak spanning even
+// a day would bury the original diagnosis under ~24 near-identical "still
+// failing" comments. Re-notify at most this often — GitHub bumps an issue's
+// updated_at on every comment (not just edits), so this needs no extra API
+// call to check.
+const RENOTIFY_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+function isWithinRenotifyWindow(issue: GithubIssueOrPullRequest): boolean {
+  if (!issue.updated_at) {
+    return false;
+  }
+  const updatedAtMs = Date.parse(issue.updated_at);
+  if (Number.isNaN(updatedAtMs)) {
+    return false;
+  }
+  return Date.now() - updatedAtMs < RENOTIFY_INTERVAL_MS;
 }
 
 export type PruneFailureNotifier = {
@@ -100,10 +140,13 @@ export function createPruneFailureNotifier(
       const openIssues =
         await client.listOpenIssuesByLabel(PRUNE_FAILURE_LABEL);
       const existingIssue = openIssues.find(isTrackedPruneFailureIssue);
+      if (existingIssue && isWithinRenotifyWindow(existingIssue)) {
+        return;
+      }
       if (existingIssue) {
         await client.createComment(
           existingIssue.number,
-          `Still failing. Latest error: ${errorMessage}`,
+          `Still failing. Latest error: ${sanitizeReportedError(errorMessage)}`,
         );
         return;
       }
@@ -170,14 +213,21 @@ function createFetchGithubIssuesClient(): GithubIssuesClient {
         `/repos/${REPO_OWNER}/${REPO_NAME}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=${LIST_PAGE_SIZE}`,
         { method: "GET" },
       );
-      return (await response.json()) as GithubIssueOrPullRequest[];
+      const payload: unknown = await response.json();
+      // A 200 response isn't proof of the expected shape (a malformed/error
+      // payload the caller still marked `ok`) — `.find()` on anything else
+      // throws a confusing TypeError deep inside the duplicate-guard check
+      // instead of a clear "GitHub API" error.
+      if (!Array.isArray(payload)) {
+        throw new Error("GitHub API issues list response was not an array");
+      }
+      return payload as GithubIssueOrPullRequest[];
     },
     async createIssue(input) {
-      const response = await githubRequest(
-        `/repos/${REPO_OWNER}/${REPO_NAME}/issues`,
-        { method: "POST", body: JSON.stringify(input) },
-      );
-      return (await response.json()) as { number: number };
+      await githubRequest(`/repos/${REPO_OWNER}/${REPO_NAME}/issues`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
     },
     async createComment(issueNumber, body) {
       await githubRequest(
