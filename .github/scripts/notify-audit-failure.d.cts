@@ -20,31 +20,45 @@ export type GithubIssueOrPullRequest = {
   pull_request?: unknown;
 };
 
+// Shared with close-resolved-audit-failure.d.cts: both scripts call
+// `findOpenAuditFailureIssue` against the same stubbed `github.rest.issues`
+// surface, so the method signatures below cover the union of what either
+// script needs from it. `update` is optional: notify-audit-failure.cjs never
+// calls it (only close-resolved-audit-failure.cjs does), so its test stubs
+// don't provide one.
+export type GithubIssuesClient = {
+  listForRepo: (params: {
+    owner: string;
+    repo: string;
+    state: string;
+    labels: string;
+    per_page: number;
+  }) => Promise<{ data: GithubIssueOrPullRequest[] }>;
+  create: (params: {
+    owner: string;
+    repo: string;
+    title: string;
+    labels: string[];
+    body: string;
+  }) => Promise<{ data: { number: number } }>;
+  createComment: (params: {
+    owner: string;
+    repo: string;
+    issue_number: number;
+    body: string;
+  }) => Promise<unknown>;
+  update?: (params: {
+    owner: string;
+    repo: string;
+    issue_number: number;
+    state: string;
+  }) => Promise<unknown>;
+};
+
 export type NotifyAuditFailureArgs = {
   github: {
     rest: {
-      issues: {
-        listForRepo: (params: {
-          owner: string;
-          repo: string;
-          state: string;
-          labels: string;
-          per_page: number;
-        }) => Promise<{ data: GithubIssueOrPullRequest[] }>;
-        create: (params: {
-          owner: string;
-          repo: string;
-          title: string;
-          labels: string[];
-          body: string;
-        }) => Promise<{ data: { number: number } }>;
-        createComment: (params: {
-          owner: string;
-          repo: string;
-          issue_number: number;
-          body: string;
-        }) => Promise<unknown>;
-      };
+      issues: GithubIssuesClient;
     };
   };
   context: {
@@ -57,6 +71,12 @@ export type NotifyAuditFailureArgs = {
   };
 };
 
+export type FindOpenAuditFailureIssueArgs = {
+  github: NotifyAuditFailureArgs["github"];
+  owner: string;
+  repo: string;
+};
+
 declare function notifyAuditFailure(
   args: NotifyAuditFailureArgs,
 ): Promise<void>;
@@ -65,6 +85,9 @@ declare namespace notifyAuditFailure {
   const AUDIT_FAILURE_LABEL: string;
   const ISSUE_TITLE: string;
   const ISSUE_MARKER: string;
+  function findOpenAuditFailureIssue(
+    args: FindOpenAuditFailureIssueArgs,
+  ): Promise<GithubIssueOrPullRequest | undefined>;
 }
 
 export default notifyAuditFailure;

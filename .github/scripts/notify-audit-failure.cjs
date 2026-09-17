@@ -40,6 +40,11 @@ function isTrackedAuditFailureIssue(issueOrPullRequest) {
   );
 }
 
+// Exported (rather than kept private) so close-resolved-audit-failure.cjs
+// can reuse this exact lookup instead of re-deriving the label/marker
+// matching rules: the close path must target precisely the issues this
+// script opens, and duplicating the guard here would let the two drift out
+// of sync.
 async function findOpenAuditFailureIssue({ github, owner, repo }) {
   const { data } = await github.rest.issues.listForRepo({
     owner,
@@ -59,7 +64,9 @@ function buildIssueBody(runUrl) {
     `Failed run: ${runUrl}`,
     "",
     "Investigate the failed run and re-run the workflow once resolved.",
-    "This issue is a duplicate guard: closing it lets the next failure open a new one.",
+    "This issue closes automatically the next time the scheduled audit succeeds " +
+      "(see close-resolved-audit-failure.cjs); closing it manually early also " +
+      "resets the duplicate guard, letting the next failure open a new one.",
   ].join("\n");
 }
 
@@ -105,3 +112,4 @@ module.exports = async function notifyAuditFailure({ github, context, core }) {
 module.exports.AUDIT_FAILURE_LABEL = AUDIT_FAILURE_LABEL;
 module.exports.ISSUE_TITLE = ISSUE_TITLE;
 module.exports.ISSUE_MARKER = ISSUE_MARKER;
+module.exports.findOpenAuditFailureIssue = findOpenAuditFailureIssue;

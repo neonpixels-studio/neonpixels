@@ -127,3 +127,34 @@ jobs:
           script: |
             const notifyAuditFailure = require("./.github/scripts/notify-audit-failure.cjs");
             await notifyAuditFailure({ github, context, core });
+
+  # Recovery counterpart to notify-audit-failure: once a scheduled audit
+  # succeeds again, close the tracking issue that job opened so resolved
+  # failures don't sit open waiting on a human. Split into its own job for
+  # the same reason notify-audit-failure is: the `audit` job's GITHUB_TOKEN
+  # is visible to every process it runs (including install lifecycle
+  # scripts), so `issues: write` stays out of that job and lives only here,
+  # scoped to the schedule trigger. Runs on success where notify-audit-failure
+  # runs on failure — `needs: audit` alone would already skip this job on a
+  # failed audit, but the explicit `success()` mirrors notify-audit-failure's
+  # explicit `failure()` for symmetry.
+  close-resolved-audit-failure:
+    needs: audit
+    if: success() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Close resolved audit-failure issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const closeResolvedAuditFailure = require("./.github/scripts/close-resolved-audit-failure.cjs");
+            await closeResolvedAuditFailure({ github, context, core });

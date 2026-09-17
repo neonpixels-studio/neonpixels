@@ -157,14 +157,19 @@ describe("notify-audit-failure job", () => {
       expect(notifyPermissions).toMatch(/^\s*contents:\s*read\s*$/m);
     });
 
-    // The security-relevant property is that issues: write is scoped to
-    // this job alone, not merely that it appears somewhere in the file — it
-    // would satisfy a looser check just as well if hoisted onto the
-    // workflow-level default or added to the audit/gitleaks jobs, neither
-    // of which has any need to open issues.
-    it("does not grant issues: write outside this job", () => {
+    // The security-relevant property is that issues: write is scoped to the
+    // notify/close jobs alone, not merely that it appears somewhere in the
+    // file — it would satisfy a looser check just as well if hoisted onto
+    // the workflow-level default or added to the audit/gitleaks jobs,
+    // neither of which has any need to open or close issues. close-resolved-
+    // audit-failure legitimately carries the same permission (see its own
+    // "does not grant issues: write outside the notify/close jobs" test), so
+    // this strips both jobs before asserting.
+    it("does not grant issues: write outside the notify/close jobs", () => {
       const withoutNotifyJob = WORKFLOW.replace(notifyJob, "");
-      expect(withoutNotifyJob).not.toMatch(/^\s*issues:\s*write\s*$/m);
+      const closeJob = readJob("close-resolved-audit-failure");
+      const withoutNotifyOrCloseJob = withoutNotifyJob.replace(closeJob, "");
+      expect(withoutNotifyOrCloseJob).not.toMatch(/^\s*issues:\s*write\s*$/m);
     });
   });
 
@@ -191,6 +196,85 @@ describe("notify-audit-failure job", () => {
     it("delegates to the extracted, unit-tested notify script", () => {
       expect(notifyStep).toMatch(
         /require\(["']\.\/\.github\/scripts\/notify-audit-failure\.cjs["']\)/,
+      );
+    });
+  });
+});
+
+describe("close-resolved-audit-failure job", () => {
+  let closeJob = "";
+
+  beforeAll(() => {
+    closeJob = readJob("close-resolved-audit-failure");
+  });
+
+  it("exists", () => {
+    expect(findJob("close-resolved-audit-failure")).not.toBeUndefined();
+  });
+
+  it("depends on the audit job", () => {
+    expect(closeJob).toMatch(/^\s*needs:\s*audit\s*$/m);
+  });
+
+  // The audit job also runs on push/pull_request, where there's no
+  // notify-audit-failure issue to close (that job only ever opens one on the
+  // schedule trigger — see the "notify-audit-failure job" tests above).
+  it("only runs on a scheduled-run success", () => {
+    const ifLine = closeJob.match(/^\s*if:\s*(.+)$/m)?.[1] ?? "";
+    expect(ifLine).toContain("success()");
+    expect(ifLine).toMatch(/github\.event_name\s*==\s*'schedule'/);
+  });
+
+  describe("permissions", () => {
+    let closePermissions = "";
+
+    beforeAll(() => {
+      closePermissions = readJobPermissions(closeJob);
+    });
+
+    it("grants issues: write, scoped to this job", () => {
+      expect(closePermissions).toMatch(/^\s*issues:\s*write\s*$/m);
+    });
+
+    it("keeps contents: read (job permissions replace, not add to, the default)", () => {
+      expect(closePermissions).toMatch(/^\s*contents:\s*read\s*$/m);
+    });
+
+    // Same rationale as notify-audit-failure: the audit job runs untrusted
+    // install scripts under GITHUB_TOKEN, so issues: write must stay scoped
+    // to this job alone rather than hoisted onto the workflow default or
+    // added to audit/gitleaks.
+    it("does not grant issues: write outside the notify/close jobs", () => {
+      const withoutCloseJob = WORKFLOW.replace(closeJob, "");
+      const notifyJob = readJob("notify-audit-failure");
+      const withoutNotifyOrCloseJob = withoutCloseJob.replace(notifyJob, "");
+      expect(withoutNotifyOrCloseJob).not.toMatch(/^\s*issues:\s*write\s*$/m);
+    });
+  });
+
+  describe("close step", () => {
+    const CLOSE_STEP_NAME = "Close resolved audit-failure issue";
+    let closeStep = "";
+
+    beforeAll(() => {
+      closeStep = readStep(closeJob, CLOSE_STEP_NAME);
+    });
+
+    it("exists", () => {
+      expect(findStep(closeJob, CLOSE_STEP_NAME)).not.toBeUndefined();
+    });
+
+    it("closes the issue via the GitHub API rather than a third-party action", () => {
+      expect(closeStep).toMatch(/uses:\s*actions\/github-script@/);
+    });
+
+    // The duplicate-guard lookup (label + body-marker matching, PR
+    // filtering) is reused from notify-audit-failure.cjs and behavior-tested
+    // in closeResolvedAuditFailure.test.ts; this only confirms the step
+    // wires up to the extracted close script.
+    it("delegates to the extracted, unit-tested close script", () => {
+      expect(closeStep).toMatch(
+        /require\(["']\.\/\.github\/scripts\/close-resolved-audit-failure\.cjs["']\)/,
       );
     });
   });
