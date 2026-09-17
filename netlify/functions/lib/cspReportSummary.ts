@@ -65,10 +65,13 @@ export type CspReportSummary = {
   fetchFailures: number;
   // A key `list()` returned that `get()` resolved as gone by the time this
   // run reached it (Netlify Blobs resolves a missing key to `null` rather
-  // than throwing) — most often the hourly pruner deleting it mid-walk, not
-  // a data problem. Tracked separately from invalidEntries below and never
-  // logged: a key vanishing between list and get is routine, not evidence
-  // of a corrupted blob.
+  // than throwing) — most often the hourly pruner deleting it mid-walk.
+  // Tracked separately from invalidEntries below and never logged (a key
+  // vanishing between list and get isn't evidence of a corrupted blob), but
+  // still folded into summarizeRollout's fail-closed gate: the pruner's
+  // count-cap pass evicts fresh keys oldest-first whenever the store is over
+  // CSP_REPORT_MAX_BLOBS, not only retention-aged ones, so a missing key can
+  // genuinely have been a recent violation this run lost the race to read.
   missingEntries: number;
   // A key that fetched something other than `null` but didn't parse as a
   // StoredCspViolation (a corrupted blob, or a future incompatible shape).
@@ -282,14 +285,14 @@ function mostRecentOf(
 }
 
 type SummaryCompleteness = {
-  totalListed: number;
   fetchFailures: number;
+  missingEntries: number;
   invalidEntries: number;
 };
 
 function summarizeRollout(
   violations: StoredCspViolation[],
-  { totalListed, fetchFailures, invalidEntries }: SummaryCompleteness,
+  { fetchFailures, missingEntries, invalidEntries }: SummaryCompleteness,
 ): RolloutSignal {
   const matches = violations.filter((violation) =>
     isRolloutDirective(violation.effectiveDirective),
@@ -298,20 +301,32 @@ function summarizeRollout(
     directive: ROLLOUT_DIRECTIVE,
     count: matches.length,
     mostRecent: mostRecentOf(matches),
-    // Fails closed on two distinct kinds of missing evidence: a violation
-    // hidden behind a failed fetch or an unparsed/corrupted blob might have
-    // been script-src (fetchFailures/invalidEntries), and an empty store
-    // (totalListed === 0) is exactly what the collector silently breaking
-    // (a 500 from /csp-report, a mistyped report-uri, an over-eager prune)
-    // would also look like — indistinguishable from a genuinely finished
-    // rollout without this check. This signal is what the README says
-    // authorizes dropping 'unsafe-inline' from the enforcing script-src, so
-    // a false "stopped" here would weaken a live security header on bad
-    // evidence.
+    // Fails closed on every way a script-src violation could be sitting in
+    // the store without this run having read it: a failed fetch or an
+    // unparsed/corrupted blob (fetchFailures/invalidEntries), or a key the
+    // hourly pruner's count-cap pass evicted mid-walk (missingEntries) —
+    // that cap trims *fresh* keys oldest-first whenever the store is over
+    // CSP_REPORT_MAX_BLOBS (see overCapKeys in cspReportPruner.ts), not only
+    // retention-aged ones, so a "missing" key here can genuinely have been a
+    // recent violation this run simply lost the race to read. This signal is
+    // what the README says authorizes dropping 'unsafe-inline' from the
+    // enforcing script-src, so a false "stopped" here would weaken a live
+    // security header on bad evidence.
+    //
+    // Deliberately NOT gated on the store being non-empty: an empty store
+    // that's read cleanly (zero of every completeness counter above) is the
+    // designed end state of a successful rollout, not evidence of anything
+    // wrong — treating it as "can't tell" would make `stopped` permanently
+    // unreachable once the rollout actually finishes and the 30-day
+    // retention window rolls the last evidence off. A collector that stops
+    // receiving traffic entirely (a 500 from /csp-report, a mistyped
+    // report-uri) is a distinct failure mode already covered by its own
+    // signal (csp-report-persist-failed in csp-report.ts), not this one's
+    // job to re-derive from store volume.
     stopped:
-      totalListed > 0 &&
       matches.length === 0 &&
       fetchFailures === 0 &&
+      missingEntries === 0 &&
       invalidEntries === 0,
   };
 }
@@ -361,6 +376,7 @@ export function createCspReportSummary(
         .filter(isOk)
         .map((outcome) => outcome.violation);
       const fetchFailures = countStatus(outcomes, "failed");
+      const missingEntries = countStatus(outcomes, "missing");
       const invalidEntries = countStatus(outcomes, "invalid");
       return {
         totalListed: keys.length,
@@ -368,12 +384,12 @@ export function createCspReportSummary(
         byDirective: aggregateByDirective(violations),
         byBlockedUri: aggregateByBlockedUri(violations),
         rollout: summarizeRollout(violations, {
-          totalListed: keys.length,
           fetchFailures,
+          missingEntries,
           invalidEntries,
         }),
         fetchFailures,
-        missingEntries: countStatus(outcomes, "missing"),
+        missingEntries,
         invalidEntries,
       };
     },

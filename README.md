@@ -148,30 +148,37 @@ reads and aggregates the store: counts of stored violations by
 how many stored violations belong to the `script-src` family (`script-src`
 itself plus the `script-src-elem`/`script-src-attr` sub-directives browsers
 report even though this site never declares them separately) and, if any
-remain, the most recent one. The signal only reports `stopped: true` once the
-store has something in it (`totalListed > 0`) with none of that belonging to
-`script-src` and nothing unread (`fetchFailures`/`invalidEntries` both 0) —
-an empty store is exactly what a silently broken collector would also look
-like, so it fails closed rather than reading that the same as a genuinely
-finished rollout. Once it does report stopped, `'unsafe-inline'` can be
-dropped from the enforcing `script-src` (see the `@todo` in `netlify.toml`).
-It's scheduled rather than a public route for the same reason the pruner's
-list/delete pass gets away with being unauthenticated: Netlify doesn't expose
-a scheduled Function's route to arbitrary callers, which matters here because
-the summary's most-recent violation embeds attacker-influenced fields
-(`blockedUri`, `sourceFile`, `sample`) that must not be readable at a public,
-unauthenticated endpoint. It's also invokable on demand —
-`netlify functions:invoke csp-report-summary` against a linked site — for an
-ad-hoc rollout check without waiting for the schedule. Like the pruner, the
-read path is isolated in
+remain, the most recent one. The signal fails closed: it only reports
+`stopped: true` once nothing belongs to `script-src` **and** nothing went
+unread — no failed fetch, no key the pruner's count-cap pass evicted mid-walk
+(`fetchFailures`/`missingEntries`/`invalidEntries` all 0), since any of those
+could have been hiding a script-src violation this run simply lost the race
+to see. It is deliberately _not_ gated on the store being non-empty, though —
+an empty store read cleanly is the designed end state of a successful
+rollout, not a fault, and treating it as "can't tell" would make `stopped`
+permanently unreachable once retention (`CSP_REPORT_RETENTION_DAYS`) rolls
+the last evidence off; a collector that stops receiving traffic entirely is
+already a distinct, more precise failure covered by its own signal
+(`csp-report-persist-failed` in `csp-report.ts`). Once the signal does report
+stopped, `'unsafe-inline'` can be dropped from the enforcing `script-src`
+(see the `@todo` in `netlify.toml`). It's scheduled rather than a public
+route for the same reason the pruner's list/delete pass gets away with being
+unauthenticated: Netlify doesn't expose a scheduled Function's route to
+arbitrary callers, which matters here because the summary's most-recent
+violation embeds attacker-influenced fields (`blockedUri`, `sourceFile`,
+`sample`) that must not be readable at a public, unauthenticated endpoint.
+It's also invokable on demand — `netlify functions:invoke csp-report-summary`
+against a linked site — for an ad-hoc rollout check without waiting for the
+schedule. Like the pruner, the read path is isolated in
 [`netlify/functions/lib/cspReportSummary.ts`](netlify/functions/lib/cspReportSummary.ts)
 behind a minimal `list`/`get` seam (`BlobSummaryClient`, mirroring
 `BlobPrunerClient`), so the aggregation is unit-tested with a fake client
 rather than the real Blobs store; a `get()` failure or an unrecognized blob
 shape is counted and logged (`csp-report-summary-fetch-failed` /
 `csp-report-summary-invalid-entry`) rather than aborting the whole run — a key
-the pruner deleted mid-walk is tracked separately (`missingEntries`) and never
-logged, since that's routine, not a fault. Each run logs its outcome on two
+the pruner deleted mid-walk is tracked separately (`missingEntries`, never
+logged since a vanished key isn't evidence of a corrupted blob, but still
+part of the fail-closed rollout gate above). Each run logs its outcome on two
 lines: `csp-report-summarized` carries the rollout signal and totals, and
 `csp-report-summary-breakdown` carries the `byDirective`/`byBlockedUri`
 counts (capped to the top 20 each) — split and capped because `blockedUri` is

@@ -51,12 +51,13 @@ afterEach(() => {
 });
 
 describe("createCspReportSummary", () => {
-  it("returns an empty summary for an empty store, but does not report the rollout as stopped", async () => {
-    // An empty store is exactly what a silently broken collector (a 500
-    // from /csp-report, a mistyped report-uri, an over-eager prune) would
-    // also produce — indistinguishable from a genuinely finished rollout
-    // without positive evidence the store has anything in it at all, so
-    // `stopped` requires totalListed > 0 (see summarizeRollout).
+  it("returns an empty summary for an empty store, and reports the rollout as stopped", async () => {
+    // An empty store read with no failures/missing/invalid entries is the
+    // designed end state of a successful rollout, not evidence of anything
+    // wrong — see the "deliberately NOT gated on the store being non-empty"
+    // comment in summarizeRollout for why this must stay true rather than
+    // making `stopped` permanently unreachable once retention rolls the
+    // last evidence off.
     const client = fakeClient([], {});
     const summary = await createCspReportSummary(client).summarize();
 
@@ -69,7 +70,7 @@ describe("createCspReportSummary", () => {
         directive: ROLLOUT_DIRECTIVE,
         count: 0,
         mostRecent: null,
-        stopped: false,
+        stopped: true,
       },
       fetchFailures: 0,
       missingEntries: 0,
@@ -262,12 +263,12 @@ describe("createCspReportSummary", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("still reports the rollout as stopped when the only unread evidence is a missing (pruned) key, not a fetch failure or invalid entry", async () => {
-    // missingEntries is deliberately excluded from the fail-closed gate in
-    // summarizeRollout — a key the pruner already deleted has aged out of
-    // the retention window, not evidence of a hidden violation — so this
-    // pins that asymmetry against the fetchFailures/invalidEntries cases
-    // above instead of leaving it able to drift either way unnoticed.
+  it("reports the rollout as not stopped when a key evicted mid-walk could be hiding a script-src violation", async () => {
+    // missingEntries is folded into the fail-closed gate alongside
+    // fetchFailures/invalidEntries: the pruner's count-cap pass evicts fresh
+    // keys oldest-first whenever the store is over CSP_REPORT_MAX_BLOBS, not
+    // only retention-aged ones, so a key missing here can genuinely have
+    // been a recent violation this run lost the race to read.
     const client = fakeClient([["style", "gone"]], {
       style: violation({ effectiveDirective: "style-src" }),
     });
@@ -276,7 +277,7 @@ describe("createCspReportSummary", () => {
 
     expect(summary.missingEntries).toBe(1);
     expect(summary.rollout.count).toBe(0);
-    expect(summary.rollout.stopped).toBe(true);
+    expect(summary.rollout.stopped).toBe(false);
   });
 
   it("rejects a fetched entry missing a required StoredCspViolation field as invalid", async () => {
