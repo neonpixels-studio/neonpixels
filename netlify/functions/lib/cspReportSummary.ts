@@ -46,7 +46,8 @@ export type RolloutSignal = {
 
 export type CspReportSummary = {
   // Every key the store listed, regardless of whether it fetched or parsed
-  // successfully — the denominator for fetchFailures/invalidEntries below.
+  // successfully — the denominator for fetchFailures/missingEntries/
+  // invalidEntries below.
   totalListed: number;
   totalViolations: number;
   // Descending by count (ties broken alphabetically for a deterministic
@@ -55,14 +56,24 @@ export type CspReportSummary = {
   byDirective: DirectiveCount[];
   byBlockedUri: BlockedUriCount[];
   rollout: RolloutSignal;
-  // A get() that threw for a listed key (network hiccup, evicted between
-  // list and get, etc). Counted rather than thrown so one bad key can't
-  // blank out an otherwise-good summary; logged via
-  // csp-report-summary-fetch-failed so the gap is still visible.
+  // A get() that threw for a listed key (network hiccup, Blobs outage,
+  // etc). Counted rather than thrown so one bad key can't blank out an
+  // otherwise-good summary; logged via csp-report-summary-fetch-failed so
+  // the gap is still visible. summarizeRollout treats any non-zero count
+  // here as "can't tell", not "no violations" — a violation hidden behind a
+  // failed fetch might have been script-src.
   fetchFailures: number;
-  // A key that fetched but didn't parse as a StoredCspViolation (a
-  // corrupted blob, or a future incompatible shape). Logged via
-  // csp-report-summary-invalid-entry for the same reason.
+  // A key `list()` returned that `get()` resolved as gone by the time this
+  // run reached it (Netlify Blobs resolves a missing key to `null` rather
+  // than throwing) — most often the hourly pruner deleting it mid-walk, not
+  // a data problem. Tracked separately from invalidEntries below and never
+  // logged: a key vanishing between list and get is routine, not evidence
+  // of a corrupted blob.
+  missingEntries: number;
+  // A key that fetched something other than `null` but didn't parse as a
+  // StoredCspViolation (a corrupted blob, or a future incompatible shape).
+  // Logged via csp-report-summary-invalid-entry for the same reason as
+  // fetchFailures.
   invalidEntries: number;
 };
 
@@ -78,6 +89,11 @@ async function listAllKeys(client: BlobSummaryClient): Promise<string[]> {
   return keys;
 }
 
+// Checked against every field StoredCspViolation declares, not just the ones
+// this module reads today: a half-shaped record (missing `sample` or
+// `disposition`, say) must not be accepted as `ok` and forwarded — with
+// `undefined` fields — into rollout.mostRecent and the summarized log line,
+// the exact record a rollout decision gets read from.
 function isStoredCspViolation(value: unknown): value is StoredCspViolation {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -87,12 +103,20 @@ function isStoredCspViolation(value: unknown): value is StoredCspViolation {
     typeof record.documentUrl === "string" &&
     typeof record.effectiveDirective === "string" &&
     typeof record.blockedUri === "string" &&
+    typeof record.disposition === "string" &&
+    typeof record.sourceFile === "string" &&
+    (record.lineNumber === null || typeof record.lineNumber === "number") &&
+    (record.columnNumber === null || typeof record.columnNumber === "number") &&
+    typeof record.sample === "string" &&
     typeof record.receivedAt === "string"
   );
 }
 
 type FetchOutcome =
   | { status: "ok"; violation: StoredCspViolation }
+  // `get()` resolved the key as gone (Netlify Blobs returns `null`, it
+  // doesn't throw), most often the hourly pruner deleting it mid-walk.
+  | { status: "missing"; key: string }
   | { status: "invalid"; key: string }
   | { status: "failed"; key: string; reason: unknown };
 
@@ -105,6 +129,9 @@ async function fetchOne(
     raw = await client.get(key, { type: "json" });
   } catch (reason) {
     return { status: "failed", key, reason };
+  }
+  if (raw === null) {
+    return { status: "missing", key };
   }
   if (isStoredCspViolation(raw)) {
     return { status: "ok", violation: raw };
@@ -119,6 +146,9 @@ function reasonMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason);
 }
 
+// A "missing" outcome is deliberately not logged here (unlike failed/
+// invalid): a key vanishing between list() and get() is the pruner doing
+// its job, not a fault worth a warning marker on every run that overlaps it.
 function logFetchOutcome(outcome: FetchOutcome): void {
   if (outcome.status === "failed") {
     console.warn(
@@ -142,6 +172,13 @@ function isOk(
   outcome: FetchOutcome,
 ): outcome is Extract<FetchOutcome, { status: "ok" }> {
   return outcome.status === "ok";
+}
+
+function countStatus(
+  outcomes: FetchOutcome[],
+  status: FetchOutcome["status"],
+): number {
+  return outcomes.filter((outcome) => outcome.status === status).length;
 }
 
 // Counts violations by an arbitrary field, then orders the result descending
@@ -191,58 +228,109 @@ function isRolloutDirective(directive: string): boolean {
   );
 }
 
-// Most-recent-first so the rollout signal can report the latest offending
-// violation without re-deriving it. `receivedAt` is an ISO timestamp, so a
-// plain string comparison orders it correctly without parsing to a Date
-// (mirrors the trick cspReportPruner.ts uses on the sanitized key).
-function mostRecentFirst(
+// The single most recent violation, so the rollout signal can report the
+// latest offender without sorting the whole matched array just to read
+// index 0. `receivedAt` is an ISO timestamp, so a plain string comparison
+// orders it correctly without parsing to a Date (mirrors the trick
+// cspReportPruner.ts uses on the sanitized key). A `.sort()` comparator that
+// never returns 0 for equal timestamps (realistic here — one blocked inline
+// script can fire several reports in the same millisecond) is an
+// inconsistent comparator with implementation-defined results, so this
+// reduces instead.
+function mostRecentOf(
   violations: StoredCspViolation[],
-): StoredCspViolation[] {
-  return [...violations].sort((a, b) => (a.receivedAt < b.receivedAt ? 1 : -1));
+): StoredCspViolation | null {
+  return violations.reduce<StoredCspViolation | null>(
+    (latest, violation) =>
+      latest === null || violation.receivedAt > latest.receivedAt
+        ? violation
+        : latest,
+    null,
+  );
 }
 
-function summarizeRollout(violations: StoredCspViolation[]): RolloutSignal {
+type SummaryCompleteness = { fetchFailures: number; invalidEntries: number };
+
+function summarizeRollout(
+  violations: StoredCspViolation[],
+  { fetchFailures, invalidEntries }: SummaryCompleteness,
+): RolloutSignal {
   const matches = violations.filter((violation) =>
     isRolloutDirective(violation.effectiveDirective),
   );
   return {
     directive: ROLLOUT_DIRECTIVE,
     count: matches.length,
-    mostRecent: mostRecentFirst(matches)[0] ?? null,
-    stopped: matches.length === 0,
+    mostRecent: mostRecentOf(matches),
+    // Fails closed: a violation hidden behind a failed fetch or an
+    // unparsed/corrupted blob might have been script-src, so a summary that
+    // couldn't read everything it listed must never claim the rollout is
+    // clean — this signal is what the README says authorizes dropping
+    // 'unsafe-inline' from the enforcing script-src, so a false "stopped"
+    // here would weaken a live security header on bad evidence.
+    stopped:
+      matches.length === 0 && fetchFailures === 0 && invalidEntries === 0,
   };
 }
 
+// Every get() runs concurrently within a batch, but batches run one at a
+// time rather than firing all of them at once: the store's size is bounded
+// only by retention (up to CSP_REPORT_MAX_BLOBS, 5000 by default — see
+// cspReportPruner.ts), so an unbounded fan-out would open that many
+// simultaneous Blobs requests, the exact shape that trips rate limits or
+// starves sockets — undermining the scheduled adapter's own hard timeout by
+// making a timeout more likely, not less. Exported so tests assert the real
+// batch boundary instead of mirroring a magic number (mirrors
+// DELETE_BATCH_SIZE in cspReportPruner.ts).
+export const FETCH_BATCH_SIZE = 25;
+
+async function fetchAll(
+  client: BlobSummaryClient,
+  keys: string[],
+): Promise<FetchOutcome[]> {
+  const outcomes: FetchOutcome[] = [];
+  for (let start = 0; start < keys.length; start += FETCH_BATCH_SIZE) {
+    const batch = keys.slice(start, start + FETCH_BATCH_SIZE);
+    outcomes.push(
+      ...(await Promise.all(batch.map((key) => fetchOne(client, key)))),
+    );
+  }
+  return outcomes;
+}
+
 // Pure factory: given anything that can list and get blobs, returns a tool
-// that reads every stored violation and aggregates it. Unlike the pruner,
-// this has no time budget — it's a human-invoked query, not a Function
-// bound by Netlify's execution limit.
+// that reads every stored violation and aggregates it. It has no
+// cooperative time budget of its own (unlike the pruner's list/delete
+// passes) — the scheduled adapter (../csp-report-summary.ts) wraps the
+// whole call in a hard timeout instead, so a store too large to summarize
+// in time aborts the run rather than silently returning partial counts.
 export function createCspReportSummary(
   client: BlobSummaryClient,
 ): CspReportSummaryTool {
   return {
     async summarize() {
       const keys = await listAllKeys(client);
-      const outcomes = await Promise.all(
-        keys.map((key) => fetchOne(client, key)),
-      );
+      const outcomes = await fetchAll(client, keys);
       for (const outcome of outcomes) {
         logFetchOutcome(outcome);
       }
       const violations = outcomes
         .filter(isOk)
         .map((outcome) => outcome.violation);
+      const fetchFailures = countStatus(outcomes, "failed");
+      const invalidEntries = countStatus(outcomes, "invalid");
       return {
         totalListed: keys.length,
         totalViolations: violations.length,
         byDirective: aggregateByDirective(violations),
         byBlockedUri: aggregateByBlockedUri(violations),
-        rollout: summarizeRollout(violations),
-        fetchFailures: outcomes.filter((outcome) => outcome.status === "failed")
-          .length,
-        invalidEntries: outcomes.filter(
-          (outcome) => outcome.status === "invalid",
-        ).length,
+        rollout: summarizeRollout(violations, {
+          fetchFailures,
+          invalidEntries,
+        }),
+        fetchFailures,
+        missingEntries: countStatus(outcomes, "missing"),
+        invalidEntries,
       };
     },
   };

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   createCspReportSummary,
   ROLLOUT_DIRECTIVE,
+  FETCH_BATCH_SIZE,
   type BlobSummaryClient,
   type BlobPage,
 } from "../../../netlify/functions/lib/cspReportSummary";
@@ -66,6 +67,7 @@ describe("createCspReportSummary", () => {
         stopped: true,
       },
       fetchFailures: 0,
+      missingEntries: 0,
       invalidEntries: 0,
     });
   });
@@ -149,7 +151,7 @@ describe("createCspReportSummary", () => {
     expect(summary.rollout.stopped).toBe(false);
   });
 
-  it("does not treat an unrelated directive that merely shares a prefix word as script-src", async () => {
+  it("counts an unrecognized script-src-* sub-directive as part of the rollout family", async () => {
     const blobs = {
       a: violation({ effectiveDirective: "script-src-fooxyz" }),
     };
@@ -158,11 +160,23 @@ describe("createCspReportSummary", () => {
     const summary = await createCspReportSummary(client).summarize();
 
     // "script-src-fooxyz" is still evidence of the script-src family under
-    // this repo's prefix rule (it's not a directive this policy ever
-    // declares separately) — asserts the rule is a hyphen-bounded prefix
-    // match, not a bare substring match that would also catch something
-    // like "my-script-src-elem".
+    // this repo's hyphen-bounded prefix rule, since this policy never
+    // declares script-src sub-directives separately (see isRolloutDirective).
     expect(summary.rollout.count).toBe(1);
+  });
+
+  it("does not count a directive that merely contains the word script-src as part of the rollout", async () => {
+    const blobs = {
+      a: violation({ effectiveDirective: "my-script-src-elem" }),
+    };
+    const client = fakeClient([["a"]], blobs);
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    // Proves the rule is a hyphen-bounded prefix match, not a bare substring
+    // match — the case the previous version of this test claimed to cover
+    // but never actually exercised.
+    expect(summary.rollout.count).toBe(0);
   });
 
   it("surfaces the most recent script-src violation when the rollout has not stopped", async () => {
@@ -225,5 +239,92 @@ describe("createCspReportSummary", () => {
       "csp-report-summary-fetch-failed",
       JSON.stringify({ key: "broken", message: "blobs unavailable" }),
     );
+  });
+
+  it("counts a key evicted between list() and get() as missing, not invalid, and does not log it", async () => {
+    // Netlify Blobs resolves get() to null for a key that no longer exists
+    // (it does not throw) — realistic here because the hourly pruner can
+    // delete a key while a summary run is still walking the store.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const client = fakeClient([["good", "gone"]], { good: violation() });
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.totalListed).toBe(2);
+    expect(summary.totalViolations).toBe(1);
+    expect(summary.missingEntries).toBe(1);
+    expect(summary.invalidEntries).toBe(0);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fetched entry missing a required StoredCspViolation field as invalid", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { sample: _sample, ...missingSample } = violation();
+    const client = fakeClient([["bad"]], { bad: missingSample });
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.totalViolations).toBe(0);
+    expect(summary.invalidEntries).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      "csp-report-summary-invalid-entry",
+      JSON.stringify({ key: "bad" }),
+    );
+  });
+
+  it("fetches in batches rather than firing every get() at once", async () => {
+    const keys = Array.from(
+      { length: FETCH_BATCH_SIZE + 10 },
+      (_, index) => `key-${index}`,
+    );
+    const blobs = Object.fromEntries(keys.map((key) => [key, violation()]));
+    let maxConcurrent = 0;
+    let inFlight = 0;
+    const client = fakeClient([keys], blobs);
+    client.get.mockImplementation(async (key: string) => {
+      inFlight += 1;
+      maxConcurrent = Math.max(maxConcurrent, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+      return blobs[key];
+    });
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.totalViolations).toBe(keys.length);
+    expect(maxConcurrent).toBeLessThanOrEqual(FETCH_BATCH_SIZE);
+  });
+
+  it("reports the rollout as not stopped when a fetch failure could be hiding a script-src violation", async () => {
+    // Only non-script-src violations parsed successfully, but a key failed
+    // to fetch entirely — the summary can't rule out that key having been
+    // script-src, so it must fail closed rather than report a clean rollout
+    // on incomplete evidence.
+    const client = fakeClient([["style", "broken"]], {
+      style: violation({ effectiveDirective: "style-src" }),
+    });
+    client.get.mockImplementation(async (key: string) => {
+      if (key === "broken") {
+        throw new Error("blobs unavailable");
+      }
+      return violation({ effectiveDirective: "style-src" });
+    });
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.rollout.count).toBe(0);
+    expect(summary.rollout.stopped).toBe(false);
+  });
+
+  it("reports the rollout as not stopped when an invalid entry could be hiding a script-src violation", async () => {
+    const client = fakeClient([["style", "bad"]], {
+      style: violation({ effectiveDirective: "style-src" }),
+      bad: { unrelated: "shape" },
+    });
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.rollout.count).toBe(0);
+    expect(summary.rollout.stopped).toBe(false);
   });
 });

@@ -31,6 +31,7 @@ const EMPTY_SUMMARY = {
     stopped: true,
   },
   fetchFailures: 0,
+  missingEntries: 0,
   invalidEntries: 0,
 };
 
