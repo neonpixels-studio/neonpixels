@@ -32,16 +32,17 @@ updates:
       #
       # @tailwindcss/vite, @vitejs/plugin-vue, and vitest all declare vite as
       # a required peer dependency, ranged by vite major (e.g. vitest 5.0.0
-      # supports vite ^6 || ^7 || ^8). A vite *major* bump — the case that
-      # actually risks outgrowing those ranges — falls through minor-and-patch
-      # the same way vitepress's does, so it lands in this group together
-      # with any of these three that also has a pending update that run,
-      # instead of shipping split with a stale peer range and breaking
-      # `npm ci`. Known residual gap: if one of these three needs its own
-      # ordinary minor/patch release to widen its peer range (rather than
-      # already supporting the new vite major ahead of time, which is the
-      # common case above), that release still matches minor-and-patch above
-      # and ships in the general PR, unchanged from before this group existed.
+      # supports vite ^6 || ^7 || ^8). A *major* bump to vite, or to one of
+      # these three, falls through minor-and-patch the same way vitepress's
+      # does, so it lands in this group together with any of the others that
+      # also has a pending update that run, instead of shipping split with a
+      # stale peer range and breaking `npm ci`. That coverage only holds when
+      # both sides' pending update is itself a major, though: minor-and-patch
+      # is listed first and still claims a minor/patch update to any of these
+      # three on its own (e.g. a routine release that widens its vite peer
+      # range without a major version bump), same as it always has for
+      # vite/vitepress — that update ships in the general PR, separate from a
+      # same-run vite major here, unchanged from before this group existed.
       vite-vitepress:
         patterns:
           - "vite"

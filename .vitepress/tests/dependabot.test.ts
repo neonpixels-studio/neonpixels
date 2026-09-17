@@ -29,13 +29,18 @@ function readPackageJson() {
   return JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf-8"));
 }
 
+// Deliberately excludes optionalDependencies: npm is allowed to skip those
+// on install (platform-gated binaries, `--omit=optional`), so a missing one
+// isn't a broken install the way a missing required dependency is. This
+// repo has none today; if that changes, an optional vite-peer dependency
+// needs its own not-installed handling rather than sharing the required-
+// dependency throw below.
 function readAllDirectDependencies() {
   const packageJson = readPackageJson();
 
   return {
     ...packageJson.dependencies,
     ...packageJson.devDependencies,
-    ...packageJson.optionalDependencies,
   };
 }
 
@@ -137,6 +142,11 @@ describe("dependabot.yml vite/vitepress grouping", () => {
   });
 
   it("groups vite, vitepress, and vite's peer-dependent packages together for version updates, including majors", () => {
+    // Asserts containment only, not exact length: the dangerous direction is
+    // a required vite-peer package missing from the group (that's what
+    // arrayContaining catches), not the group naming a package whose peer
+    // dependency later loosens or drops — that's harmless to Dependabot and
+    // shouldn't fail an unrelated PR that bumps that package.
     const npmEntry = readNpmUpdateEntry();
     const coupledGroup = npmEntry.groups?.["vite-vitepress"];
     const groupedPackages = [
@@ -148,7 +158,6 @@ describe("dependabot.yml vite/vitepress grouping", () => {
     expect(coupledGroup.patterns).toEqual(
       expect.arrayContaining(groupedPackages),
     );
-    expect(coupledGroup.patterns).toHaveLength(groupedPackages.length);
     expect(matchesEveryUpdateType(coupledGroup)).toBe(true);
   });
 
@@ -169,7 +178,23 @@ describe("dependabot.yml vite/vitepress grouping", () => {
     expect(securityGroup.patterns).toEqual(
       expect.arrayContaining(groupedPackages),
     );
-    expect(securityGroup.patterns).toHaveLength(groupedPackages.length);
+  });
+
+  it("never excludes vite's peer-dependent packages from minor-and-patch", () => {
+    // A prior draft of this change added `exclude-patterns` for these three
+    // to minor-and-patch, intending to force every one of their bumps into
+    // vite-vitepress. That backfired: it split a same-run vite minor bump
+    // (which stays in minor-and-patch) from a peer's own minor bump (forced
+    // into vite-vitepress alone) into two separate PRs — the exact
+    // mismatched-peer-range failure this change exists to prevent. Scope is
+    // deliberately limited to major bumps, which minor-and-patch's
+    // update-types filter already funnels into vite-vitepress on its own;
+    // guard against silently reintroducing that exclusion.
+    const npmEntry = readNpmUpdateEntry();
+    const generalGroup = npmEntry.groups?.["minor-and-patch"];
+
+    expect(generalGroup).toBeDefined();
+    expect(generalGroup["exclude-patterns"]).toBeUndefined();
   });
 
   it("still groups every other package's minor and patch version updates", () => {
