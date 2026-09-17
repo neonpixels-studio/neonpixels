@@ -51,7 +51,7 @@ function buildGithubStub({
 }
 
 function buildCoreStub() {
-  return { info: vi.fn() };
+  return { info: vi.fn(), warning: vi.fn() };
 }
 
 // A tracked issue is one notify-audit-failure.cjs itself opened: carries the
@@ -195,7 +195,12 @@ describe("closeResolvedAuditFailure", () => {
     expect(github.rest.issues.createComment).not.toHaveBeenCalled();
   });
 
-  it("propagates an error from the recovery comment instead of swallowing it", async () => {
+  // A failed recovery comment is NOT a failed close: the issue already
+  // closed successfully, so reporting this as "failed to close" would send
+  // a maintainer to investigate an issue that isn't actually stuck open.
+  // core.warning still surfaces it as a visible workflow annotation, so it
+  // isn't silently swallowed either.
+  it("warns (without throwing) when the recovery comment fails on an already-closed issue", async () => {
     const github = buildGithubStub({
       existingIssues: [trackedIssue(7)],
       createCommentImpl: () => Promise.reject(new Error("issue locked")),
@@ -204,14 +209,21 @@ describe("closeResolvedAuditFailure", () => {
 
     await expect(
       closeResolvedAuditFailure({ github, context: REPO_CONTEXT, core }),
-    ).rejects.toThrow("issue locked");
-    // The close itself must have already landed before the comment failed.
+    ).resolves.toBeUndefined();
+
     expect(github.rest.issues.update).toHaveBeenCalledTimes(1);
+    expect(core.warning).toHaveBeenCalledWith(
+      expect.stringContaining("issue locked"),
+    );
+    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("#7"));
   });
 
-  // One locked issue must not mask the rest: if it did, a single stuck issue
-  // would permanently prevent every other tracked issue from ever closing.
-  it("still closes remaining issues when one issue's comment fails", async () => {
+  // One issue's comment failing must not mask the rest: if it did, a single
+  // locked issue would permanently prevent every other tracked issue's
+  // recovery comment from ever posting. (The close itself has its own,
+  // separate resilience test below, since a close failure — unlike a
+  // comment failure — is fatal and collected across the loop.)
+  it("still comments on remaining issues when one issue's comment fails", async () => {
     const github = buildGithubStub({
       existingIssues: [trackedIssue(7), trackedIssue(9)],
     });
@@ -223,16 +235,45 @@ describe("closeResolvedAuditFailure", () => {
 
     await expect(
       closeResolvedAuditFailure({ github, context: REPO_CONTEXT, core }),
-    ).rejects.toThrow("#7: issue #7 locked");
+    ).resolves.toBeUndefined();
 
-    // Both issues were closed even though #7's comment failed.
+    // Both issues were closed, and #9's comment still posted despite #7's
+    // comment failing.
     expect(github.rest.issues.update).toHaveBeenCalledTimes(2);
     const closedIssueNumbers = github.rest.issues.update.mock.calls.map(
       ([params]) => params.issue_number,
     );
     expect(closedIssueNumbers).toEqual([7, 9]);
-    // The log record for #7's close survives even though its comment failed.
-    expect(core.info).toHaveBeenCalledWith(expect.stringContaining("#7"));
-    expect(core.info).toHaveBeenCalledWith(expect.stringContaining("#9"));
+    expect(github.rest.issues.createComment).toHaveBeenCalledTimes(2);
+    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("#7"));
+  });
+
+  // One issue failing to *close* (a transient API error, unlike a comment
+  // failure) must not abort the rest — otherwise a single stuck issue would
+  // permanently mask every other issue this loop exists to clear.
+  it("still closes remaining issues when one issue's close fails", async () => {
+    const github = buildGithubStub({
+      existingIssues: [trackedIssue(7), trackedIssue(9)],
+    });
+    github.rest.issues.update = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("issue #7 locked"))
+      .mockResolvedValueOnce({});
+    const core = buildCoreStub();
+
+    await expect(
+      closeResolvedAuditFailure({ github, context: REPO_CONTEXT, core }),
+    ).rejects.toThrow("#7: issue #7 locked");
+
+    expect(github.rest.issues.update).toHaveBeenCalledTimes(2);
+    const closedIssueNumbers = github.rest.issues.update.mock.calls.map(
+      ([params]) => params.issue_number,
+    );
+    expect(closedIssueNumbers).toEqual([7, 9]);
+    // #7 never closed, so it was never commented on either; #9 still was.
+    expect(github.rest.issues.createComment).toHaveBeenCalledTimes(1);
+    expect(github.rest.issues.createComment.mock.calls[0][0].issue_number).toBe(
+      9,
+    );
   });
 });

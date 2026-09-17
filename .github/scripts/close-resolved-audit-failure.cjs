@@ -17,12 +17,16 @@
 const { findOpenAuditFailureIssues } = require("./notify-audit-failure.cjs");
 
 // Closes first, comments second: closing is the state change that actually
-// stops the issue from piling up, so it must land even if the (purely
-// cosmetic) comment fails — e.g. the issue got locked during triage. With
-// the order reversed, a failed comment would leave the issue open, and next
-// Monday's run would reproduce the same failure indefinitely. `core.info`
-// runs between the two calls (not after both) so a comment failure doesn't
-// erase the log record that the close itself already landed.
+// stops the issue from piling up; the comment is purely cosmetic context for
+// whoever reads the issue afterward. That asymmetry means the two calls need
+// different failure handling, not a single try/catch around both: a failed
+// close is this feature failing at its one job (report it as such, and
+// leave the issue for the next run to retry), but a failed comment on an
+// issue that *did* close successfully is not a failed close — reporting it
+// as "failed to close audit-failure issue #7" would be false, and would send
+// a maintainer to investigate a stuck-open issue that's actually already
+// closed. `core.warning` still surfaces the comment failure as a visible
+// workflow annotation, so it isn't silently swallowed either.
 async function closeAuditFailureIssue({
   github,
   owner,
@@ -39,12 +43,18 @@ async function closeAuditFailureIssue({
   });
   core.info(`Closed resolved audit-failure issue #${issue.number}.`);
 
-  await github.rest.issues.createComment({
-    owner,
-    repo,
-    issue_number: issue.number,
-    body: `The scheduled security audit passed again. Closing this issue.\n\nRecovered run: ${runUrl}`,
-  });
+  try {
+    await github.rest.issues.createComment({
+      owner,
+      repo,
+      issue_number: issue.number,
+      body: `The scheduled security audit passed again. Closing this issue.\n\nRecovered run: ${runUrl}`,
+    });
+  } catch (error) {
+    core.warning(
+      `Closed audit-failure issue #${issue.number} but could not post the recovery comment: ${error.message}`,
+    );
+  }
 }
 
 module.exports = async function closeResolvedAuditFailure({
@@ -74,12 +84,13 @@ module.exports = async function closeResolvedAuditFailure({
 
   // Normally at most one tracked issue is open, but when more than one is
   // (a human reopens one, two scheduled runs race), one issue failing to
-  // close (e.g. locked during triage) must not abort the rest — otherwise a
-  // single locked issue would permanently mask every other issue this loop
-  // exists to clear. Each issue's outcome is collected instead, and the run
+  // *close* (e.g. a transient API error) must not abort the rest — otherwise
+  // a single stuck issue would permanently mask every other issue this loop
+  // exists to clear. Close failures are collected instead, and the run
   // still fails loud afterward so a broken closer surfaces in the workflow
-  // log rather than being swallowed silently.
-  const failures = [];
+  // log rather than being swallowed silently. Comment failures never reach
+  // here — closeAuditFailureIssue handles those itself (see above).
+  const closeFailures = [];
   for (const issue of trackedIssues) {
     try {
       await closeAuditFailureIssue({
@@ -91,13 +102,13 @@ module.exports = async function closeResolvedAuditFailure({
         core,
       });
     } catch (error) {
-      failures.push(`#${issue.number}: ${error.message}`);
+      closeFailures.push(`#${issue.number}: ${error.message}`);
     }
   }
 
-  if (failures.length > 0) {
+  if (closeFailures.length > 0) {
     throw new Error(
-      `Failed to close audit-failure issue(s): ${failures.join("; ")}`,
+      `Failed to close audit-failure issue(s): ${closeFailures.join("; ")}`,
     );
   }
 };

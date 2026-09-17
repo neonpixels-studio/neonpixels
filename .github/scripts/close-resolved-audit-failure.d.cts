@@ -17,13 +17,14 @@ import type {
 // notify args wholesale would let a stub missing `update` type-check clean
 // while still throwing `TypeError: ...update is not a function` at runtime.
 //
-// The inline parameter name below (and `_args` further down) is prefixed
-// with `_` only to satisfy this repo's base-ESLint `no-unused-vars` rule:
-// the ambient-declaration carve-out in eslint.config.js is scoped to
-// notify-audit-failure.d.cts specifically, and extending it to this file is
-// out of scope here (separate in-flight work owns eslint.config.js). These
-// are type-signature parameter names, not real unused bindings — base
-// ESLint (no TS-aware plugin configured) can't tell the difference.
+// Every inline parameter name in this file (here, on `warning` below, and on
+// `_args` further down) is prefixed with `_` only to satisfy this repo's
+// base-ESLint `no-unused-vars` rule: the ambient-declaration carve-out in
+// eslint.config.js is scoped to notify-audit-failure.d.cts specifically, and
+// extending it to this file is out of scope here (separate in-flight work
+// owns eslint.config.js). These are type-signature parameter names, not
+// real unused bindings — base ESLint (no TS-aware plugin configured) can't
+// tell the difference.
 export type CloseGithubIssuesClient = GithubIssuesLookupClient & {
   update: (_params: {
     owner: string;
@@ -33,6 +34,17 @@ export type CloseGithubIssuesClient = GithubIssuesLookupClient & {
   }) => Promise<unknown>;
 };
 
+// Extends the shared core logger with `warning`: unlike notify-audit-failure
+// (which only ever logs a success line via `info`), this script uses
+// `warning` for a non-fatal recovery-comment failure — see
+// close-resolved-audit-failure.cjs's `closeAuditFailureIssue`. Not folded
+// into `AuditWorkflowCore` itself so notifyAuditFailure.test.ts's stub
+// (which only implements `info`) doesn't need an unused method just to
+// satisfy the shared type.
+export type CloseAuditWorkflowCore = AuditWorkflowCore & {
+  warning: (_message: string) => void;
+};
+
 export type CloseResolvedAuditFailureArgs = {
   github: {
     rest: {
@@ -40,7 +52,7 @@ export type CloseResolvedAuditFailureArgs = {
     };
   };
   context: AuditWorkflowContext;
-  core: AuditWorkflowCore;
+  core: CloseAuditWorkflowCore;
 };
 
 declare function closeResolvedAuditFailure(
