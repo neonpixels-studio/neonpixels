@@ -20,14 +20,24 @@ const { findOpenAuditFailureIssues } = require("./notify-audit-failure.cjs");
 // stops the issue from piling up, so it must land even if the (purely
 // cosmetic) comment fails — e.g. the issue got locked during triage. With
 // the order reversed, a failed comment would leave the issue open, and next
-// Monday's run would reproduce the same failure indefinitely.
-async function closeAuditFailureIssue({ github, owner, repo, issue, runUrl }) {
+// Monday's run would reproduce the same failure indefinitely. `core.info`
+// runs between the two calls (not after both) so a comment failure doesn't
+// erase the log record that the close itself already landed.
+async function closeAuditFailureIssue({
+  github,
+  owner,
+  repo,
+  issue,
+  runUrl,
+  core,
+}) {
   await github.rest.issues.update({
     owner,
     repo,
     issue_number: issue.number,
     state: "closed",
   });
+  core.info(`Closed resolved audit-failure issue #${issue.number}.`);
 
   await github.rest.issues.createComment({
     owner,
@@ -46,10 +56,11 @@ module.exports = async function closeResolvedAuditFailure({
   const repo = context.repo.repo;
   const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
 
-  // No try/catch, same rationale as notify-audit-failure.cjs: a failure here
-  // should surface loudly in the workflow log rather than be swallowed,
-  // since a silently-broken closer would let stale audit-failure issues pile
-  // up unnoticed — the exact failure mode this feature exists to prevent.
+  // No try/catch here, same rationale as notify-audit-failure.cjs: a broken
+  // lookup should surface loudly in the workflow log rather than be
+  // swallowed, since a silently-broken closer would let stale audit-failure
+  // issues pile up unnoticed — the exact failure mode this feature exists
+  // to prevent.
   const trackedIssues = await findOpenAuditFailureIssues({
     github,
     owner,
@@ -61,11 +72,32 @@ module.exports = async function closeResolvedAuditFailure({
     return;
   }
 
-  // Normally at most one is open, but close every match rather than just
-  // the first: a human reopening one, or two scheduled runs racing, could
-  // otherwise leave extras open forever.
+  // Normally at most one tracked issue is open, but when more than one is
+  // (a human reopens one, two scheduled runs race), one issue failing to
+  // close (e.g. locked during triage) must not abort the rest — otherwise a
+  // single locked issue would permanently mask every other issue this loop
+  // exists to clear. Each issue's outcome is collected instead, and the run
+  // still fails loud afterward so a broken closer surfaces in the workflow
+  // log rather than being swallowed silently.
+  const failures = [];
   for (const issue of trackedIssues) {
-    await closeAuditFailureIssue({ github, owner, repo, issue, runUrl });
-    core.info(`Closed resolved audit-failure issue #${issue.number}.`);
+    try {
+      await closeAuditFailureIssue({
+        github,
+        owner,
+        repo,
+        issue,
+        runUrl,
+        core,
+      });
+    } catch (error) {
+      failures.push(`#${issue.number}: ${error.message}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(
+      `Failed to close audit-failure issue(s): ${failures.join("; ")}`,
+    );
   }
 };

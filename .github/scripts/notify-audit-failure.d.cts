@@ -89,9 +89,8 @@ declare namespace notifyAuditFailure {
   const AUDIT_FAILURE_LABEL: string;
   const ISSUE_TITLE: string;
   const ISSUE_MARKER: string;
-  function findOpenAuditFailureIssue(
-    args: FindOpenAuditFailureIssuesArgs,
-  ): Promise<GithubIssueOrPullRequest | undefined>;
+  // Only the plural finder is a public export (see notify-audit-failure.cjs)
+  // — the singular helper stays private to that file's own duplicate guard.
   function findOpenAuditFailureIssues(
     args: FindOpenAuditFailureIssuesArgs,
   ): Promise<GithubIssueOrPullRequest[]>;

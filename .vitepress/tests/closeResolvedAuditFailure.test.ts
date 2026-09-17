@@ -208,4 +208,31 @@ describe("closeResolvedAuditFailure", () => {
     // The close itself must have already landed before the comment failed.
     expect(github.rest.issues.update).toHaveBeenCalledTimes(1);
   });
+
+  // One locked issue must not mask the rest: if it did, a single stuck issue
+  // would permanently prevent every other tracked issue from ever closing.
+  it("still closes remaining issues when one issue's comment fails", async () => {
+    const github = buildGithubStub({
+      existingIssues: [trackedIssue(7), trackedIssue(9)],
+    });
+    github.rest.issues.createComment = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("issue #7 locked"))
+      .mockResolvedValueOnce({});
+    const core = buildCoreStub();
+
+    await expect(
+      closeResolvedAuditFailure({ github, context: REPO_CONTEXT, core }),
+    ).rejects.toThrow("#7: issue #7 locked");
+
+    // Both issues were closed even though #7's comment failed.
+    expect(github.rest.issues.update).toHaveBeenCalledTimes(2);
+    const closedIssueNumbers = github.rest.issues.update.mock.calls.map(
+      ([params]) => params.issue_number,
+    );
+    expect(closedIssueNumbers).toEqual([7, 9]);
+    // The log record for #7's close survives even though its comment failed.
+    expect(core.info).toHaveBeenCalledWith(expect.stringContaining("#7"));
+    expect(core.info).toHaveBeenCalledWith(expect.stringContaining("#9"));
+  });
 });
