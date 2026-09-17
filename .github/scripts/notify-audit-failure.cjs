@@ -44,8 +44,12 @@ function isTrackedAuditFailureIssue(issueOrPullRequest) {
 // can reuse this exact lookup instead of re-deriving the label/marker
 // matching rules: the close path must target precisely the issues this
 // script opens, and duplicating the guard here would let the two drift out
-// of sync.
-async function findOpenAuditFailureIssue({ github, owner, repo }) {
+// of sync. Returns every match (plural), not just the first: the notify
+// path only ever needs one (there's normally at most one open at a time),
+// but the close path needs all of them — a human reopening one, or two
+// scheduled runs racing, could otherwise leave a second tracked issue open
+// forever if the close script only ever closed whichever came back first.
+async function findOpenAuditFailureIssues({ github, owner, repo }) {
   const { data } = await github.rest.issues.listForRepo({
     owner,
     repo,
@@ -53,7 +57,12 @@ async function findOpenAuditFailureIssue({ github, owner, repo }) {
     labels: AUDIT_FAILURE_LABEL,
     per_page: LIST_PAGE_SIZE,
   });
-  return data.find(isTrackedAuditFailureIssue);
+  return data.filter(isTrackedAuditFailureIssue);
+}
+
+async function findOpenAuditFailureIssue(args) {
+  const [firstMatch] = await findOpenAuditFailureIssues(args);
+  return firstMatch;
 }
 
 function buildIssueBody(runUrl) {
@@ -63,10 +72,13 @@ function buildIssueBody(runUrl) {
     "",
     `Failed run: ${runUrl}`,
     "",
-    "Investigate the failed run and re-run the workflow once resolved.",
-    "This issue closes automatically the next time the scheduled audit succeeds " +
-      "(see close-resolved-audit-failure.cjs); closing it manually early also " +
-      "resets the duplicate guard, letting the next failure open a new one.",
+    "Investigate the failure. Re-running this failed scheduled run once " +
+      "resolved, or waiting for the next Monday run, closes this issue " +
+      "automatically (see close-resolved-audit-failure.cjs) — the close " +
+      "job only fires on the schedule trigger, not workflow_dispatch, since " +
+      "that can be run against an arbitrary branch.",
+    "Closing it manually early also resets the duplicate guard, letting the " +
+      "next failure open a new one.",
   ].join("\n");
 }
 
@@ -113,3 +125,4 @@ module.exports.AUDIT_FAILURE_LABEL = AUDIT_FAILURE_LABEL;
 module.exports.ISSUE_TITLE = ISSUE_TITLE;
 module.exports.ISSUE_MARKER = ISSUE_MARKER;
 module.exports.findOpenAuditFailureIssue = findOpenAuditFailureIssue;
+module.exports.findOpenAuditFailureIssues = findOpenAuditFailureIssues;

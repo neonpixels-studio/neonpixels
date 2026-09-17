@@ -9,8 +9,8 @@ import type { GithubIssueOrPullRequest } from "../../.github/scripts/notify-audi
 // step (.github/workflows/security.yml) requires at runtime via
 // actions/github-script. It's the recovery counterpart to
 // notify-audit-failure.cjs (see notifyAuditFailure.test.ts): it reuses that
-// script's `findOpenAuditFailureIssue` lookup so the close path always
-// targets exactly the issue notify-audit-failure opened.
+// script's `findOpenAuditFailureIssues` lookup so the close path always
+// targets exactly the issue(s) notify-audit-failure opened.
 
 const { ISSUE_MARKER } = notifyAuditFailure;
 
@@ -24,12 +24,14 @@ type GithubStubOptions = {
   existingIssues?: GithubIssueOrPullRequest[];
   listForRepoImpl?: () => Promise<{ data: GithubIssueOrPullRequest[] }>;
   updateImpl?: () => Promise<unknown>;
+  createCommentImpl?: () => Promise<unknown>;
 };
 
 function buildGithubStub({
   existingIssues = [],
   listForRepoImpl,
   updateImpl,
+  createCommentImpl,
 }: GithubStubOptions = {}) {
   return {
     rest: {
@@ -37,8 +39,9 @@ function buildGithubStub({
         listForRepo: listForRepoImpl
           ? vi.fn().mockImplementation(listForRepoImpl)
           : vi.fn().mockResolvedValue({ data: existingIssues }),
-        create: vi.fn().mockResolvedValue({ data: { number: 99 } }),
-        createComment: vi.fn().mockResolvedValue({}),
+        createComment: createCommentImpl
+          ? vi.fn().mockImplementation(createCommentImpl)
+          : vi.fn().mockResolvedValue({}),
         update: updateImpl
           ? vi.fn().mockImplementation(updateImpl)
           : vi.fn().mockResolvedValue({}),
@@ -69,6 +72,13 @@ describe("closeResolvedAuditFailure", () => {
 
     await closeResolvedAuditFailure({ github, context: REPO_CONTEXT, core });
 
+    expect(github.rest.issues.update).toHaveBeenCalledTimes(1);
+    const [updateArgs] = github.rest.issues.update.mock.calls[0];
+    expect(updateArgs.owner).toBe("neonpixels-studio");
+    expect(updateArgs.repo).toBe("neonpixels");
+    expect(updateArgs.issue_number).toBe(7);
+    expect(updateArgs.state).toBe("closed");
+
     expect(github.rest.issues.createComment).toHaveBeenCalledTimes(1);
     const [commentArgs] = github.rest.issues.createComment.mock.calls[0];
     expect(commentArgs.issue_number).toBe(7);
@@ -76,12 +86,12 @@ describe("closeResolvedAuditFailure", () => {
       "https://github.com/neonpixels-studio/neonpixels/actions/runs/42",
     );
 
-    expect(github.rest.issues.update).toHaveBeenCalledTimes(1);
-    const [updateArgs] = github.rest.issues.update.mock.calls[0];
-    expect(updateArgs.owner).toBe("neonpixels-studio");
-    expect(updateArgs.repo).toBe("neonpixels");
-    expect(updateArgs.issue_number).toBe(7);
-    expect(updateArgs.state).toBe("closed");
+    // Closing is the state change that actually stops the issue from piling
+    // up; it must land before the purely cosmetic comment, not after.
+    const updateOrder = github.rest.issues.update.mock.invocationCallOrder[0];
+    const commentOrder =
+      github.rest.issues.createComment.mock.invocationCallOrder[0];
+    expect(updateOrder).toBeLessThan(commentOrder);
 
     expect(core.info).toHaveBeenCalledWith(expect.stringContaining("#7"));
   });
@@ -99,9 +109,30 @@ describe("closeResolvedAuditFailure", () => {
     );
   });
 
+  // Normally at most one tracked issue is open, but a human reopening one,
+  // or two scheduled runs racing, could leave more than one open. The close
+  // path must clear all of them, not just whichever the API lists first.
+  it("closes every open tracked issue, not just the first", async () => {
+    const github = buildGithubStub({
+      existingIssues: [trackedIssue(7), trackedIssue(9)],
+    });
+    const core = buildCoreStub();
+
+    await closeResolvedAuditFailure({ github, context: REPO_CONTEXT, core });
+
+    expect(github.rest.issues.update).toHaveBeenCalledTimes(2);
+    const closedIssueNumbers = github.rest.issues.update.mock.calls.map(
+      ([params]) => params.issue_number,
+    );
+    expect(closedIssueNumbers).toEqual([7, 9]);
+    expect(github.rest.issues.createComment).toHaveBeenCalledTimes(2);
+  });
+
   // The label alone isn't a reliable match — reuses notify-audit-failure's
   // guard, so a PR carrying the label or an unrelated issue without the body
-  // marker must not be mistaken for the tracking issue and closed.
+  // marker must not be mistaken for the tracking issue: closed OR commented
+  // on. A comment on the wrong issue/PR is exactly the misfire the marker
+  // guard exists to prevent, so both must be asserted, not just the close.
   it("ignores pull requests and unrelated issues carrying the label", async () => {
     const github = buildGithubStub({
       existingIssues: [
@@ -114,6 +145,7 @@ describe("closeResolvedAuditFailure", () => {
     await closeResolvedAuditFailure({ github, context: REPO_CONTEXT, core });
 
     expect(github.rest.issues.update).not.toHaveBeenCalled();
+    expect(github.rest.issues.createComment).not.toHaveBeenCalled();
   });
 
   it("closes the real tracked issue even when a labeled pull request also matches the label filter", async () => {
@@ -129,6 +161,10 @@ describe("closeResolvedAuditFailure", () => {
 
     expect(github.rest.issues.update).toHaveBeenCalledTimes(1);
     expect(github.rest.issues.update.mock.calls[0][0].issue_number).toBe(8);
+    expect(github.rest.issues.createComment).toHaveBeenCalledTimes(1);
+    expect(github.rest.issues.createComment.mock.calls[0][0].issue_number).toBe(
+      8,
+    );
   });
 
   // Fail-loud: a broken closer (bad token, disabled issues, transient API
@@ -146,7 +182,7 @@ describe("closeResolvedAuditFailure", () => {
     expect(github.rest.issues.update).not.toHaveBeenCalled();
   });
 
-  it("propagates an error from closing the issue instead of swallowing it", async () => {
+  it("propagates an error from closing the issue instead of swallowing it, without commenting first", async () => {
     const github = buildGithubStub({
       existingIssues: [trackedIssue(7)],
       updateImpl: () => Promise.reject(new Error("issues disabled")),
@@ -156,5 +192,20 @@ describe("closeResolvedAuditFailure", () => {
     await expect(
       closeResolvedAuditFailure({ github, context: REPO_CONTEXT, core }),
     ).rejects.toThrow("issues disabled");
+    expect(github.rest.issues.createComment).not.toHaveBeenCalled();
+  });
+
+  it("propagates an error from the recovery comment instead of swallowing it", async () => {
+    const github = buildGithubStub({
+      existingIssues: [trackedIssue(7)],
+      createCommentImpl: () => Promise.reject(new Error("issue locked")),
+    });
+    const core = buildCoreStub();
+
+    await expect(
+      closeResolvedAuditFailure({ github, context: REPO_CONTEXT, core }),
+    ).rejects.toThrow("issue locked");
+    // The close itself must have already landed before the comment failed.
+    expect(github.rest.issues.update).toHaveBeenCalledTimes(1);
   });
 });

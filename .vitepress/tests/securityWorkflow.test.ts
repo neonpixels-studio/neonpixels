@@ -156,21 +156,6 @@ describe("notify-audit-failure job", () => {
     it("keeps contents: read (job permissions replace, not add to, the default)", () => {
       expect(notifyPermissions).toMatch(/^\s*contents:\s*read\s*$/m);
     });
-
-    // The security-relevant property is that issues: write is scoped to the
-    // notify/close jobs alone, not merely that it appears somewhere in the
-    // file — it would satisfy a looser check just as well if hoisted onto
-    // the workflow-level default or added to the audit/gitleaks jobs,
-    // neither of which has any need to open or close issues. close-resolved-
-    // audit-failure legitimately carries the same permission (see its own
-    // "does not grant issues: write outside the notify/close jobs" test), so
-    // this strips both jobs before asserting.
-    it("does not grant issues: write outside the notify/close jobs", () => {
-      const withoutNotifyJob = WORKFLOW.replace(notifyJob, "");
-      const closeJob = readJob("close-resolved-audit-failure");
-      const withoutNotifyOrCloseJob = withoutNotifyJob.replace(closeJob, "");
-      expect(withoutNotifyOrCloseJob).not.toMatch(/^\s*issues:\s*write\s*$/m);
-    });
   });
 
   describe("notify step", () => {
@@ -239,17 +224,6 @@ describe("close-resolved-audit-failure job", () => {
     it("keeps contents: read (job permissions replace, not add to, the default)", () => {
       expect(closePermissions).toMatch(/^\s*contents:\s*read\s*$/m);
     });
-
-    // Same rationale as notify-audit-failure: the audit job runs untrusted
-    // install scripts under GITHUB_TOKEN, so issues: write must stay scoped
-    // to this job alone rather than hoisted onto the workflow default or
-    // added to audit/gitleaks.
-    it("does not grant issues: write outside the notify/close jobs", () => {
-      const withoutCloseJob = WORKFLOW.replace(closeJob, "");
-      const notifyJob = readJob("notify-audit-failure");
-      const withoutNotifyOrCloseJob = withoutCloseJob.replace(notifyJob, "");
-      expect(withoutNotifyOrCloseJob).not.toMatch(/^\s*issues:\s*write\s*$/m);
-    });
   });
 
   describe("close step", () => {
@@ -278,4 +252,19 @@ describe("close-resolved-audit-failure job", () => {
       );
     });
   });
+});
+
+// The security-relevant property is that issues: write is scoped to the
+// notify/close jobs alone, not merely that it appears somewhere in the file
+// — it would satisfy a looser check just as well if hoisted onto the
+// workflow-level default or added to the audit/gitleaks jobs, neither of
+// which has any need to open or close issues. A single top-level check
+// (rather than one copy nested under each job's describe block) so the
+// invariant has exactly one place to update if a third job ever needs the
+// permission.
+it("grants issues: write only to the notify-audit-failure and close-resolved-audit-failure jobs", () => {
+  const notifyJob = readJob("notify-audit-failure");
+  const closeJob = readJob("close-resolved-audit-failure");
+  const remainder = WORKFLOW.replace(notifyJob, "").replace(closeJob, "");
+  expect(remainder).not.toMatch(/^\s*issues:\s*write\s*$/m);
 });
