@@ -1,4 +1,5 @@
 import { getCspReportPruner } from "./lib/cspReportPruner";
+import { getPruneFailureNotifier } from "./lib/notifyPruneFailure";
 import { withTimeout } from "./lib/withTimeout";
 
 // Netlify scheduled Function (v2) that prunes the csp-reports Blobs store on
@@ -17,6 +18,21 @@ const PRUNED_LOG_PREFIX = "csp-report-pruned";
 // csp-report.ts — this is the maintenance path, not a rejected report — so
 // the two failure modes don't get conflated when grepping the logs.
 const PRUNE_FAILED_LOG_PREFIX = "csp-report-prune-failed";
+// Logged when the failure-notification path itself breaks (missing/invalid
+// PRUNE_FAILURE_GITHUB_TOKEN, GitHub API outage, etc.). This must never
+// crash the handler or change its response — the underlying prune failure
+// (PRUNE_FAILED_LOG_PREFIX, logged above it) is the real signal, and is
+// already written by the time this can fail. See #123.
+const NOTIFY_FAILED_LOG_PREFIX = "csp-report-prune-notify-failed";
+
+// A short, separate budget for the GitHub notification call, bounded well
+// under HARD_TIMEOUT_MS's remaining headroom: this only runs after prune()
+// has already failed (possibly after consuming most of HARD_TIMEOUT_MS
+// itself), so it must not be able to push the whole run past Netlify's real
+// 30s scheduled-Function limit. A timeout here is caught and logged the same
+// as any other notify failure — the next hourly run's own failure (if the
+// issue persists) gets another chance to notify.
+const NOTIFY_TIMEOUT_MS = 5000;
 
 const HTTP_OK = 200;
 const HTTP_INTERNAL_SERVER_ERROR = 500;
@@ -40,12 +56,28 @@ export default async (_request: Request): Promise<Response> => {
     console.log(PRUNED_LOG_PREFIX, JSON.stringify(result));
     return new Response(null, { status: HTTP_OK });
   } catch (error) {
-    console.warn(
-      PRUNE_FAILED_LOG_PREFIX,
-      JSON.stringify({
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(PRUNE_FAILED_LOG_PREFIX, JSON.stringify({ message }));
+    // Best-effort: a broken notifier must not crash the handler or turn the
+    // real 500 (the prune failure above) into an unhandled exception — see
+    // NOTIFY_FAILED_LOG_PREFIX above.
+    try {
+      await withTimeout(
+        getPruneFailureNotifier().notify(message),
+        NOTIFY_TIMEOUT_MS,
+        "csp report prune failure notify",
+      );
+    } catch (notifyError) {
+      console.warn(
+        NOTIFY_FAILED_LOG_PREFIX,
+        JSON.stringify({
+          message:
+            notifyError instanceof Error
+              ? notifyError.message
+              : String(notifyError),
+        }),
+      );
+    }
     return new Response(null, { status: HTTP_INTERNAL_SERVER_ERROR });
   }
 };

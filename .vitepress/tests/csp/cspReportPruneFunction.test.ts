@@ -2,13 +2,26 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 
 // The prune logic itself is a separate, independently-tested unit (see
 // cspReportPruner.test.ts); mocking it here keeps this file about the
-// adapter's response and logging behavior, not the store walk itself.
-const { pruneMock, getCspReportPrunerMock } = vi.hoisted(() => ({
+// adapter's response and logging behavior, not the store walk itself. The
+// failure notifier (see notifyPruneFailure.test.ts) is mocked the same
+// way, so these tests only assert that the handler calls it on failure —
+// not the GitHub duplicate-guard behavior itself.
+const {
+  pruneMock,
+  getCspReportPrunerMock,
+  notifyMock,
+  getPruneFailureNotifierMock,
+} = vi.hoisted(() => ({
   pruneMock: vi.fn(),
   getCspReportPrunerMock: vi.fn(),
+  notifyMock: vi.fn(),
+  getPruneFailureNotifierMock: vi.fn(),
 }));
 vi.mock("../../../netlify/functions/lib/cspReportPruner", () => ({
   getCspReportPruner: getCspReportPrunerMock,
+}));
+vi.mock("../../../netlify/functions/lib/notifyPruneFailure", () => ({
+  getPruneFailureNotifier: getPruneFailureNotifierMock,
 }));
 
 import cspReportPruneHandler, {
@@ -18,6 +31,7 @@ import cspReportPruneHandler, {
 
 const PRUNED_LOG_PREFIX = "csp-report-pruned";
 const PRUNE_FAILED_LOG_PREFIX = "csp-report-prune-failed";
+const NOTIFY_FAILED_LOG_PREFIX = "csp-report-prune-notify-failed";
 
 function scheduledRequest() {
   // Netlify invokes a scheduled Function with a POST carrying `{ next_run }`;
@@ -38,6 +52,10 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ deleted: 0, remaining: 0, complete: true });
   getCspReportPrunerMock.mockReset().mockReturnValue({ prune: pruneMock });
+  notifyMock.mockReset().mockResolvedValue(undefined);
+  getPruneFailureNotifierMock
+    .mockReset()
+    .mockReturnValue({ notify: notifyMock });
 });
 
 afterEach(() => {
@@ -65,9 +83,12 @@ describe("csp-report-prune Netlify scheduled function", () => {
       PRUNED_LOG_PREFIX,
       JSON.stringify({ deleted: 3, remaining: 7, complete: true }),
     );
+    // A successful run has nothing to report — the failure notifier (see
+    // #123) must only fire on the catch path below.
+    expect(notifyMock).not.toHaveBeenCalled();
   });
 
-  it("replies 500 and logs a failure marker when the prune run fails", async () => {
+  it("replies 500, logs a failure marker, and notifies GitHub when the prune run fails", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     pruneMock.mockRejectedValueOnce(new Error("blobs unavailable"));
 
@@ -77,6 +98,26 @@ describe("csp-report-prune Netlify scheduled function", () => {
     expect(warn.mock.calls[0][0]).toBe(PRUNE_FAILED_LOG_PREFIX);
     const logged = JSON.parse(warn.mock.calls[0][1] as string);
     expect(logged.message).toBe("blobs unavailable");
+    expect(notifyMock).toHaveBeenCalledWith("blobs unavailable");
+  });
+
+  it("still replies 500 and logs a distinct marker when the failure notifier itself breaks", async () => {
+    // A broken notifier (bad token, GitHub API outage) must not mask the
+    // real prune failure or crash the handler — see NOTIFY_FAILED_LOG_PREFIX
+    // in csp-report-prune.ts.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    pruneMock.mockRejectedValueOnce(new Error("blobs unavailable"));
+    notifyMock.mockRejectedValueOnce(
+      new Error("PRUNE_FAILURE_GITHUB_TOKEN is not set"),
+    );
+
+    const response = await cspReportPruneHandler(scheduledRequest());
+
+    expect(response.status).toBe(500);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[1][0]).toBe(NOTIFY_FAILED_LOG_PREFIX);
+    const logged = JSON.parse(warn.mock.calls[1][1] as string);
+    expect(logged.message).toBe("PRUNE_FAILURE_GITHUB_TOKEN is not set");
   });
 
   it("replies 500 and logs a failure marker when the store itself is unavailable", async () => {
