@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { parse } from "yaml";
@@ -23,16 +23,49 @@ const REPO_ROOT = path.resolve(
 const DEPENDABOT_CONFIG_PATH = path.join(REPO_ROOT, ".github/dependabot.yml");
 const PACKAGE_JSON_PATH = path.join(REPO_ROOT, "package.json");
 const COUPLED_PACKAGES = ["vite", "vitepress"];
-// These packages all declare vite as a peer dependency. They ride along in
-// the same coupled group so a vite major bump can't split from them and
-// leave a mismatched peer range installed, breaking `npm ci`.
-const VITE_PEER_PACKAGES = [
-  "@tailwindcss/vite",
-  "@vitejs/plugin-vue",
-  "vitest",
-];
-const GROUPED_PACKAGES = [...COUPLED_PACKAGES, ...VITE_PEER_PACKAGES];
 const ALL_UPDATE_TYPES = ["major", "minor", "patch"];
+
+function readPackageJson() {
+  return JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf-8"));
+}
+
+function readAllDirectDependencies() {
+  const packageJson = readPackageJson();
+
+  return {
+    ...packageJson.dependencies,
+    ...packageJson.devDependencies,
+    ...packageJson.optionalDependencies,
+  };
+}
+
+// Any direct dependency that declares vite as a peer dependency needs to
+// ride in the same Dependabot group as vite: otherwise a vite major (or one
+// of these packages' own minor release widening its supported vite range)
+// can land split from the others in a given run, installing a mismatched
+// peer range together and breaking `npm ci`. Derived from each package's
+// installed manifest — rather than hand-maintained — so a newly added
+// vite-peer package is caught automatically instead of silently missing
+// from the group's patterns.
+function findVitePeerDependents() {
+  const allDependencies = readAllDirectDependencies();
+
+  return Object.keys(allDependencies).filter((packageName) => {
+    const manifestPath = path.join(
+      REPO_ROOT,
+      "node_modules",
+      packageName,
+      "package.json",
+    );
+
+    if (!existsSync(manifestPath)) {
+      return false;
+    }
+
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    return manifest.peerDependencies?.vite !== undefined;
+  });
+}
 
 function readNpmUpdateEntry() {
   const raw = readFileSync(DEPENDABOT_CONFIG_PATH, "utf-8");
@@ -94,53 +127,52 @@ describe("dependabot.yml vite/vitepress grouping", () => {
     ).toBeUndefined();
   });
 
-  it("groups vite and vitepress together for version updates, including majors", () => {
+  it("groups vite, vitepress, and vite's peer-dependent packages together for version updates, including majors", () => {
     const npmEntry = readNpmUpdateEntry();
     const coupledGroup = npmEntry.groups?.["vite-vitepress"];
+    const groupedPackages = [...COUPLED_PACKAGES, ...findVitePeerDependents()];
 
     expect(coupledGroup).toBeDefined();
     expect(coupledGroup.patterns).toEqual(
-      expect.arrayContaining(GROUPED_PACKAGES),
+      expect.arrayContaining(groupedPackages),
     );
-    expect(coupledGroup.patterns).toHaveLength(GROUPED_PACKAGES.length);
+    expect(coupledGroup.patterns).toHaveLength(groupedPackages.length);
     expect(matchesEveryUpdateType(coupledGroup)).toBe(true);
   });
 
-  it("groups vite and vitepress together for security updates too", () => {
+  it("groups vite, vitepress, and vite's peer-dependent packages together for security updates too", () => {
     // A group's patterns apply only to scheduled version updates unless
     // `applies-to: security-updates` is set. Without a matching security
     // group, a security-triggered vite/vitepress bump would still ship
     // solo, defeating the point of the grouping above.
     const npmEntry = readNpmUpdateEntry();
     const securityGroup = npmEntry.groups?.["vite-vitepress-security"];
+    const groupedPackages = [...COUPLED_PACKAGES, ...findVitePeerDependents()];
 
     expect(securityGroup).toBeDefined();
     expect(securityGroup["applies-to"]).toBe("security-updates");
     expect(securityGroup.patterns).toEqual(
-      expect.arrayContaining(GROUPED_PACKAGES),
+      expect.arrayContaining(groupedPackages),
     );
-    expect(securityGroup.patterns).toHaveLength(GROUPED_PACKAGES.length);
+    expect(securityGroup.patterns).toHaveLength(groupedPackages.length);
   });
 
-  it("also couples vite's peer-dependent packages, which all exist in package.json", () => {
-    // @tailwindcss/vite, @vitejs/plugin-vue, and vitest peer-depend on vite
-    // majors but aren't coupled to vitepress's override pin the way vite
-    // itself is — they're grouped here purely so a vite major can't ship
-    // split from them and break `npm ci` on a mismatched peer range.
+  it("excludes vite's peer-dependent packages from minor-and-patch so they always fall through to vite-vitepress", () => {
+    // These packages often widen their supported vite range in a MINOR
+    // release of their own (not just a major). minor-and-patch has no
+    // `patterns`, so it's a catch-all for every minor/patch bump — without
+    // this exclusion, that release would land in the general weekly PR
+    // instead of alongside a same-run vite bump in vite-vitepress, right
+    // back to the split-peer-range failure this whole change exists to
+    // prevent.
     const npmEntry = readNpmUpdateEntry();
-    const coupledGroup = npmEntry.groups?.["vite-vitepress"];
-    const securityGroup = npmEntry.groups?.["vite-vitepress-security"];
-    const packageJson = JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf-8"));
-    const allDependencies = {
-      ...packageJson.dependencies,
-      ...packageJson.devDependencies,
-      ...packageJson.optionalDependencies,
-    };
+    const generalGroup = npmEntry.groups?.["minor-and-patch"];
+    const vitePeerDependents = findVitePeerDependents();
 
-    VITE_PEER_PACKAGES.forEach((packageName) => {
-      expect(allDependencies[packageName]).toBeDefined();
-      expect(coupledGroup.patterns).toContain(packageName);
-      expect(securityGroup.patterns).toContain(packageName);
+    expect(generalGroup).toBeDefined();
+    expect(vitePeerDependents.length).toBeGreaterThan(0);
+    vitePeerDependents.forEach((packageName) => {
+      expect(generalGroup["exclude-patterns"]).toContain(packageName);
     });
   });
 
