@@ -16,13 +16,13 @@
 # the URL stays on this origin. force = true wins over any matching static file.
 [[redirects]]
   from = "/dashboard"
-  to = "https://neonpixels-dashboard.netlify.app/dashboard"
+  to = "https://neonpixels-dashboard.netlify.app"
   status = 200
   force = true
 
 [[redirects]]
   from = "/dashboard/*"
-  to = "https://neonpixels-dashboard.netlify.app/dashboard/:splat"
+  to = "https://neonpixels-dashboard.netlify.app/:splat"
   status = 200
   force = true
 
