@@ -138,6 +138,38 @@ incomplete prune run logs a `csp-report-prune-failed` marker or a `complete:
 false` result via `csp-report-pruned` and tries again on the next scheduled
 run; it never blocks or slows the `/csp-report` endpoint itself.
 
+A logged marker alone is easy to miss — nobody watches the Function logs
+continuously, so a prune run that starts failing (or a token that silently
+expires) could go unnoticed indefinitely, defeating the one thing keeping the
+`csp-reports` store bounded. On a failed run, the handler additionally opens
+(or comments on, if one's already open) a GitHub issue labeled
+`csp-prune-failure`, via
+[`netlify/functions/lib/notifyPruneFailure.ts`](netlify/functions/lib/notifyPruneFailure.ts)
+(see issue #123). This mirrors the duplicate-guard pattern the scheduled
+security-audit workflow already uses
+([`.github/scripts/notify-audit-failure.cjs`](.github/scripts/notify-audit-failure.cjs)):
+one open issue per failure streak (matched by a marker in the issue body, not
+just the label, since the label alone could be applied to an unrelated issue
+during triage), closing it lets the next failure open a new one. That script
+runs inside a GitHub Actions job and authenticates via
+`actions/github-script`'s built-in Octokit client; this Netlify Function has
+no such client available at runtime, so it talks to the GitHub REST API
+directly over `fetch`, authenticated with a **fine-grained GitHub PAT scoped
+to this repo's Issues: write permission only**, set as the
+`PRUNE_FAILURE_GITHUB_TOKEN` Netlify site environment variable (dashboard or
+CLI, not a `.env` file — this repo has none). That token is **not** required
+for pruning itself to run — only for this failure-notification path to reach
+GitHub; a missing/invalid token is caught and logged as a
+`csp-report-prune-notify-failed` marker rather than affecting the run's own
+500 response. The duplicate-guard logic is isolated behind a
+`GithubIssuesClient` seam (mirroring `BlobWriter`/`BlobPrunerClient` above),
+so it is unit-tested against a fake client rather than the real GitHub API.
+**Setup:** the `csp-prune-failure` label must already exist on the repo
+before the first failure — create it once
+(`gh label create csp-prune-failure --color B60205 --description "The scheduled csp-report-prune Function failed"`)
+— since this notifier only applies the label to issues it creates, it never
+creates the label itself.
+
 Writing and pruning the store still left no way to read it back, so the
 rollout question it exists to answer — has `script-src` actually stopped
 firing — could only be checked by grepping raw per-violation log lines. A
