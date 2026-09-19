@@ -18,6 +18,11 @@
 // the three GitHub calls it needs, so the duplicate-guard logic is
 // unit-tested against a fake client instead of the real GitHub API.
 
+// Named like the other log markers in this feature (PRUNE_FAILED_LOG_PREFIX
+// etc. in csp-report-prune.ts) rather than an inline literal, and exported
+// so notifyPruneFailure.test.ts can assert against it directly.
+export const NOTIFY_THROTTLED_LOG_PREFIX = "csp-report-prune-notify-throttled";
+
 export const PRUNE_FAILURE_LABEL = "csp-prune-failure";
 export const PRUNE_FAILURE_ISSUE_TITLE =
   "Scheduled csp-report-prune Function failed";
@@ -174,7 +179,7 @@ export function createPruneFailureNotifier(
         // real failure whose only visible effect was "notify did nothing"
         // would be indistinguishable from a notifier that silently broke.
         console.log(
-          "csp-report-prune-notify-throttled",
+          NOTIFY_THROTTLED_LOG_PREFIX,
           JSON.stringify({
             issue: existingIssue.number,
             updatedAt: existingIssue.updated_at,
@@ -295,6 +300,7 @@ function createFetchGithubIssuesClient(): GithubIssuesClient {
         { method: "POST", body: JSON.stringify(input) },
       );
       const created = (await parseJson(response, "issue creation")) as {
+        number: number;
         labels?: Array<{ name?: string }>;
       };
       // GitHub silently drops labels the token doesn't have permission to
@@ -302,14 +308,30 @@ function createFetchGithubIssuesClient(): GithubIssuesClient {
       // guard's only entry point (listOpenIssuesByLabel, filtered by this
       // same label) would never see this issue again, and every subsequent
       // hourly failure would open a fresh, unlabeled duplicate instead of
-      // finding this one. Failing loudly on issue one beats a silent flood.
+      // finding this one. The issue already exists at this point (the
+      // create call above already succeeded), so simply throwing here would
+      // itself cause the flood it's trying to prevent — orphaning an
+      // unlabeled issue every run. Retry attaching the label directly
+      // before giving up, and only throw (naming the orphaned issue number,
+      // so it's findable) if that retry also fails.
       const hasTrackingLabel = (created.labels ?? []).some(
         (label) => label.name === PRUNE_FAILURE_LABEL,
       );
       if (!hasTrackingLabel) {
-        throw new Error(
-          `GitHub API issue creation did not apply the ${PRUNE_FAILURE_LABEL} label`,
-        );
+        try {
+          await githubRequest(
+            `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${created.number}/labels`,
+            {
+              method: "POST",
+              body: JSON.stringify({ labels: [PRUNE_FAILURE_LABEL] }),
+            },
+          );
+        } catch (labelAttachError) {
+          throw new Error(
+            `GitHub API issue creation did not apply the ${PRUNE_FAILURE_LABEL} label to issue #${created.number}, and retrying the label attach also failed: ${labelAttachError instanceof Error ? labelAttachError.message : String(labelAttachError)}`,
+            { cause: labelAttachError },
+          );
+        }
       }
     },
     async createComment(issueNumber, body) {

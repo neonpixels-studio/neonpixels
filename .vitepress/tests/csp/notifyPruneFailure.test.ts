@@ -9,6 +9,7 @@ import {
   PRUNE_FAILURE_ISSUE_TITLE,
   PRUNE_FAILURE_ISSUE_MARKER,
   RENOTIFY_INTERVAL_MS,
+  NOTIFY_THROTTLED_LOG_PREFIX,
   type GithubIssueOrPullRequest,
   type GithubIssuesClient,
 } from "../../../netlify/functions/lib/notifyPruneFailure";
@@ -214,7 +215,8 @@ describe("createPruneFailureNotifier", () => {
   const JUST_INSIDE_WINDOW_MS = RENOTIFY_INTERVAL_MS - 60_000;
   const JUST_OUTSIDE_WINDOW_MS = RENOTIFY_INTERVAL_MS + 60_000;
 
-  it("does not re-comment on a tracked issue updated just inside the re-notify window", async () => {
+  it("does not re-comment on a tracked issue updated just inside the re-notify window, and logs the throttle", async () => {
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const client = buildGithubClientStub({
       existingIssues: [
         trackedIssue(
@@ -229,6 +231,14 @@ describe("createPruneFailureNotifier", () => {
 
     expect(client.createComment).not.toHaveBeenCalled();
     expect(client.createIssue).not.toHaveBeenCalled();
+    // Without this, the throttled path is silent: the handler only logs on
+    // prune failure, so a deliberate no-op and a silently-broken notifier
+    // would otherwise be indistinguishable in the logs.
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      NOTIFY_THROTTLED_LOG_PREFIX,
+      expect.stringContaining('"issue":7'),
+    );
+    consoleLogSpy.mockRestore();
   });
 
   it("comments again once the tracked issue's last update is just outside the re-notify window", async () => {
@@ -426,8 +436,10 @@ describe("getPruneFailureNotifier", () => {
   // If that happened here, the duplicate guard (which filters
   // listOpenIssuesByLabel by this exact label) would never see the issue
   // again, and every subsequent failure would open a fresh duplicate rather
-  // than finding this one — so a missing label must fail loudly instead.
-  it("throws when GitHub creates the issue without the tracking label", async () => {
+  // than finding this one. The issue already exists once this is detected,
+  // so a bare throw would itself orphan an unlabeled issue every run —
+  // retrying the label attach directly is what actually prevents the flood.
+  it("retries attaching the label when GitHub creates the issue without it", async () => {
     process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
@@ -435,11 +447,37 @@ describe("getPruneFailureNotifier", () => {
         new Response(JSON.stringify({ number: 42, labels: [] }), {
           status: 201,
         }),
-      );
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+    const notifier = getPruneFailureNotifier();
+
+    await expect(notifier.notify("blobs unavailable")).resolves.toBeUndefined();
+
+    expect(fetch).toHaveBeenCalledTimes(3);
+    const [labelUrl, labelInit] = vi.mocked(fetch).mock.calls[2];
+    expect(String(labelUrl)).toBe(
+      "https://api.github.com/repos/neonpixels-studio/neonpixels/issues/42/labels",
+    );
+    expect(labelInit?.method).toBe("POST");
+    expect(JSON.parse(labelInit?.body as string)).toEqual({
+      labels: [PRUNE_FAILURE_LABEL],
+    });
+  });
+
+  it("throws, naming the orphaned issue, when the label-attach retry also fails", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ number: 42, labels: [] }), {
+          status: 201,
+        }),
+      )
+      .mockResolvedValueOnce(new Response("not found", { status: 404 }));
     const notifier = getPruneFailureNotifier();
 
     await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
-      `did not apply the ${PRUNE_FAILURE_LABEL} label`,
+      /did not apply the .* label to issue #42.*label attach also failed/,
     );
   });
 
