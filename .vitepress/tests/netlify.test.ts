@@ -322,13 +322,36 @@ const EXPECTED_CSP_SOURCES: Record<string, string[]> = {
   "base-uri": ["'self'"],
   "object-src": ["'none'"],
   "frame-ancestors": ["'none'"],
-  "img-src": ["'self'"],
+  "img-src": [
+    "'self'",
+    "https://*.google-analytics.com",
+    "https://*.googletagmanager.com",
+  ],
   "font-src": ["'self'"],
   "style-src": ["'self'", "'unsafe-inline'"],
-  "script-src": ["'self'", "'unsafe-inline'"],
-  "connect-src": ["'self'"],
+  "script-src": [
+    "'self'",
+    "'unsafe-inline'",
+    "https://www.googletagmanager.com",
+  ],
+  "connect-src": [
+    "'self'",
+    "https://*.google-analytics.com",
+    "https://*.analytics.google.com",
+    "https://*.googletagmanager.com",
+  ],
   "form-action": ["'self'"],
 };
+
+// Google Analytics routes gtag.js collection through region-scoped subdomains
+// (region1.google-analytics.com, etc.), so its origins can only be expressed as
+// wildcards. These three are Google's documented GA CSP set — permitted here so
+// the overly-broad guard below still fails on every OTHER wildcard (issue #28).
+const ALLOWED_WILDCARD_SOURCES = new Set([
+  "https://*.google-analytics.com",
+  "https://*.analytics.google.com",
+  "https://*.googletagmanager.com",
+]);
 
 // Fonts are self-hosted, so any Google Fonts origin is a dead allowlist entry.
 // Matched by bare domain (not exact host) so a re-add via a subdomain, port, or
@@ -384,7 +407,7 @@ function parseCsp(headerValue: string) {
 
 function isOverlyBroadSource(source: string) {
   if (source.includes("*")) {
-    return true;
+    return !ALLOWED_WILDCARD_SOURCES.has(source);
   }
   return OVERLY_BROAD_SOURCES.has(source);
 }
