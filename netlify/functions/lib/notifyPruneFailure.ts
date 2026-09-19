@@ -132,7 +132,10 @@ function buildIssueBody(errorMessage: string): string {
 // second `listComments` call to track this notifier's own last-comment time
 // specifically. If that gap matters in practice, track it via a
 // timestamped marker in each of this notifier's own comments instead.
-const RENOTIFY_INTERVAL_MS = 6 * 60 * 60 * 1000;
+// Exported so notifyPruneFailure.test.ts can pin the boundary itself,
+// rather than only testing with values (e.g. "now" vs. 2020) that would
+// pass for any interval between roughly a second and several years.
+export const RENOTIFY_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 function isWithinRenotifyWindow(issue: GithubIssueOrPullRequest): boolean {
   if (!issue.updated_at) {
@@ -166,6 +169,17 @@ export function createPruneFailureNotifier(
         await client.listOpenIssuesByLabel(PRUNE_FAILURE_LABEL);
       const existingIssue = openIssues.find(isTrackedPruneFailureIssue);
       if (existingIssue && isWithinRenotifyWindow(existingIssue)) {
+        // Otherwise a throttled run leaves zero trace anywhere: the handler
+        // only logs on prune *failure*, not on this deliberate no-op, so a
+        // real failure whose only visible effect was "notify did nothing"
+        // would be indistinguishable from a notifier that silently broke.
+        console.log(
+          "csp-report-prune-notify-throttled",
+          JSON.stringify({
+            issue: existingIssue.number,
+            updatedAt: existingIssue.updated_at,
+          }),
+        );
         return;
       }
       if (existingIssue) {
@@ -276,16 +290,36 @@ function createFetchGithubIssuesClient(): GithubIssuesClient {
       return payload as GithubIssueOrPullRequest[];
     },
     async createIssue(input) {
-      await githubRequest(`/repos/${REPO_OWNER}/${REPO_NAME}/issues`, {
-        method: "POST",
-        body: JSON.stringify(input),
-      });
+      const response = await githubRequest(
+        `/repos/${REPO_OWNER}/${REPO_NAME}/issues`,
+        { method: "POST", body: JSON.stringify(input) },
+      );
+      const created = (await parseJson(response, "issue creation")) as {
+        labels?: Array<{ name?: string }>;
+      };
+      // GitHub silently drops labels the token doesn't have permission to
+      // apply instead of erroring — if that happened here, the duplicate
+      // guard's only entry point (listOpenIssuesByLabel, filtered by this
+      // same label) would never see this issue again, and every subsequent
+      // hourly failure would open a fresh, unlabeled duplicate instead of
+      // finding this one. Failing loudly on issue one beats a silent flood.
+      const hasTrackingLabel = (created.labels ?? []).some(
+        (label) => label.name === PRUNE_FAILURE_LABEL,
+      );
+      if (!hasTrackingLabel) {
+        throw new Error(
+          `GitHub API issue creation did not apply the ${PRUNE_FAILURE_LABEL} label`,
+        );
+      }
     },
     async createComment(issueNumber, body) {
-      await githubRequest(
+      const response = await githubRequest(
         `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issueNumber}/comments`,
         { method: "POST", body: JSON.stringify({ body }) },
       );
+      // Unlike createIssue, this response body is never inspected — drain it
+      // explicitly rather than leaving it unconsumed.
+      await response.body?.cancel();
     },
   };
 }

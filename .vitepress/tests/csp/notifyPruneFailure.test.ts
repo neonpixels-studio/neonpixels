@@ -8,6 +8,7 @@ import {
   PRUNE_FAILURE_LABEL,
   PRUNE_FAILURE_ISSUE_TITLE,
   PRUNE_FAILURE_ISSUE_MARKER,
+  RENOTIFY_INTERVAL_MS,
   type GithubIssueOrPullRequest,
   type GithubIssuesClient,
 } from "../../../netlify/functions/lib/notifyPruneFailure";
@@ -188,12 +189,39 @@ describe("createPruneFailureNotifier", () => {
     );
   });
 
+  // Symmetric with the issue-creation case above: a locked/archived tracked
+  // issue rejecting the comment call must reject out of notify() too, so
+  // the handler logs csp-report-prune-notify-failed rather than treating a
+  // failed comment as a delivered notification.
+  it("propagates an error from commenting instead of swallowing it", async () => {
+    const client = buildGithubClientStub({
+      existingIssues: [trackedIssue(7)],
+    });
+    client.createComment.mockRejectedValueOnce(new Error("issue locked"));
+    const notifier = createPruneFailureNotifier(client);
+
+    await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
+      "issue locked",
+    );
+  });
+
   // The pruner runs hourly; without a throttle, a multi-hour failure streak
   // would pile up one near-identical "still failing" comment per run and
-  // bury the original diagnosis.
-  it("does not re-comment on a tracked issue that was updated within the re-notify window", async () => {
+  // bury the original diagnosis. Pinned against RENOTIFY_INTERVAL_MS itself
+  // (rather than "now" vs. a fixed 2020 date) so the assertion actually
+  // fails if the interval changes — a fixed pair of timestamps would still
+  // pass for any interval from roughly a second to several years.
+  const JUST_INSIDE_WINDOW_MS = RENOTIFY_INTERVAL_MS - 60_000;
+  const JUST_OUTSIDE_WINDOW_MS = RENOTIFY_INTERVAL_MS + 60_000;
+
+  it("does not re-comment on a tracked issue updated just inside the re-notify window", async () => {
     const client = buildGithubClientStub({
-      existingIssues: [trackedIssue(7, new Date().toISOString())],
+      existingIssues: [
+        trackedIssue(
+          7,
+          new Date(Date.now() - JUST_INSIDE_WINDOW_MS).toISOString(),
+        ),
+      ],
     });
     const notifier = createPruneFailureNotifier(client);
 
@@ -203,11 +231,14 @@ describe("createPruneFailureNotifier", () => {
     expect(client.createIssue).not.toHaveBeenCalled();
   });
 
-  it("comments again once the tracked issue's last update is outside the re-notify window", async () => {
+  it("comments again once the tracked issue's last update is just outside the re-notify window", async () => {
     const client = buildGithubClientStub({
-      // Well past even a generous re-notify window (default trackedIssue
-      // timestamp — see the helper above).
-      existingIssues: [trackedIssue(7)],
+      existingIssues: [
+        trackedIssue(
+          7,
+          new Date(Date.now() - JUST_OUTSIDE_WINDOW_MS).toISOString(),
+        ),
+      ],
     });
     const notifier = createPruneFailureNotifier(client);
 
@@ -361,7 +392,15 @@ describe("getPruneFailureNotifier", () => {
     process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
-      .mockResolvedValueOnce(new Response(null, { status: 201 }));
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            number: 42,
+            labels: [{ name: PRUNE_FAILURE_LABEL }],
+          }),
+          { status: 201 },
+        ),
+      );
     const notifier = getPruneFailureNotifier();
 
     await notifier.notify("blobs unavailable");
@@ -380,6 +419,27 @@ describe("getPruneFailureNotifier", () => {
     });
     expect((createInit?.headers as Record<string, string>).Authorization).toBe(
       "Bearer test-token",
+    );
+  });
+
+  // GitHub silently drops labels the token can't apply instead of erroring.
+  // If that happened here, the duplicate guard (which filters
+  // listOpenIssuesByLabel by this exact label) would never see the issue
+  // again, and every subsequent failure would open a fresh duplicate rather
+  // than finding this one — so a missing label must fail loudly instead.
+  it("throws when GitHub creates the issue without the tracking label", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ number: 42, labels: [] }), {
+          status: 201,
+        }),
+      );
+    const notifier = getPruneFailureNotifier();
+
+    await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
+      `did not apply the ${PRUNE_FAILURE_LABEL} label`,
     );
   });
 
