@@ -42,7 +42,15 @@ export default [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
-      "vue/no-v-html": "off",
+      // eslint-plugin-vue's recommended preset only sets this to "warn",
+      // and `npm run lint` doesn't pass --max-warnings, so a bare warning
+      // wouldn't fail CI. Pin it to "error" so it actually blocks: this
+      // project renders no untrusted HTML, so any v-html usage should be
+      // caught, not merely logged. If a genuine need for v-html ever comes
+      // up, scope an `eslint-disable-next-line vue/no-v-html` at that call
+      // site with a comment justifying the trusted source, rather than
+      // relaxing this back to "warn" or "off".
+      "vue/no-v-html": "error",
     },
   },
   {
