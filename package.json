@@ -1,7 +1,7 @@
 {
   "name": "neonpixels-landing",
   "version": "1.0.0",
-  "description": "Landing page for neonpixels.io",
+  "description": "Landing page for neonpixels.dev",
   "type": "module",
   "scripts": {
     "dev": "vitepress dev",

@@ -10,7 +10,7 @@ import type { CspViolation } from "../../csp/cspReportCollector";
 
 function violation(overrides: Partial<CspViolation> = {}): CspViolation {
   return {
-    documentUrl: "https://neonpixels.io/",
+    documentUrl: "https://neonpixels.dev/",
     effectiveDirective: "script-src-elem",
     blockedUri: "inline",
     disposition: "report",

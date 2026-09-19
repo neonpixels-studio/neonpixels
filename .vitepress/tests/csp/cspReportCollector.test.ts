@@ -29,12 +29,12 @@ function webkitJsonRequest(body: unknown): CspReportRequest {
 
 const LEGACY_REPORT = {
   "csp-report": {
-    "document-uri": "https://neonpixels.io/",
+    "document-uri": "https://neonpixels.dev/",
     "effective-directive": "script-src-elem",
     "violated-directive": "script-src-elem",
     "blocked-uri": "inline",
     disposition: "report",
-    "source-file": "https://neonpixels.io/",
+    "source-file": "https://neonpixels.dev/",
     "line-number": 10,
     "column-number": 20,
     "script-sample": "boot()",
@@ -43,13 +43,13 @@ const LEGACY_REPORT = {
 
 const REPORTING_API_REPORT = {
   type: "csp-violation",
-  url: "https://neonpixels.io/",
+  url: "https://neonpixels.dev/",
   body: {
-    documentURL: "https://neonpixels.io/",
+    documentURL: "https://neonpixels.dev/",
     effectiveDirective: "script-src-elem",
     blockedURL: "inline",
     disposition: "report",
-    sourceFile: "https://neonpixels.io/",
+    sourceFile: "https://neonpixels.dev/",
     lineNumber: 10,
     columnNumber: 20,
     sample: "boot()",
@@ -177,11 +177,11 @@ describe("collectCspReports legacy application/csp-report", () => {
     expect(result.status).toBe(204);
     expect(result.violations).toEqual([
       {
-        documentUrl: "https://neonpixels.io/",
+        documentUrl: "https://neonpixels.dev/",
         effectiveDirective: "script-src-elem",
         blockedUri: "inline",
         disposition: "report",
-        sourceFile: "https://neonpixels.io/",
+        sourceFile: "https://neonpixels.dev/",
         lineNumber: 10,
         columnNumber: 20,
         sample: "boot()",
@@ -237,11 +237,11 @@ describe("collectCspReports Reporting API application/reports+json", () => {
     expect(result.status).toBe(204);
     expect(result.violations).toHaveLength(2);
     expect(result.violations[0]).toEqual({
-      documentUrl: "https://neonpixels.io/",
+      documentUrl: "https://neonpixels.dev/",
       effectiveDirective: "script-src-elem",
       blockedUri: "inline",
       disposition: "report",
-      sourceFile: "https://neonpixels.io/",
+      sourceFile: "https://neonpixels.dev/",
       lineNumber: 10,
       columnNumber: 20,
       sample: "boot()",
@@ -310,11 +310,11 @@ describe("collectCspReports WebKit application/json", () => {
     expect(result.status).toBe(204);
     expect(result.violations).toEqual([
       {
-        documentUrl: "https://neonpixels.io/",
+        documentUrl: "https://neonpixels.dev/",
         effectiveDirective: "script-src-elem",
         blockedUri: "inline",
         disposition: "report",
-        sourceFile: "https://neonpixels.io/",
+        sourceFile: "https://neonpixels.dev/",
         lineNumber: 10,
         columnNumber: 20,
         sample: "boot()",

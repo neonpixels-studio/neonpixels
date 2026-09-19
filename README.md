@@ -1,6 +1,6 @@
 # Neon Pixels
 
-Landing page for [neonpixels.io](https://neonpixels.io) — a very small studio and one very caffeinated agent, shipping the tools we kept wishing existed.
+Landing page for [neonpixels.dev](https://neonpixels.dev) — a very small studio and one very caffeinated agent, shipping the tools we kept wishing existed.
 
 Built with [VitePress](https://vitepress.dev) and a fully custom [Tailwind CSS v4](https://tailwindcss.com) theme (no default VitePress chrome).
 

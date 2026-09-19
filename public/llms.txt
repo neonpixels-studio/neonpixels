@@ -13,5 +13,5 @@ Neon Pixels is a one-person studio working alongside Grimicorn, an automated cod
 
 ## Links
 
-- [Home](https://neonpixels.io/): Landing page
-- [Sitemap](https://neonpixels.io/sitemap.xml): XML sitemap
+- [Home](https://neonpixels.dev/): Landing page
+- [Sitemap](https://neonpixels.dev/sitemap.xml): XML sitemap

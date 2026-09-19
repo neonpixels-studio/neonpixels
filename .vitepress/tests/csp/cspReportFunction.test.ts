@@ -27,7 +27,7 @@ const PERSIST_SKIPPED_LOG_PREFIX = "csp-report-not-persisted";
 
 const LEGACY_REPORT = {
   "csp-report": {
-    "document-uri": "https://neonpixels.io/",
+    "document-uri": "https://neonpixels.dev/",
     "effective-directive": "script-src-elem",
     "blocked-uri": "inline",
   },
@@ -36,14 +36,14 @@ const LEGACY_REPORT = {
 const REPORTING_API_REPORT = {
   type: "csp-violation",
   body: {
-    documentURL: "https://neonpixels.io/",
+    documentURL: "https://neonpixels.dev/",
     effectiveDirective: "script-src-elem",
     blockedURL: "inline",
   },
 };
 
 function postRequest(contentType: string, body: string) {
-  return new Request("https://neonpixels.io/csp-report", {
+  return new Request("https://neonpixels.dev/csp-report", {
     method: "POST",
     headers: { "content-type": contentType },
     body,
@@ -184,7 +184,7 @@ describe("csp-report Netlify function", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const response = await cspReportHandler(
-      new Request("https://neonpixels.io/csp-report", { method: "GET" }),
+      new Request("https://neonpixels.dev/csp-report", { method: "GET" }),
     );
 
     expect(response.status).toBe(405);
@@ -298,7 +298,7 @@ describe("csp-report Netlify function", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const response = await cspReportHandler(
-      new Request("https://neonpixels.io/csp-report", { method: "GET" }),
+      new Request("https://neonpixels.dev/csp-report", { method: "GET" }),
     );
 
     expect(response.status).toBe(405);
@@ -365,7 +365,7 @@ describe("csp-report Netlify function", () => {
   it("persists a violation matching the request's own origin under netlify dev, even when it isn't the site origin", async () => {
     // Simulates `netlify dev`: Netlify doesn't inject URL/DEPLOY_PRIME_URL
     // there, and the browser loads the page from localhost, not
-    // neonpixels.io, so only the request's own origin (not the env
+    // neonpixels.dev, so only the request's own origin (not the env
     // candidates or SITE_ORIGIN) can vouch for this violation. Gated on
     // NETLIFY_DEV so a spoofed Host header can't buy the same trust outside
     // dev (see the next test).
@@ -419,7 +419,7 @@ describe("csp-report Netlify function", () => {
   it("persists a violation matching Netlify's injected URL env var", async () => {
     // URL is Netlify's production-domain env var; unset here in tests unless
     // stubbed, so this proves the candidate is read, not just SITE_ORIGIN.
-    vi.stubEnv("URL", "https://neonpixels.io");
+    vi.stubEnv("URL", "https://neonpixels.dev");
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
     await cspReportHandler(
@@ -500,6 +500,6 @@ describe("csp-report Netlify function", () => {
       { documentUrl: string }[],
     ];
     expect(persisted).toHaveLength(1);
-    expect(persisted[0].documentUrl).toBe("https://neonpixels.io/");
+    expect(persisted[0].documentUrl).toBe("https://neonpixels.dev/");
   });
 });

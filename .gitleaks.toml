@@ -1,4 +1,4 @@
-# Gitleaks configuration for neonpixels.io.
+# Gitleaks configuration for neonpixels.dev.
 # Extends the bundled default ruleset and layers on two project-specific rules
 # that catch secret shapes the defaults miss — not because this stack uses
 # Clerk or Postgres/Neon today (it doesn't: this is a static VitePress site
