@@ -51,7 +51,7 @@ function scheduledRequest() {
   // the handler ignores the body, but a realistic Request keeps this test
   // honest about the actual call shape.
   return new Request(
-    "https://neonpixels.io/.netlify/functions/csp-report-prune",
+    "https://neonpixels.dev/.netlify/functions/csp-report-prune",
     {
       method: "POST",
       headers: { "content-type": "application/json" },

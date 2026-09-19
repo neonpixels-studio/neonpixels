@@ -13,7 +13,7 @@ function violation(
   overrides: Partial<StoredCspViolation> = {},
 ): StoredCspViolation {
   return {
-    documentUrl: "https://neonpixels.io/",
+    documentUrl: "https://neonpixels.dev/",
     effectiveDirective: "style-src",
     blockedUri: "inline",
     disposition: "report",

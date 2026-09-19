@@ -49,7 +49,7 @@ export const PERSIST_TIMEOUT_MS = 3000;
 // Always allowed, regardless of environment: reports naming the production
 // origin are kept on every deploy (production, branch deploys, previews),
 // not only when Netlify happens to inject URL/DEPLOY_PRIME_URL.
-const SITE_ORIGIN = "https://neonpixels.io";
+const SITE_ORIGIN = "https://neonpixels.dev";
 
 // This is a noise filter, not an anti-forgery control: `documentUrl` comes
 // from the request body, so a forger who reads the source can spoof any

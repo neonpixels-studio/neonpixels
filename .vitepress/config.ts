@@ -6,7 +6,7 @@ import { writeFontPreloadLink } from "./fonts/writeFontPreloadLink";
 import { getNoindexHeaderLines } from "./robots/getNoindexHeaderLines";
 import { PROJECTS, type Project } from "./theme/data/projects";
 
-const SITE_URL = "https://neonpixels.io";
+const SITE_URL = "https://neonpixels.dev";
 const DESCRIPTION =
   "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, Wanderist, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
 const OG_TITLE = "Neon Pixels — We build the missing apps";
@@ -23,7 +23,7 @@ const OG_IMAGE_ALT =
 // `publisher`, rather than folded into the Organization node as `sameAs` or
 // `hasPart`: schema.org defines `sameAs` as an identity assertion ("this page
 // and that page describe the same thing"), so listing the four project
-// domains there would tell crawlers neonpixels.io *is* grimicorn.dev,
+// domains there would tell crawlers neonpixels.dev *is* grimicorn.dev,
 // wanderist.io, basin.fm and markpost.io — the opposite of "the org publishes
 // these products". `hasPart` isn't defined on Organization at all (only on
 // CreativeWork/Place), so it validates as an unrecognized property there. A
