@@ -40,7 +40,20 @@ function isTrackedAuditFailureIssue(issueOrPullRequest) {
   );
 }
 
-async function findOpenAuditFailureIssue({ github, owner, repo }) {
+// Exported (rather than kept private) so close-resolved-audit-failure.cjs
+// can reuse this exact lookup instead of re-deriving the label/marker
+// matching rules: the close path must target precisely the issues this
+// script opens, and duplicating the guard here would let the two drift out
+// of sync. Returns every match (plural) on that single page, not just the
+// first: the notify path only ever needs one (there's normally at most one
+// open at a time), but the close path needs all of them — a human reopening
+// one, or two scheduled runs racing, could otherwise leave a second tracked
+// issue open forever if the close script only ever closed whichever came
+// back first. Not paginated beyond that one call: LIST_PAGE_SIZE is already
+// the API's max per_page (100), and needing a second page means over 100
+// open `audit-failure`-labeled items exist, at which point pagination is the
+// least of this repo's problems.
+async function findOpenAuditFailureIssues({ github, owner, repo }) {
   const { data } = await github.rest.issues.listForRepo({
     owner,
     repo,
@@ -48,7 +61,12 @@ async function findOpenAuditFailureIssue({ github, owner, repo }) {
     labels: AUDIT_FAILURE_LABEL,
     per_page: LIST_PAGE_SIZE,
   });
-  return data.find(isTrackedAuditFailureIssue);
+  return data.filter(isTrackedAuditFailureIssue);
+}
+
+async function findOpenAuditFailureIssue(args) {
+  const [firstMatch] = await findOpenAuditFailureIssues(args);
+  return firstMatch;
 }
 
 function buildIssueBody(runUrl) {
@@ -58,8 +76,13 @@ function buildIssueBody(runUrl) {
     "",
     `Failed run: ${runUrl}`,
     "",
-    "Investigate the failed run and re-run the workflow once resolved.",
-    "This issue is a duplicate guard: closing it lets the next failure open a new one.",
+    "Investigate the failure. Re-running this failed scheduled run once " +
+      "resolved, or waiting for the next Monday run, closes this issue " +
+      "automatically (see close-resolved-audit-failure.cjs) — the close " +
+      "job only fires on the schedule trigger, not workflow_dispatch, since " +
+      "that can be run against an arbitrary branch.",
+    "Closing it manually early also resets the duplicate guard, letting the " +
+      "next failure open a new one.",
   ].join("\n");
 }
 
@@ -105,3 +128,8 @@ module.exports = async function notifyAuditFailure({ github, context, core }) {
 module.exports.AUDIT_FAILURE_LABEL = AUDIT_FAILURE_LABEL;
 module.exports.ISSUE_TITLE = ISSUE_TITLE;
 module.exports.ISSUE_MARKER = ISSUE_MARKER;
+// Only the plural finder is exported: close-resolved-audit-failure.cjs is
+// the sole outside consumer of this lookup, and it needs every open tracked
+// issue, not just the first. The singular helper above stays private — it's
+// an internal convenience for this file's own single-issue duplicate guard.
+module.exports.findOpenAuditFailureIssues = findOpenAuditFailureIssues;

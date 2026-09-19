@@ -22,7 +22,7 @@
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "@typescript-eslint/parser": "^8.70.0",
-    "@vitejs/plugin-vue": "^6.0.8",
+    "@vitejs/plugin-vue": "^6.0.9",
     "@vue/test-utils": "^2.5.0",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
@@ -37,7 +37,7 @@
     "typescript": "^6.0.3",
     "vite": "^8.3.0",
     "vitepress": "^1.6.4",
-    "vitest": "^5.0.0",
+    "vitest": "^5.0.1",
     "vue-tsc": "^3.3.11",
     "yaml": "^2.9.1"
   },
@@ -48,6 +48,6 @@
     }
   },
   "dependencies": {
-    "@netlify/blobs": "^11.0.3"
+    "@netlify/blobs": "^11.1.0"
   }
 }
