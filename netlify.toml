@@ -11,6 +11,21 @@
 # (A NODE_VERSION set in the Netlify UI would still override .nvmrc; keep it
 # unset there so this file's guarantee holds.)
 
+# Proxy: serve the separately-deployed dashboard app under this site's /dashboard
+# path. status = 200 makes Netlify rewrite (proxy) rather than 3xx redirect, so
+# the URL stays on this origin. force = true wins over any matching static file.
+[[redirects]]
+  from = "/dashboard"
+  to = "https://neonpixels-dashboard.netlify.app/dashboard"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/dashboard/*"
+  to = "https://neonpixels-dashboard.netlify.app/dashboard/:splat"
+  status = 200
+  force = true
+
 [[headers]]
   for = "/*"
   [headers.values]
