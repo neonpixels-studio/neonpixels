@@ -56,4 +56,10 @@
     # @todo Once the Report-Only header reports no script-src violations in
     # production, drop 'unsafe-inline' from script-src here to enforce the
     # hashes. style attributes still need 'unsafe-inline' on style-src regardless.
-    Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; form-action 'self'"
+    # Google Analytics (gtag.js) origins follow Google's published CSP guidance
+    # (developers.google.com/tag-platform/security/guides/csp): gtag.js loads
+    # from googletagmanager.com, and GA4 sends collection beacons to
+    # region-scoped *.google-analytics.com / *.analytics.google.com subdomains —
+    # hence the wildcards on img-src/connect-src. netlify.test.ts allowlists
+    # exactly these three GA wildcard domains; every other wildcard still fails.
+    Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' https://*.google-analytics.com https://*.googletagmanager.com; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; form-action 'self'"

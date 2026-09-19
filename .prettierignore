@@ -3,3 +3,4 @@
 node_modules
 public/images
 export
+_claude-*.md
