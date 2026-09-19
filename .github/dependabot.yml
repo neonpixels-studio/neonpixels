@@ -29,10 +29,27 @@ updates:
       # still needs adjusting. No `update-types` filter here, so this group
       # would also catch a minor/patch bump if it somehow fell through
       # minor-and-patch above it.
+      #
+      # @tailwindcss/vite, @vitejs/plugin-vue, and vitest all declare vite as
+      # a required peer dependency, ranged by vite major (e.g. vitest 5.0.0
+      # supports vite ^6 || ^7 || ^8). A *major* bump to vite, or to one of
+      # these three, falls through minor-and-patch the same way vitepress's
+      # does, so it lands in this group together with any of the others that
+      # also has a pending update that run, instead of shipping split with a
+      # stale peer range and breaking `npm ci`. That coverage only holds when
+      # both sides' pending update is itself a major, though: minor-and-patch
+      # is listed first and still claims a minor/patch update to any of these
+      # three on its own (e.g. a routine release that widens its vite peer
+      # range without a major version bump), same as it always has for
+      # vite/vitepress — that update ships in the general PR, separate from a
+      # same-run vite major here, unchanged from before this group existed.
       vite-vitepress:
         patterns:
           - "vite"
           - "vitepress"
+          - "@tailwindcss/vite"
+          - "@vitejs/plugin-vue"
+          - "vitest"
       # A group's patterns only apply to scheduled version updates unless
       # `applies-to: security-updates` is set — the two can't share one
       # group. Without this, a security-triggered vite/vitepress bump would
@@ -42,6 +59,9 @@ updates:
         patterns:
           - "vite"
           - "vitepress"
+          - "@tailwindcss/vite"
+          - "@vitejs/plugin-vue"
+          - "vitest"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
