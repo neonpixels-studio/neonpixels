@@ -329,9 +329,18 @@ describe("getPruneFailureNotifier", () => {
 
     expect(fetch).toHaveBeenCalledTimes(2);
     const [listUrl, listInit] = vi.mocked(fetch).mock.calls[0];
-    expect(String(listUrl)).toContain(
+    const listUrlString = String(listUrl);
+    expect(listUrlString).toContain(
       "/repos/neonpixels-studio/neonpixels/issues",
     );
+    // The duplicate-guard mechanism lives entirely in this query string —
+    // asserting only that the URL contains the base path would still pass
+    // if state/labels/per_page were dropped.
+    expect(listUrlString).toContain("state=open");
+    expect(listUrlString).toContain(
+      `labels=${encodeURIComponent(PRUNE_FAILURE_LABEL)}`,
+    );
+    expect(listUrlString).toContain("per_page=100");
     expect((listInit?.headers as Record<string, string>).Authorization).toBe(
       "Bearer test-token",
     );
@@ -340,6 +349,36 @@ describe("getPruneFailureNotifier", () => {
       "/repos/neonpixels-studio/neonpixels/issues/7/comments",
     );
     expect((commentInit?.headers as Record<string, string>).Authorization).toBe(
+      "Bearer test-token",
+    );
+  });
+
+  // The "authenticates both GitHub API requests" test above only exercises
+  // the comment branch (a tracked issue already exists) — this covers the
+  // other branch through the real fetch adapter: opening a brand-new issue,
+  // which is the primary path on the first failure of a streak.
+  it("opens a new issue through the real fetch adapter when no tracked issue exists", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 201 }));
+    const notifier = getPruneFailureNotifier();
+
+    await notifier.notify("blobs unavailable");
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [createUrl, createInit] = vi.mocked(fetch).mock.calls[1];
+    expect(String(createUrl)).toBe(
+      "https://api.github.com/repos/neonpixels-studio/neonpixels/issues",
+    );
+    expect(createInit?.method).toBe("POST");
+    const createBody = JSON.parse(createInit?.body as string);
+    expect(createBody).toEqual({
+      title: PRUNE_FAILURE_ISSUE_TITLE,
+      labels: [PRUNE_FAILURE_LABEL],
+      body: expect.stringContaining(PRUNE_FAILURE_ISSUE_MARKER),
+    });
+    expect((createInit?.headers as Record<string, string>).Authorization).toBe(
       "Bearer test-token",
     );
   });

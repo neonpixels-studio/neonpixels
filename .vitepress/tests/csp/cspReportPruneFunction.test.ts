@@ -213,18 +213,28 @@ describe("csp-report-prune Netlify scheduled function", () => {
     expect(logged.message).toMatch(/exceeded/);
   });
 
-  // Pins the three-way budget ordering this handler depends on. Without it,
-  // lowering HARD_TIMEOUT_MS (e.g. to make room for NOTIFY_TIMEOUT_MS) could
-  // silently drop it below cspReportPruner's own PRUNE_TIME_BUDGET_MS — which
-  // would turn every normal partial run (a store too large to finish
+  // Netlify scheduled Functions hard-cap execution at 30s; RUN_DEADLINE_MS
+  // must leave real headroom under that for cold start and the final
+  // in-flight batch rather than assuming the full window.
+  const NETLIFY_SCHEDULED_FUNCTION_LIMIT_MS = 30000;
+  const COLD_START_HEADROOM_MS = 2000;
+
+  // Pins the budget ordering this handler depends on. Without it, lowering
+  // HARD_TIMEOUT_MS (e.g. to make room for NOTIFY_TIMEOUT_MS) could silently
+  // drop it below cspReportPruner's own PRUNE_TIME_BUDGET_MS — which would
+  // turn every normal partial run (a store too large to finish
   // listing/deleting in one pass, meant to exit gracefully with
   // `complete: false` and retry next hour) into a false failure alarm, since
   // the adapter's hard timeout would win the race before the pruner's own
-  // cooperative deadline ever gets to.
-  it("keeps the pruner's cooperative budget below the adapter's hard timeout, and both below the run deadline", () => {
+  // cooperative deadline ever gets to. The second assertion pins
+  // RUN_DEADLINE_MS itself against Netlify's real limit — HARD_TIMEOUT_MS +
+  // NOTIFY_TIMEOUT_MS always equals RUN_DEADLINE_MS by construction (see
+  // csp-report-prune.ts), so asserting that sum against RUN_DEADLINE_MS
+  // would be a tautology that can never catch a regression.
+  it("keeps the pruner's cooperative budget below the adapter's hard timeout, and the run deadline within Netlify's real limit", () => {
     expect(PRUNE_TIME_BUDGET_MS).toBeLessThan(HARD_TIMEOUT_MS);
-    expect(HARD_TIMEOUT_MS + NOTIFY_TIMEOUT_MS).toBeLessThanOrEqual(
-      RUN_DEADLINE_MS,
+    expect(RUN_DEADLINE_MS + COLD_START_HEADROOM_MS).toBeLessThanOrEqual(
+      NETLIFY_SCHEDULED_FUNCTION_LIMIT_MS,
     );
   });
 });

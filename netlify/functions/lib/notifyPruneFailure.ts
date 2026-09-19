@@ -220,6 +220,13 @@ async function githubRequest(path: string, init: FetchInit): Promise<Response> {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",
       "Content-Type": "application/json",
+      // GitHub's REST API requires a User-Agent and rejects requests
+      // without one (403). actions/github-script's Octokit client sets this
+      // automatically; this module talks to `fetch` directly, so it must
+      // set one explicitly rather than rely on the Netlify runtime's
+      // default.
+      "User-Agent": "neonpixels-csp-report-prune-notifier",
+      "X-GitHub-Api-Version": "2022-11-28",
     },
   });
   if (!response.ok) {

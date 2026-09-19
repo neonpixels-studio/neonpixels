@@ -32,7 +32,7 @@ const HTTP_INTERNAL_SERVER_ERROR = 500;
 // budget and the notify budget below are sequential, not independent —
 // notify only ever runs after prune() has already failed — so they must
 // share one combined ceiling under 30s rather than each separately assuming
-// the full window. RUN_DEADLINE_MS is that combined ceiling (5s headroom for
+// the full window. RUN_DEADLINE_MS is that combined ceiling (2s headroom for
 // cold start and the final in-flight batch); HARD_TIMEOUT_MS is what's left
 // for prune() once NOTIFY_TIMEOUT_MS is reserved for the notify call that
 // might follow it. Exported so cspReportPruneFunction.test.ts can pin the
