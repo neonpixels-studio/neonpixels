@@ -2,12 +2,14 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 
 import {
   createCspReportSummary,
-  ROLLOUT_DIRECTIVE,
   FETCH_BATCH_SIZE,
   type BlobSummaryClient,
   type BlobPage,
 } from "../../../netlify/functions/lib/cspReportSummary";
-import type { StoredCspViolation } from "../../../netlify/functions/lib/cspReportStore";
+import {
+  ROLLOUT_DIRECTIVE,
+  type StoredCspViolation,
+} from "../../../netlify/functions/lib/cspReportStore";
 
 function violation(
   overrides: Partial<StoredCspViolation> = {},

@@ -155,9 +155,15 @@ describe("isRolloutKey", () => {
     expect(isRolloutKey(key)).toBe(false);
   });
 
-  it("falls back to false (evictable) for a key that predates tagging, rather than granting it unbounded protection", () => {
+  it("treats a key that predates tagging as protected (rollout), the safer direction for evidence the pruner can't positively classify as irrelevant", () => {
     const legacyKey = `${sanitizeTimestamp("2026-01-01T00:00:00.000Z")}-${"a".repeat(36)}.json`;
 
-    expect(isRolloutKey(legacyKey)).toBe(false);
+    expect(isRolloutKey(legacyKey)).toBe(true);
+  });
+
+  it("only excludes a key explicitly tagged `other`", () => {
+    const otherTaggedKey = `${sanitizeTimestamp("2026-01-01T00:00:00.000Z")}-other-${"a".repeat(36)}.json`;
+
+    expect(isRolloutKey(otherTaggedKey)).toBe(false);
   });
 });

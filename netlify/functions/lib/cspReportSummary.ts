@@ -19,12 +19,6 @@ import {
 } from "./cspReportStore";
 import type { StoredCspViolation } from "./cspReportStore";
 
-// Re-exported for backward compatibility: these were originally defined here
-// and are still the natural import for this module's own callers/tests, but
-// now live in cspReportStore.ts (see the comment there) because the write
-// path needs the same classification to tag stored keys for the pruner.
-export { ROLLOUT_DIRECTIVE, isRolloutDirective };
-
 export type BlobListEntry = { key: string };
 export type BlobPage = { blobs: BlobListEntry[] };
 

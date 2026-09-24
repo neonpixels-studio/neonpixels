@@ -210,37 +210,36 @@ async function deleteKeys(
   return { deleted, complete: start >= keys.length };
 }
 
-// The oldest-first excess beyond maxBlobs. Safe to apply even against a
-// partial (incomplete-listing) view: the count of keys actually seen is a
+// The excess beyond maxBlobs, ordered non-rollout keys first (oldest first
+// within each group) so a flood of fabricated non-script-src reports at the
+// public /csp-report endpoint can't push genuine script-src evidence out of
+// the store before the daily summary reads it (#135) — plain oldest-first
+// eviction only needed the flood to outnumber the evidence, not outlast it.
+// Rollout keys are only reached once every non-rollout key is already gone
+// and the store is still over cap, so the count cap still holds even against
+// an all-rollout-tagged flood (see isRolloutKey in cspReportStore.ts for the
+// caveat: the tag is self-reported, so this defends the flood described in
+// #135, not one that also forges the directive). Safe to apply even against
+// a partial (incomplete-listing) view: the count of keys actually seen is a
 // lower bound on the real store size, so trimming `seen - maxBlobs` of them
-// can never remove more than is genuinely in excess.
-//
-// Non-rollout keys are evicted first, oldest first; rollout (script-src)
-// keys are only touched once every non-rollout fresh key is already gone and
-// the store is still over cap. Without this split, a flood of fabricated
-// non-script-src reports at the public /csp-report endpoint (see #135) could
-// outnumber genuine script-src evidence badly enough that plain oldest-first
-// eviction deletes the real evidence before the daily summary ever reads it
-// — the flood doesn't need to out-age the evidence, it only needs to push
-// the store's fresh-key count past maxBlobs while the evidence happens to
-// sort among the oldest fresh keys. `isRolloutKey` reads this from the key
-// alone (see cspReportStore.ts), so this split costs nothing beyond the
-// filter below — no extra Blobs calls, no change to the pruner's time
-// budget. Retention-based eviction above (isStaleKey) is unaffected: a
-// script-src violation aging out past retentionDays is the same intentional
-// tradeoff it always was, not the eviction-flood gap this closes.
+// can never remove more than is genuinely in excess. One pass over
+// freshKeysOldestFirst partitions both groups (rather than filtering twice),
+// each still in its original oldest-first order.
 function overCapKeys(freshKeysOldestFirst: string[], maxBlobs: number) {
   const overflow = freshKeysOldestFirst.length - maxBlobs;
   if (overflow <= 0) {
     return [];
   }
-  const otherKeys = freshKeysOldestFirst.filter((key) => !isRolloutKey(key));
-  if (otherKeys.length >= overflow) {
-    return otherKeys.slice(0, overflow);
+  const otherKeys: string[] = [];
+  const rolloutKeys: string[] = [];
+  for (const key of freshKeysOldestFirst) {
+    if (isRolloutKey(key)) {
+      rolloutKeys.push(key);
+      continue;
+    }
+    otherKeys.push(key);
   }
-  const rolloutKeys = freshKeysOldestFirst.filter(isRolloutKey);
-  const rolloutOverflow = overflow - otherKeys.length;
-  return [...otherKeys, ...rolloutKeys.slice(0, rolloutOverflow)];
+  return [...otherKeys, ...rolloutKeys].slice(0, overflow);
 }
 
 // Sorted ascending, so every stale key (older than cutoffPrefix) sorts before

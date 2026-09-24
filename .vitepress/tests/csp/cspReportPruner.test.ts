@@ -216,6 +216,62 @@ describe("createCspReportPruner", () => {
     expect(deletedKeys(client)).toEqual([...otherKeys, rolloutKeys[0]]);
   });
 
+  it("still enforces the count cap, oldest first, when every fresh key is rollout-tagged", async () => {
+    // Guards the spill branch in overCapKeys: if a future change made
+    // rollout keys entirely exempt from the count cap instead of merely
+    // last-in-line, this is the case that would catch it — a flood that
+    // forges every report as script-src-directed (the residual gap
+    // isRolloutKey documents: the tag is self-reported) must not disable
+    // maxBlobs altogether.
+    const rolloutKeys = Array.from({ length: 50 }, (_, index) =>
+      taggedKeyFromDaysAgo(
+        1,
+        "rollout",
+        `flood-${String(index).padStart(2, "0")}`,
+      ),
+    );
+    const client = fakeClient([rolloutKeys]);
+    const pruner = createCspReportPruner(client, {
+      retentionDays: 30,
+      maxBlobs: 10,
+    });
+
+    const result = await pruner.prune();
+
+    expect(result).toEqual({ deleted: 40, remaining: 10, complete: true });
+    expect(deletedKeys(client)).toEqual(rolloutKeys.slice(0, 40));
+  });
+
+  it("treats a legacy, untagged key (written before #135 tagging existed) as protected rollout evidence, not as evictable-first", async () => {
+    // A key in the pre-#135 shape: `<timestamp>-<uuid>.json`, no tag
+    // segment. isRolloutKey only excludes a key explicitly tagged `other`,
+    // so an untagged legacy key — which could be real script-src evidence
+    // collected before this fix shipped — is not preferentially evicted
+    // just because it predates tagging.
+    const legacyKey = keyFromDaysAgo(
+      10,
+      "550e8400-e29b-41d4-a716-446655440000",
+    );
+    const flood = Array.from({ length: 20 }, (_, index) =>
+      taggedKeyFromDaysAgo(
+        1,
+        "other",
+        `flood-${String(index).padStart(2, "0")}`,
+      ),
+    );
+    const client = fakeClient([[legacyKey, ...flood]]);
+    const pruner = createCspReportPruner(client, {
+      retentionDays: 30,
+      maxBlobs: 5,
+    });
+
+    const result = await pruner.prune();
+
+    const deleted = deletedKeys(client);
+    expect(result).toEqual({ deleted: 16, remaining: 5, complete: true });
+    expect(deleted).not.toContain(legacyKey);
+  });
+
   it("sorts keys chronologically across list pages, regardless of the order list() returns them in", async () => {
     const oldest = keyFromDaysAgo(5, "oldest");
     const mid = keyFromDaysAgo(3, "mid");
