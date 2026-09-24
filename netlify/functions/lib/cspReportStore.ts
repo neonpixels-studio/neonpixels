@@ -110,13 +110,19 @@ function violationKey(receivedAt: string, violation: CspViolation): string {
 // Exported so cspReportPruner.ts can classify a listed key without a Blobs
 // get() per key. Only a key explicitly tagged `other` is treated as
 // non-rollout; a rollout-tagged key AND an untagged legacy key (written
-// before this tagging existed, in the ~retentionDays window after this
-// change deploys) both count as rollout — the safer direction for evidence
-// the pruner can't positively rule out as irrelevant. The two remaining
-// bounds on that: the retention-days pass ages every key out regardless of
-// tag, and overCapKeys' spill branch still trims to maxBlobs once every
-// `other`-tagged key is gone, so treating "unknown" as "protected" does not
-// make the count cap unenforceable.
+// before this tagging existed) both count as rollout — the safer direction
+// for evidence the pruner can't positively rule out as irrelevant. The two
+// remaining bounds on that: the retention-days pass ages every key out
+// regardless of tag, and overCapKeys' spill branch still trims to maxBlobs
+// once every `other`-tagged key is gone, so treating "unknown" as
+// "protected" does not make the count cap unenforceable. Concrete cost of
+// this choice, for one retention window after deploy: a brand-new genuine
+// non-rollout report can be evicted an hour after arrival ahead of
+// month-old untagged legacy noise, since the legacy key still reads as
+// "protected" until it ages out on its own. That's judged an acceptable,
+// self-correcting (≤ CSP_REPORT_RETENTION_DAYS) migration cost rather than
+// a reason to add a third eviction tier for "untagged" — see the README's
+// csp-reports section for the fuller trade-off.
 export function isRolloutKey(key: string): boolean {
   return !key.slice(RECEIVED_AT_PREFIX_LENGTH).startsWith(`-${OTHER_KEY_TAG}-`);
 }

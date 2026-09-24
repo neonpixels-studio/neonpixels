@@ -37,13 +37,21 @@ function keyFromDaysAgo(daysAgo: number, suffix: string): string {
 // priority tests can construct genuine script-src evidence and fabricated
 // non-script-src flood entries that isRolloutKey tells apart the same way
 // the pruner does in production.
+function taggedKeyFromMsAgo(
+  msAgo: number,
+  tag: "rollout" | "other",
+  suffix: string,
+): string {
+  const receivedAt = new Date(NOW.getTime() - msAgo).toISOString();
+  return `${sanitizeTimestamp(receivedAt)}-${tag}-${suffix}.json`;
+}
+
 function taggedKeyFromDaysAgo(
   daysAgo: number,
   tag: "rollout" | "other",
   suffix: string,
 ): string {
-  const receivedAt = new Date(NOW.getTime() - daysAgo * DAY_MS).toISOString();
-  return `${sanitizeTimestamp(receivedAt)}-${tag}-${suffix}.json`;
+  return taggedKeyFromMsAgo(daysAgo * DAY_MS, tag, suffix);
 }
 
 // A BlobPrunerClient backed by an in-memory key list, split across the given
@@ -222,15 +230,20 @@ describe("createCspReportPruner", () => {
     // last-in-line, this is the case that would catch it — a flood that
     // forges every report as script-src-directed (the residual gap
     // isRolloutKey documents: the tag is self-reported) must not disable
-    // maxBlobs altogether.
-    const rolloutKeys = Array.from({ length: 50 }, (_, index) =>
-      taggedKeyFromDaysAgo(
-        1,
+    // maxBlobs altogether. Each key gets a distinct age (one minute apart)
+    // rather than sharing a single timestamp, and the list handed to the
+    // fake client is the reverse of oldest-first — otherwise this would
+    // only prove the deleted keys came first in whatever order they were
+    // supplied (or sorted lexicographically by suffix), not that eviction
+    // is genuinely chronological.
+    const rolloutKeysOldestFirst = Array.from({ length: 50 }, (_, index) =>
+      taggedKeyFromMsAgo(
+        (50 - index) * 60_000,
         "rollout",
         `flood-${String(index).padStart(2, "0")}`,
       ),
     );
-    const client = fakeClient([rolloutKeys]);
+    const client = fakeClient([[...rolloutKeysOldestFirst].reverse()]);
     const pruner = createCspReportPruner(client, {
       retentionDays: 30,
       maxBlobs: 10,
@@ -239,7 +252,7 @@ describe("createCspReportPruner", () => {
     const result = await pruner.prune();
 
     expect(result).toEqual({ deleted: 40, remaining: 10, complete: true });
-    expect(deletedKeys(client)).toEqual(rolloutKeys.slice(0, 40));
+    expect(deletedKeys(client)).toEqual(rolloutKeysOldestFirst.slice(0, 40));
   });
 
   it("treats a legacy, untagged key (written before #135 tagging existed) as protected rollout evidence, not as evictable-first", async () => {

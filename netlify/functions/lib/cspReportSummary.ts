@@ -51,7 +51,15 @@ export type CspReportSummary = {
   totalViolations: number;
   // Descending by count (ties broken alphabetically for a deterministic
   // order), so the loudest directive/URI is first without the caller
-  // re-sorting.
+  // re-sorting. Under sustained count-cap pressure, these two totals can
+  // skew toward `script-src` (rollout-tagged) reports: the pruner's
+  // count-cap pass now evicts non-rollout reports first (see overCapKeys in
+  // cspReportPruner.ts and #135), so a flood or heavy organic traffic on a
+  // non-script-src directive is more likely to be trimmed from the store
+  // than script-src evidence is. That's the intended trade-off — it's what
+  // protects `rollout` below, the signal this whole Function exists for —
+  // but it means these two breakdowns are not a reliable total for
+  // non-script-src directives during/after a flood, only `rollout` is.
   byDirective: DirectiveCount[];
   byBlockedUri: BlockedUriCount[];
   rollout: RolloutSignal;

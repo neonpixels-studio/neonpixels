@@ -210,6 +210,27 @@ async function deleteKeys(
   return { deleted, complete: start >= keys.length };
 }
 
+// Splits an oldest-first key list into non-rollout and rollout groups, each
+// still in its original oldest-first order, in one pass (rather than
+// filtering the list twice). The split itself — and why non-rollout keys go
+// first in eviction order — is explained at its one call site, overCapKeys,
+// below.
+function partitionByRolloutTag(keys: string[]): {
+  otherKeys: string[];
+  rolloutKeys: string[];
+} {
+  const otherKeys: string[] = [];
+  const rolloutKeys: string[] = [];
+  for (const key of keys) {
+    if (isRolloutKey(key)) {
+      rolloutKeys.push(key);
+      continue;
+    }
+    otherKeys.push(key);
+  }
+  return { otherKeys, rolloutKeys };
+}
+
 // The excess beyond maxBlobs, ordered non-rollout keys first (oldest first
 // within each group) so a flood of fabricated non-script-src reports at the
 // public /csp-report endpoint can't push genuine script-src evidence out of
@@ -222,23 +243,14 @@ async function deleteKeys(
 // #135, not one that also forges the directive). Safe to apply even against
 // a partial (incomplete-listing) view: the count of keys actually seen is a
 // lower bound on the real store size, so trimming `seen - maxBlobs` of them
-// can never remove more than is genuinely in excess. One pass over
-// freshKeysOldestFirst partitions both groups (rather than filtering twice),
-// each still in its original oldest-first order.
+// can never remove more than is genuinely in excess.
 function overCapKeys(freshKeysOldestFirst: string[], maxBlobs: number) {
   const overflow = freshKeysOldestFirst.length - maxBlobs;
   if (overflow <= 0) {
     return [];
   }
-  const otherKeys: string[] = [];
-  const rolloutKeys: string[] = [];
-  for (const key of freshKeysOldestFirst) {
-    if (isRolloutKey(key)) {
-      rolloutKeys.push(key);
-      continue;
-    }
-    otherKeys.push(key);
-  }
+  const { otherKeys, rolloutKeys } =
+    partitionByRolloutTag(freshKeysOldestFirst);
   return [...otherKeys, ...rolloutKeys].slice(0, overflow);
 }
 
