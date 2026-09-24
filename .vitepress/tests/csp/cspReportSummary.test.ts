@@ -519,8 +519,70 @@ describe("createCspReportSummary", () => {
     expect(summary.totalListed).toBe(page1Keys.length);
     expect(summary.totalFetched).toBe(page1Keys.length);
     expect(summary.totalViolations).toBe(page1Keys.length);
-    expect(client.get).not.toHaveBeenCalledWith(probePageKey);
-    expect(client.get).not.toHaveBeenCalledWith(neverReachedKey);
+    expect(client.get).not.toHaveBeenCalledWith(
+      probePageKey,
+      expect.anything(),
+    );
+    expect(client.get).not.toHaveBeenCalledWith(
+      neverReachedKey,
+      expect.anything(),
+    );
+  });
+
+  it("does not throw when the iterator's return() resolves synchronously instead of returning a promise", async () => {
+    // `AsyncIterator.return` is only guaranteed to exist here (guarded by
+    // `?.`), not to resolve asynchronously — a client whose iterator
+    // returns a plain object rather than a Promise from `return()` must not
+    // crash the fail-closed cleanup step once a real lookahead page has
+    // already proven the run incomplete (a synchronous `.catch` off a
+    // non-thenable would otherwise throw and turn a valid partial summary
+    // into an uncaught rejection).
+    const page1Keys = ["key-a", "key-b"];
+    const probePageKey = "key-peeked";
+    const blobs = Object.fromEntries(
+      [...page1Keys, probePageKey].map((key) => [key, violation()]),
+    );
+    let returnCalled = false;
+    let callCount = 0;
+    const client: BlobSummaryClient & { get: ReturnType<typeof vi.fn> } = {
+      get: vi.fn(async (key: string) => blobs[key]),
+      list(): AsyncIterable<BlobPage> {
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next: () => {
+                callCount += 1;
+                if (callCount === 1) {
+                  vi.setSystemTime(
+                    new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1),
+                  );
+                  return Promise.resolve({
+                    done: false,
+                    value: { blobs: page1Keys.map((key) => ({ key })) },
+                  });
+                }
+                return Promise.resolve({
+                  done: false,
+                  value: { blobs: [{ key: probePageKey }] },
+                });
+              },
+              return: () => {
+                returnCalled = true;
+                return { done: true, value: undefined } as unknown as Promise<
+                  IteratorResult<BlobPage>
+                >;
+              },
+            };
+          },
+        };
+      },
+    };
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.listComplete).toBe(false);
+    expect(summary.totalListed).toBe(page1Keys.length);
+    expect(returnCalled).toBe(true);
   });
 
   it("returns a partial, fail-closed result instead of throwing when the list pass itself rejects", async () => {
@@ -708,8 +770,14 @@ describe("createCspReportSummary", () => {
     expect(summary.fetchComplete).toBe(true);
     expect(summary.totalFetched).toBe(summary.totalListed);
     expect(summary.totalListed).toBe(page1Keys.length);
-    expect(client.get).not.toHaveBeenCalledWith(probePageKey);
-    expect(client.get).not.toHaveBeenCalledWith(neverReachedKey);
+    expect(client.get).not.toHaveBeenCalledWith(
+      probePageKey,
+      expect.anything(),
+    );
+    expect(client.get).not.toHaveBeenCalledWith(
+      neverReachedKey,
+      expect.anything(),
+    );
     expect(summary.rollout.count).toBe(0);
     expect(summary.rollout.stopped).toBe(false);
   });

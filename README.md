@@ -215,7 +215,14 @@ cooperative time budget (`LIST_TIME_BUDGET_MS`/`SUMMARY_TIME_BUDGET_MS` in
 `lib/cspReportSummary.ts`, split the same way the pruner splits its budget
 across list/delete) — a store too large to read in one run still returns a
 real, partial summary (`complete: false`) instead of the whole run being
-discarded. The signal fails closed: it only reports `stopped: true` once
+discarded. A truncated fetch pass reads the listed keys newest-first (not
+whatever order `list()` happened to return), so it's the oldest evidence
+that gets dropped, not the most recent — but that ordering only applies to
+keys the list pass itself managed to retain; when `listComplete` is false
+too, `rollout.mostRecent` and the two breakdowns above are not reliably "the
+newest" (`rollout.stopped` is unaffected, since it already fails closed on
+`complete` regardless). The signal fails closed: it only reports
+`stopped: true` once
 nothing belongs to `script-src` **and** nothing went unread **and** the run
 itself was complete — no failed fetch, no key the pruner's count-cap pass
 evicted mid-walk, no key the time budget never got to

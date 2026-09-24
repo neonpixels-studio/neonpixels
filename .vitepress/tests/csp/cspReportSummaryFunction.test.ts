@@ -212,17 +212,23 @@ describe("csp-report-summary Netlify scheduled function", () => {
     );
   });
 
-  // Pins the other half of the ordering chain: LIST_TIME_BUDGET_MS must stay
-  // strictly under SUMMARY_TIME_BUDGET_MS, the combined budget it's carved
-  // out of, so fetchAll is never left with zero or negative time regardless
-  // of how listAllKeys spends its own share.
-  it("keeps cspReportSummary's list-pass budget under its combined list+fetch budget", async () => {
+  // Pins the other half of the ordering chain: fetchAll must be left with a
+  // real, usable share of SUMMARY_TIME_BUDGET_MS once listAllKeys has spent
+  // LIST_TIME_BUDGET_MS, not just a share that is merely non-negative.
+  // `LIST_TIME_BUDGET_MS = Math.floor(SUMMARY_TIME_BUDGET_MS / 2)` already
+  // guarantees `LIST_TIME_BUDGET_MS < SUMMARY_TIME_BUDGET_MS` for any
+  // positive value, so asserting that ordering alone would pin nothing the
+  // derivation doesn't already guarantee — this asserts the actual gap
+  // fetchAll depends on, mirroring the HARD_TIMEOUT_MS margin test above.
+  it("leaves fetchAll at least 8s of its own budget once listAllKeys has spent its share", async () => {
     const { LIST_TIME_BUDGET_MS, SUMMARY_TIME_BUDGET_MS } =
       await vi.importActual<
         typeof import("../../../netlify/functions/lib/cspReportSummary")
       >("../../../netlify/functions/lib/cspReportSummary");
 
-    expect(LIST_TIME_BUDGET_MS).toBeLessThan(SUMMARY_TIME_BUDGET_MS);
+    expect(SUMMARY_TIME_BUDGET_MS - LIST_TIME_BUDGET_MS).toBeGreaterThanOrEqual(
+      8000,
+    );
   });
 
   it("warns with an incomplete marker naming which pass was cut short, but still replies 200 with real partial counts", async () => {

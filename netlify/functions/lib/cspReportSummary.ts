@@ -51,7 +51,16 @@ export type CspReportSummary = {
   complete: boolean;
   // False when listAllKeys was cut short by LIST_TIME_BUDGET_MS (totalListed
   // is then a lower bound, same caveat cspReportPruner.ts's own partial
-  // listing carries).
+  // listing carries). fetchAll sorts newest-first before truncating (see
+  // sortNewestFirst) so a *fetch*-side truncation always drops the oldest
+  // evidence — but that sort can only work with what listAllKeys retained.
+  // When `listComplete` itself is false, the retained keys are whatever
+  // pages list() happened to return before the deadline, an order this
+  // module never assumes is sorted (mirrors cspReportPruner.ts sorting its
+  // own unsortedKeys rather than trusting list()'s order), so
+  // `rollout.mostRecent` and the `byDirective`/`byBlockedUri` breakdowns are
+  // not reliably "the newest" in that case — only `rollout.stopped` stays
+  // trustworthy, since it already fails closed on `complete` regardless.
   listComplete: boolean;
   // False when fetchAll was cut short by SUMMARY_TIME_BUDGET_MS before
   // attempting every key listAllKeys handed it.
@@ -174,7 +183,14 @@ async function listAllKeys(
     if (lookahead.done) {
       return { keys, complete: true };
     }
-    await pages.return?.()?.catch(() => {});
+    // Wrapped in Promise.resolve() rather than chaining `?.catch` directly
+    // off the call: `return?.()` only guards a *missing* `return`, and a
+    // client whose iterator defines one but resolves it synchronously
+    // (returns a plain object, not a promise) would otherwise throw here on
+    // a missing `.catch` method — turning an already-computed, valid
+    // partial summary into an uncaught rejection instead of the fail-closed
+    // result this whole cleanup step exists to preserve.
+    await Promise.resolve(pages.return?.()).catch(() => {});
     return { keys, complete: false };
   }
 }
