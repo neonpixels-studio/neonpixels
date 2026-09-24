@@ -99,6 +99,14 @@ function humanComment(createdAt: string): GithubComment {
 }
 
 describe("createPruneFailureNotifier", () => {
+  // A test that stubs console.log and then fails its own assertion before
+  // reaching a manual mockRestore() would otherwise leave console.log
+  // stubbed for every subsequent test in this file — restoring here runs
+  // regardless of how the test ends.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("creates an issue when no open prune-failure issue exists", async () => {
     const client = buildGithubClientStub({ existingIssues: [] });
     const notifier = createPruneFailureNotifier(client);
@@ -283,7 +291,6 @@ describe("createPruneFailureNotifier", () => {
       NOTIFY_THROTTLED_LOG_PREFIX,
       expect.stringContaining('"issue":7'),
     );
-    consoleLogSpy.mockRestore();
   });
 
   it("comments again once a freshly-opened tracked issue's creation is just outside the re-notify window", async () => {
@@ -344,7 +351,6 @@ describe("createPruneFailureNotifier", () => {
   // change) must NOT reset the throttle — only this notifier's own comment
   // does. Both comments are inside the window; only one is this notifier's.
   it("does not treat a human's own recent comment as a re-notification — only this notifier's own comment resets the throttle", async () => {
-    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const client = buildGithubClientStub({
       existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
       comments: [
@@ -365,11 +371,37 @@ describe("createPruneFailureNotifier", () => {
     // Throttled off the human comment, this would be a no-op; the fix means
     // it re-comments because the notifier's own last comment is stale.
     expect(client.createComment).toHaveBeenCalledTimes(1);
-    consoleLogSpy.mockRestore();
+  });
+
+  // Guards isNotifierComment's use of startsWith over includes: GitHub's
+  // "Quote reply" copies a quoted comment's raw body — marker included —
+  // with each line prefixed by `> `. That must NOT be mistaken for a fresh
+  // notification, or a maintainer quoting the notifier's own "still
+  // failing" comment to reply "on it" would reintroduce the exact bug this
+  // throttle rework fixes (unrelated human activity silencing the
+  // notifier).
+  it("does not treat a human's quote-reply of the notifier's own comment as a re-notification", async () => {
+    const client = buildGithubClientStub({
+      existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
+      comments: [
+        notifierComment(
+          new Date(Date.now() - JUST_OUTSIDE_WINDOW_MS).toISOString(),
+        ),
+        {
+          body: `> ${buildStillFailingCommentBody("boom").replaceAll("\n", "\n> ")}\n\nOn it.`,
+          created_at: new Date(Date.now() - 60_000).toISOString(),
+        },
+      ],
+    });
+    const notifier = createPruneFailureNotifier(client);
+
+    await notifier.notify("still broken");
+
+    expect(client.createComment).toHaveBeenCalledTimes(1);
   });
 
   it("throttles based on the most recent of this notifier's own comments when it has posted more than one", async () => {
-    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
     const client = buildGithubClientStub({
       existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
       comments: [
@@ -386,18 +418,18 @@ describe("createPruneFailureNotifier", () => {
     await notifier.notify("blobs unavailable");
 
     expect(client.createComment).not.toHaveBeenCalled();
-    consoleLogSpy.mockRestore();
   });
 
-  // Guards resolveLastNotifiedAt's reduce: an unparseable created_at on one
-  // notifier comment must not poison the comparison and hide a separate,
-  // genuinely recent, valid notifier comment behind it.
+  // Guards resolveLastNotifiedAt's Math.max over parsed timestamps: an
+  // unparseable created_at on one notifier comment must not poison the
+  // comparison and hide a separate, genuinely recent, valid notifier
+  // comment behind it.
   it("ignores a notifier comment with an unparseable created_at and still throttles off a valid recent one", async () => {
-    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
     const client = buildGithubClientStub({
       existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
       comments: [
-        { ...notifierComment("not-a-real-date") },
+        notifierComment("not-a-real-date"),
         notifierComment(
           new Date(Date.now() - JUST_INSIDE_WINDOW_MS).toISOString(),
         ),
@@ -408,18 +440,30 @@ describe("createPruneFailureNotifier", () => {
     await notifier.notify("blobs unavailable");
 
     expect(client.createComment).not.toHaveBeenCalled();
-    consoleLogSpy.mockRestore();
   });
 
-  it("passes the tracked issue's number to listComments", async () => {
+  // Asserts against the fake client rather than only through the real fetch
+  // adapter's URL string: the throttle window (RENOTIFY_INTERVAL_MS) is
+  // domain policy computed in notify() itself and handed to listComments as
+  // a plain argument, specifically so a fake client can observe and honor
+  // the same window a real GitHub call would.
+  it("passes the tracked issue's number and a since timestamp scoped to the re-notify window to listComments", async () => {
     const client = buildGithubClientStub({
       existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
     });
     const notifier = createPruneFailureNotifier(client);
+    const beforeCall = Date.now();
 
     await notifier.notify("blobs unavailable");
 
-    expect(client.listComments).toHaveBeenCalledWith(7);
+    expect(client.listComments).toHaveBeenCalledTimes(1);
+    const [issueNumber, sinceIso] = client.listComments.mock.calls[0];
+    expect(issueNumber).toBe(7);
+    const sinceMs = Date.parse(sinceIso);
+    const expectedSinceMs = beforeCall - RENOTIFY_INTERVAL_MS;
+    // Allow a small window for test execution time rather than asserting
+    // exact equality against a value computed before the call ran.
+    expect(Math.abs(sinceMs - expectedSinceMs)).toBeLessThan(5000);
   });
 
   it("does not call listComments when opening a brand-new issue", async () => {

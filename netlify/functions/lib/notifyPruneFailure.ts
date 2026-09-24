@@ -73,7 +73,14 @@ export type GithubIssuesClient = {
   // Only called once a tracked issue is already found (the failure path) —
   // see the re-notify throttle below. Not needed on the "open a fresh
   // issue" path, so it stays off the hot path for a healthy prune run.
-  listComments(_issueNumber: number): Promise<GithubComment[]>;
+  // `sinceIso` is the throttle window's start, computed by the caller (see
+  // notify() below) rather than inside an adapter — domain policy
+  // (RENOTIFY_INTERVAL_MS) stays in the notifier, so a fake client in tests
+  // can observe and honor the exact same window a real GitHub call would.
+  listComments(
+    _issueNumber: number,
+    _sinceIso: string,
+  ): Promise<GithubComment[]>;
 };
 
 // The issues list endpoint returns pull requests alongside issues, and the
@@ -178,12 +185,8 @@ export function buildStillFailingCommentBody(errorMessage: string): string {
 // pass for any interval between roughly a second and several years.
 export const RENOTIFY_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-function isWithinRenotifyWindow(lastNotifiedAt: string | undefined): boolean {
-  if (!lastNotifiedAt) {
-    return false;
-  }
-  const lastNotifiedAtMs = Date.parse(lastNotifiedAt);
-  if (Number.isNaN(lastNotifiedAtMs)) {
+function isWithinRenotifyWindow(lastNotifiedAtMs: number | undefined): boolean {
+  if (lastNotifiedAtMs === undefined) {
     return false;
   }
   return Date.now() - lastNotifiedAtMs < RENOTIFY_INTERVAL_MS;
@@ -191,25 +194,34 @@ function isWithinRenotifyWindow(lastNotifiedAt: string | undefined): boolean {
 
 // A comment counts as this notifier's own only if it carries the same
 // marker the notifier stamps into every issue body and "still failing"
-// comment it writes — mirrors isTrackedPruneFailureIssue's reasoning above:
-// a human reply or a bot comment from something else entirely must not be
-// mistaken for a prior notification and used to compute the throttle.
+// comment it writes, as the *first* line specifically — mirrors
+// isTrackedPruneFailureIssue's reasoning above (a human reply or an
+// unrelated bot comment must not be mistaken for a prior notification), but
+// checking `startsWith` rather than `includes` also rules out GitHub's
+// "Quote reply", which copies the quoted body verbatim (HTML comments
+// included) with each line prefixed by `> `. Without this distinction, a
+// maintainer quoting the notifier's own comment to reply "on it" would
+// itself look like a fresh notification and reintroduce the exact bug this
+// throttle rework fixes (see #139): unrelated human activity silencing the
+// notifier.
 function isNotifierComment(comment: GithubComment): boolean {
-  return (comment.body ?? "").includes(PRUNE_FAILURE_ISSUE_MARKER);
+  return (comment.body ?? "").startsWith(PRUNE_FAILURE_ISSUE_MARKER);
 }
 
 // GitHub's per-issue comments endpoint returns oldest-first with no
-// sort/direction override — fetching only page 1 (LIST_PAGE_SIZE) with no
-// further filter would let a busy issue's oldest comments permanently
-// occupy page 1, so a genuinely recent notifier comment could never be
-// seen and the throttle would look perpetually stale. `listComments` scopes
-// the request with `since` to just the throttle window instead (see the
-// fetch adapter below), so only comments recent enough to matter are ever
-// fetched — the "which page are they on" question doesn't arise.
+// sort/direction override; `listComments` narrows the request with `since`
+// (the throttle window) so an unfiltered page 1 doesn't get stuck showing
+// only the oldest matches, but page 1 within that window can still miss a
+// recent comment if the issue receives more than LIST_PAGE_SIZE comments
+// inside a single RENOTIFY_INTERVAL_MS window. That's an extreme, essentially
+// pathological rate for a 6-hour throttle to be exercised against — and if
+// it happens, this fails open (falls back to `issue.created_at`, so the
+// notifier re-comments), which is the safe direction: an extra "still
+// failing" comment on an already-noisy issue, not a silently missed one.
 function resolveLastNotifiedAt(
   issue: GithubIssueOrPullRequest,
   comments: GithubComment[],
-): string | undefined {
+): number | undefined {
   const notifierCommentTimestampsMs = comments
     .filter(isNotifierComment)
     .map((comment) => Date.parse(comment.created_at ?? ""))
@@ -218,9 +230,10 @@ function resolveLastNotifiedAt(
     // No (parseable) comment from this notifier yet — the issue's own
     // creation (which this notifier performed, and which already carries
     // the marker) is the most recent notification.
-    return issue.created_at;
+    const issueCreatedAtMs = Date.parse(issue.created_at ?? "");
+    return Number.isNaN(issueCreatedAtMs) ? undefined : issueCreatedAtMs;
   }
-  return new Date(Math.max(...notifierCommentTimestampsMs)).toISOString();
+  return Math.max(...notifierCommentTimestampsMs);
 }
 
 export type PruneFailureNotifier = {
@@ -251,9 +264,22 @@ export function createPruneFailureNotifier(
         });
         return;
       }
-      const comments = await client.listComments(existingIssue.number);
-      const lastNotifiedAt = resolveLastNotifiedAt(existingIssue, comments);
-      if (isWithinRenotifyWindow(lastNotifiedAt)) {
+      // Computed here (domain policy — the throttle window) rather than
+      // inside the adapter, so a fake GithubIssuesClient in tests can
+      // observe and honor the same window the real one does instead of the
+      // adapter silently deciding it out of the fake's reach.
+      const sinceIso = new Date(
+        Date.now() - RENOTIFY_INTERVAL_MS,
+      ).toISOString();
+      const comments = await client.listComments(
+        existingIssue.number,
+        sinceIso,
+      );
+      const lastNotifiedAtMs = resolveLastNotifiedAt(existingIssue, comments);
+      if (
+        lastNotifiedAtMs !== undefined &&
+        isWithinRenotifyWindow(lastNotifiedAtMs)
+      ) {
         // Otherwise a throttled run leaves zero trace anywhere: the handler
         // only logs on prune *failure*, not on this deliberate no-op, so a
         // real failure whose only visible effect was "notify did nothing"
@@ -262,7 +288,7 @@ export function createPruneFailureNotifier(
           NOTIFY_THROTTLED_LOG_PREFIX,
           JSON.stringify({
             issue: existingIssue.number,
-            lastNotifiedAt,
+            lastNotifiedAt: new Date(lastNotifiedAtMs).toISOString(),
           }),
         );
         return;
@@ -415,17 +441,16 @@ function createFetchGithubIssuesClient(): GithubIssuesClient {
       // explicitly rather than leaving it unconsumed.
       await response.body?.cancel();
     },
-    async listComments(issueNumber) {
-      // Scoped to the throttle window via `since` rather than relying on
-      // page-1 ordering: GitHub returns issue comments oldest-first with no
-      // sort/direction override, so an unscoped page 1 on a busy issue could
-      // permanently miss a genuinely recent comment once the issue passes
-      // LIST_PAGE_SIZE comments total. `since` filters server-side instead,
-      // so only comments that could possibly matter for the throttle are
-      // ever fetched.
-      const since = new Date(Date.now() - RENOTIFY_INTERVAL_MS).toISOString();
+    async listComments(issueNumber, sinceIso) {
+      // Scoped to the throttle window (sinceIso, computed by the caller)
+      // rather than relying on page-1 ordering: GitHub returns issue
+      // comments oldest-first with no sort/direction override, so an
+      // unscoped page 1 on a busy issue could permanently miss a genuinely
+      // recent comment once the issue passes LIST_PAGE_SIZE comments total.
+      // `since` filters server-side instead, so only comments that could
+      // possibly matter for the throttle are ever fetched.
       const response = await githubRequest(
-        `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issueNumber}/comments?per_page=${LIST_PAGE_SIZE}&since=${encodeURIComponent(since)}`,
+        `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issueNumber}/comments?per_page=${LIST_PAGE_SIZE}&since=${encodeURIComponent(sinceIso)}`,
         { method: "GET" },
       );
       const payload = await parseJson(response, "comments list");
