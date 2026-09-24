@@ -84,6 +84,14 @@ function gaDisableFlagName(measurementId: string) {
   return `ga-disable-${measurementId}`;
 }
 
+function setGaDisableFlag(
+  measurementId: string,
+  disabled: boolean,
+  windowLike: Record<string, unknown>,
+) {
+  windowLike[gaDisableFlagName(measurementId)] = disabled;
+}
+
 // Google's documented runtime kill-switch (see "Disable analytics" in gtag.js
 // docs): once this flag is set, gtag.js stops sending hits for the given
 // measurement ID immediately. Used to revoke a choice that already loaded
@@ -91,7 +99,11 @@ function gaDisableFlagName(measurementId: string) {
 // and this needs no page reload the way removing the script tag would.
 // Takes a plain window-like object (not AnalyticsTarget) since the property
 // it sets is a dynamic, per-measurement-ID name with no fixed place in that
-// interface.
+// interface. The default is a lazily-evaluated parameter expression (not a
+// module-level constant) so merely importing this module — which VitePress's
+// SSG build does on the server, where no `window` exists — can never throw;
+// it's only evaluated if a caller omits the argument at call time, and every
+// real caller only ever does that from inside a client-only onMounted hook.
 export function disableGoogleAnalytics(
   measurementId: string,
   windowLike: Record<string, unknown> = window as unknown as Record<
@@ -99,5 +111,54 @@ export function disableGoogleAnalytics(
     unknown
   >,
 ) {
-  windowLike[gaDisableFlagName(measurementId)] = true;
+  setGaDisableFlag(measurementId, true, windowLike);
+}
+
+// The inverse of disableGoogleAnalytics — needed because loadGoogleAnalytics
+// is load-once per window (see initializedAnalyticsWindows above). Without
+// this, Accept -> Decline -> Accept again in the same session would hit the
+// load-once guard on the second Accept and silently leave the kill-switch
+// flag from the Decline in place, with no hits sent until a full reload.
+export function enableGoogleAnalytics(
+  measurementId: string,
+  windowLike: Record<string, unknown> = window as unknown as Record<
+    string,
+    unknown
+  >,
+) {
+  setGaDisableFlag(measurementId, false, windowLike);
+}
+
+// GA4's own first-party identifier cookies (`_ga`, `_ga_<container-id>`).
+// disableGoogleAnalytics stops new hits but leaves any cookie gtag.js already
+// wrote in place; without clearing it, a visitor who declines and later
+// re-accepts resumes under the same client id instead of a fresh one, which
+// defeats the point of having withdrawn in between.
+const GA_COOKIE_PREFIX = "_ga";
+
+function gaCookieNames(cookieHeader: string) {
+  return cookieHeader
+    .split("; ")
+    .map((entry) => entry.split("=")[0])
+    .filter((name) => name.startsWith(GA_COOKIE_PREFIX));
+}
+
+// gtag.js sets `_ga`/`_ga_*` with an explicit leading-dot domain (so it's
+// shared across subdomains), so the expiring write has to match that exact
+// domain scope to actually clear it — a bare `path=/` clear only reaches a
+// host-only cookie. Written twice (with and without `domain=`) since which
+// scope the real cookie used isn't observable from `document.cookie` alone.
+function expireCookie(targetDocument: Document, name: string, domain?: string) {
+  const domainAttribute = domain ? ` domain=${domain};` : "";
+  targetDocument.cookie = `${name}=;${domainAttribute} path=/; max-age=0`;
+}
+
+export function clearGoogleAnalyticsCookies(
+  targetDocument: Document = document,
+) {
+  const names = gaCookieNames(targetDocument.cookie);
+  for (const name of names) {
+    expireCookie(targetDocument, name);
+    expireCookie(targetDocument, name, `.${targetDocument.location.hostname}`);
+  }
 }

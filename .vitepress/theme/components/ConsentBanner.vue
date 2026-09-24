@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { nextTick, onMounted, ref, type Ref } from "vue";
 import { WORDMARK_GRADIENT } from "../brand";
 import {
   CONSENT_CHOICES,
@@ -14,7 +14,9 @@ import {
 } from "../analytics/analyticsConsent";
 import {
   GA_MEASUREMENT_ID,
+  clearGoogleAnalyticsCookies,
   disableGoogleAnalytics,
+  enableGoogleAnalytics,
   loadGoogleAnalytics,
 } from "../analytics/loadGoogleAnalytics";
 
@@ -33,6 +35,9 @@ const isVisible = ref(false);
 // question; nothing here would override it) and never before any choice has
 // been recorded (the main banner is already offering that decision).
 const canManageChoice = ref(false);
+
+const acceptButtonRef = ref<HTMLButtonElement | null>(null);
+const manageButtonRef = ref<HTMLButtonElement | null>(null);
 
 // Assigned inside onMounted, never at setup() top level: getConsentStorage()
 // touches `window.localStorage`, and VitePress's SSG build runs this
@@ -63,16 +68,37 @@ onMounted(() => {
     getStoredConsentChoice(consentStorage) !== null;
 });
 
+// The Accept/Decline pair and the manage-choice control take turns occupying
+// the same spot in the layout (v-if/v-else-if), so clicking one always
+// unmounts whatever button was just focused — without this, focus would fall
+// back to <body> on every transition and a keyboard user would have to tab
+// in from the top of the page to reach whichever control just appeared.
+async function focusAfterRender(targetRef: Ref<HTMLButtonElement | null>) {
+  await nextTick();
+  targetRef.value?.focus();
+}
+
+// Revokes a choice that already loaded gtag.js this session: the kill-switch
+// (a loaded script can't be un-run in-page) plus clearing GA4's own identifier
+// cookies, so a later re-accept starts a fresh client id instead of resuming
+// the one from before the visitor withdrew consent.
+function revokeActiveAnalytics() {
+  if (!analyticsIsActive) {
+    return;
+  }
+  disableGoogleAnalytics(GA_MEASUREMENT_ID);
+  clearGoogleAnalyticsCookies();
+  analyticsIsActive = false;
+}
+
 function recordChoice(choice: ConsentChoice) {
   setStoredConsentChoice(consentStorage, choice);
   isVisible.value = false;
   canManageChoice.value = !trackingSignalPresent(navigator);
+  void focusAfterRender(manageButtonRef);
 
   if (choice === CONSENT_CHOICES.declined) {
-    if (analyticsIsActive) {
-      disableGoogleAnalytics(GA_MEASUREMENT_ID);
-      analyticsIsActive = false;
-    }
+    revokeActiveAnalytics();
     return;
   }
 
@@ -82,6 +108,11 @@ function recordChoice(choice: ConsentChoice) {
   if (trackingSignalPresent(navigator)) {
     return;
   }
+  // Clears any kill-switch flag a prior Decline left set this session —
+  // loadGoogleAnalytics's load-once guard means a second call would
+  // otherwise no-op while that flag was still in effect (see
+  // enableGoogleAnalytics's own comment).
+  enableGoogleAnalytics(GA_MEASUREMENT_ID);
   loadGoogleAnalytics(GA_MEASUREMENT_ID);
   analyticsIsActive = true;
 }
@@ -89,6 +120,7 @@ function recordChoice(choice: ConsentChoice) {
 function reopenBanner() {
   isVisible.value = true;
   canManageChoice.value = false;
+  void focusAfterRender(acceptButtonRef);
 }
 </script>
 
@@ -106,6 +138,7 @@ function reopenBanner() {
     </p>
     <div class="flex gap-3">
       <button
+        ref="acceptButtonRef"
         type="button"
         class="text-bg animate-sweep rounded-none px-4 py-2 text-[13px] font-bold"
         :style="{ backgroundImage: WORDMARK_GRADIENT }"
@@ -124,6 +157,7 @@ function reopenBanner() {
   </div>
   <button
     v-else-if="canManageChoice"
+    ref="manageButtonRef"
     type="button"
     class="text-fg-subtle border-border bg-panel fixed bottom-3 left-3 z-40 rounded-none border px-3 py-1.5 font-mono text-[11px]"
     @click="reopenBanner"

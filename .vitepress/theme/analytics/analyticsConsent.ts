@@ -48,7 +48,14 @@ export function getConsentStorage(): ConsentStorage {
     window.localStorage.setItem(probeKey, probeKey);
     window.localStorage.removeItem(probeKey);
     return window.localStorage;
-  } catch {
+  } catch (error) {
+    // Matches this codebase's degraded-path convention (see AppLayout.vue's
+    // missing-landmark guard): warn rather than fail silently, so "the banner
+    // keeps re-prompting" is diagnosable instead of a dead end.
+    console.warn(
+      "Analytics consent storage is unavailable; falling back to an in-memory choice for this page load.",
+      error,
+    );
     return { getItem: () => null, setItem: () => {} };
   }
 }
@@ -88,10 +95,15 @@ export function setStoredConsentChoice(
 ) {
   try {
     storage.setItem(CONSENT_STORAGE_KEY, choice);
-  } catch {
+  } catch (error) {
     // Best-effort persistence: if this throws (e.g. a Safari private-mode
     // quota), the choice just doesn't survive a reload and the banner
-    // reappears next visit — safe degradation, not a thrown error mid-click.
+    // reappears next visit — safe degradation, not a thrown error mid-click,
+    // but still warned so it's diagnosable rather than a silent dead end.
+    console.warn(
+      "Analytics consent choice could not be persisted; it will not survive a reload.",
+      error,
+    );
   }
 }
 

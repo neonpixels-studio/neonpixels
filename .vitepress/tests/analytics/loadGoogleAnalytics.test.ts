@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  clearGoogleAnalyticsCookies,
   disableGoogleAnalytics,
+  enableGoogleAnalytics,
   loadGoogleAnalytics,
   type AnalyticsTarget,
 } from "@theme/analytics/loadGoogleAnalytics";
@@ -114,5 +116,77 @@ describe("disableGoogleAnalytics", () => {
     const fakeWindow: Record<string, unknown> = {};
     disableGoogleAnalytics("G-TEST123", fakeWindow);
     expect(fakeWindow["ga-disable-G-OTHER456"]).toBeUndefined();
+  });
+});
+
+describe("enableGoogleAnalytics", () => {
+  it("clears a previously-set kill switch for the given measurement id", () => {
+    const fakeWindow: Record<string, unknown> = {};
+    disableGoogleAnalytics("G-TEST123", fakeWindow);
+    enableGoogleAnalytics("G-TEST123", fakeWindow);
+    expect(fakeWindow["ga-disable-G-TEST123"]).toBe(false);
+  });
+
+  // Regression test for the bug the round-3 review caught: Accept -> Decline
+  // -> Accept again within one session must actually resume sending hits,
+  // not leave the kill switch set from the Decline in place while
+  // loadGoogleAnalytics's per-window load-once guard silently no-ops the
+  // second Accept.
+  it("lets a re-accept after a decline actually resume analytics in the same session", () => {
+    const { target, fakeDocument, fakeWindow } = createFakeAnalyticsTarget();
+    // disableGoogleAnalytics/enableGoogleAnalytics take a plain
+    // Record<string, unknown> window (see loadGoogleAnalytics.ts), not the
+    // narrower `{ dataLayer?: unknown[] }` AnalyticsTarget window shape — cast
+    // at the boundary since it's the same underlying fake object either way.
+    const fakeWindowAsRecord = fakeWindow as Record<string, unknown>;
+    loadGoogleAnalytics("G-TEST123", target); // first Accept
+    disableGoogleAnalytics("G-TEST123", fakeWindowAsRecord); // Decline
+    enableGoogleAnalytics("G-TEST123", fakeWindowAsRecord); // Accept again
+    loadGoogleAnalytics("G-TEST123", target); // Accept again's own call
+    expect(fakeWindowAsRecord["ga-disable-G-TEST123"]).toBe(false);
+    // Still only the one script tag from the original load — load-once by
+    // design — but critically the kill switch is no longer set.
+    expect(fakeDocument.head.appendChild).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("clearGoogleAnalyticsCookies", () => {
+  function createFakeCookieDocument(initialCookie: string) {
+    let cookieJar = initialCookie;
+    return {
+      get cookie() {
+        return cookieJar;
+      },
+      set cookie(value: string) {
+        // A real document.cookie setter parses `name=value; attr...` and
+        // either upserts that one cookie or, when `max-age=0` marks it
+        // expired, removes it — it never replaces the whole header the way
+        // a plain string assignment would.
+        const [pair] = value.split(";");
+        const [name] = pair.split("=");
+        const isExpiring = /max-age=0/i.test(value);
+        const remaining = cookieJar
+          .split("; ")
+          .filter((entry) => entry && !entry.startsWith(`${name}=`));
+        cookieJar = isExpiring
+          ? remaining.join("; ")
+          : [...remaining, pair].join("; ");
+      },
+      location: { hostname: "neonpixels.dev" },
+    } as unknown as Document;
+  }
+
+  it("expires every _ga-prefixed cookie", () => {
+    const fakeDocument = createFakeCookieDocument(
+      "_ga=GA1.1.111; _ga_ABC123=GS1.1.222; unrelated=keep-me",
+    );
+    clearGoogleAnalyticsCookies(fakeDocument);
+    expect(fakeDocument.cookie).toBe("unrelated=keep-me");
+  });
+
+  it("does nothing when no GA cookie is present", () => {
+    const fakeDocument = createFakeCookieDocument("unrelated=keep-me");
+    clearGoogleAnalyticsCookies(fakeDocument);
+    expect(fakeDocument.cookie).toBe("unrelated=keep-me");
   });
 });

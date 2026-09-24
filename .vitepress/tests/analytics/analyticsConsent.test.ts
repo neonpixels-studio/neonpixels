@@ -171,6 +171,10 @@ describe("shouldPromptForConsent", () => {
 });
 
 describe("setStoredConsentChoice", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("does not throw when the underlying storage.setItem throws (e.g. quota exceeded)", () => {
     const throwingStorage: ConsentStorage = {
       getItem: () => null,
@@ -181,6 +185,18 @@ describe("setStoredConsentChoice", () => {
     expect(() =>
       setStoredConsentChoice(throwingStorage, CONSENT_CHOICES.accepted),
     ).not.toThrow();
+  });
+
+  it("warns (rather than failing silently) when persistence fails", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const throwingStorage: ConsentStorage = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("quota exceeded");
+      },
+    };
+    setStoredConsentChoice(throwingStorage, CONSENT_CHOICES.accepted);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -225,8 +241,10 @@ describe("getConsentStorage", () => {
       },
     };
     vi.stubGlobal("localStorage", blockedStorage);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const storage = getConsentStorage();
+      expect(warn).toHaveBeenCalledTimes(1);
       // Both real localStorage and a working fallback would report null for
       // an untouched key, so that alone can't prove the fallback fired.
       // Pin identity (not the blocked Storage instance) and non-persistence
@@ -239,6 +257,7 @@ describe("getConsentStorage", () => {
       expect(storage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
     } finally {
       vi.unstubAllGlobals();
+      warn.mockRestore();
     }
   });
 });

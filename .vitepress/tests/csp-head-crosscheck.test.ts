@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import config from "../config";
 import { GTAG_SCRIPT_URL } from "../theme/analytics/loadGoogleAnalytics";
+import { stripComments } from "./utils/outlineGuard";
 import type { HeadConfig } from "vitepress";
 
 // Cross-checks the origins the configured `head` loads against the CSP in netlify.toml
@@ -555,10 +556,14 @@ describe("CSP and config head origin cross-check", () => {
     // still injects gtag.js at runtime. If that wiring were ever deleted (the
     // CSP grant left behind by accident), this is what would catch it — the
     // reverse check above would otherwise stay green forever, since
-    // GTAG_SCRIPT_URL itself would happily survive as a dead export.
-    const consentBannerSource = readFileSync(CONSENT_BANNER_PATH, "utf8");
+    // GTAG_SCRIPT_URL itself would happily survive as a dead export. Comments
+    // are stripped first (as component-focus.test.ts does) so a stale comment
+    // merely mentioning the import/call can't keep this passing on its own.
+    const consentBannerSource = stripComments(
+      readFileSync(CONSENT_BANNER_PATH, "utf8"),
+    );
     expect(consentBannerSource).toMatch(
-      /loadGoogleAnalytics.*from\s+["'].*analytics\/loadGoogleAnalytics["']/s,
+      /\bfrom\s+["'][^"']*analytics\/loadGoogleAnalytics["']/,
     );
     expect(consentBannerSource).toMatch(/\bloadGoogleAnalytics\(/);
   });

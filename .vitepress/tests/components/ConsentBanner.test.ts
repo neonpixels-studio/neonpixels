@@ -9,11 +9,17 @@ import { CONSENT_STORAGE_KEY } from "@theme/analytics/analyticsConsent";
 // disable analytics", never a real script tag landing in the test DOM.
 const loadGoogleAnalyticsMock = vi.fn();
 const disableGoogleAnalyticsMock = vi.fn();
+const enableGoogleAnalyticsMock = vi.fn();
+const clearGoogleAnalyticsCookiesMock = vi.fn();
 vi.mock("@theme/analytics/loadGoogleAnalytics", () => ({
   GA_MEASUREMENT_ID: "G-TEST123",
   loadGoogleAnalytics: (...args: unknown[]) => loadGoogleAnalyticsMock(...args),
   disableGoogleAnalytics: (...args: unknown[]) =>
     disableGoogleAnalyticsMock(...args),
+  enableGoogleAnalytics: (...args: unknown[]) =>
+    enableGoogleAnalyticsMock(...args),
+  clearGoogleAnalyticsCookies: (...args: unknown[]) =>
+    clearGoogleAnalyticsCookiesMock(...args),
 }));
 
 const BANNER_SELECTOR = '[role="region"]';
@@ -173,8 +179,77 @@ describe("ConsentBanner", () => {
 
     expect(disableGoogleAnalyticsMock).toHaveBeenCalledTimes(1);
     expect(disableGoogleAnalyticsMock).toHaveBeenCalledWith("G-TEST123");
+    // Revoking must also purge GA4's own identifier cookies, not just stop
+    // future hits — otherwise a later re-accept would resume the same client
+    // id instead of starting fresh.
+    expect(clearGoogleAnalyticsCookiesMock).toHaveBeenCalledTimes(1);
     expect(localStorage.getItem(CONSENT_STORAGE_KEY)).toBe("declined");
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("clears any leftover kill switch when re-accepting after a decline in the same session", async () => {
+    // Regression coverage for the round-3 review finding: Accept -> Decline
+    // -> Accept again must actually call enableGoogleAnalytics before
+    // loadGoogleAnalytics, or the kill switch from the Decline stays set.
+    const wrapper = mount(ConsentBanner);
+    await wrapper.vm.$nextTick();
+    await wrapper.findAll("button")[0].trigger("click"); // Accept
+
+    const manageButtonAfterAccept = wrapper
+      .findAll("button")
+      .find((button) => button.text() === MANAGE_CHOICE_TEXT);
+    await manageButtonAfterAccept?.trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Decline")
+      ?.trigger("click");
+
+    const manageButtonAfterDecline = wrapper
+      .findAll("button")
+      .find((button) => button.text() === MANAGE_CHOICE_TEXT);
+    await manageButtonAfterDecline?.trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Accept")
+      ?.trigger("click");
+
+    // Called on every Accept (harmless when nothing was ever disabled), not
+    // only a re-accept — so two Accepts in this flow means two calls.
+    expect(enableGoogleAnalyticsMock).toHaveBeenCalledTimes(2);
+    expect(enableGoogleAnalyticsMock).toHaveBeenCalledWith("G-TEST123");
+    expect(loadGoogleAnalyticsMock).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem(CONSENT_STORAGE_KEY)).toBe("accepted");
+    wrapper.unmount();
+  });
+
+  it("moves focus to the manage-choice control after a decision hides the banner", async () => {
+    const wrapper = mount(ConsentBanner, { attachTo: document.body });
+    await wrapper.vm.$nextTick();
+    await wrapper.findAll("button")[0].trigger("click"); // Accept
+    await wrapper.vm.$nextTick();
+    const manageButton = wrapper
+      .findAll("button")
+      .find((button) => button.text() === MANAGE_CHOICE_TEXT);
+    expect(manageButton).toBeDefined();
+    expect(document.activeElement).toBe(manageButton?.element);
+    wrapper.unmount();
+  });
+
+  it("moves focus to the Accept button when the manage-choice control reopens the banner", async () => {
+    localStorage.setItem(CONSENT_STORAGE_KEY, "declined");
+    const wrapper = mount(ConsentBanner, { attachTo: document.body });
+    await wrapper.vm.$nextTick();
+    const manageButton = wrapper
+      .findAll("button")
+      .find((button) => button.text() === MANAGE_CHOICE_TEXT);
+    await manageButton?.trigger("click");
+    await wrapper.vm.$nextTick();
+    const acceptButton = wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Accept");
+    expect(acceptButton).toBeDefined();
+    expect(document.activeElement).toBe(acceptButton?.element);
     wrapper.unmount();
   });
 });
