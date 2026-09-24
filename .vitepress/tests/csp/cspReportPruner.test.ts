@@ -32,6 +32,20 @@ function keyFromDaysAgo(daysAgo: number, suffix: string): string {
   return keyFromMsAgo(daysAgo * DAY_MS, suffix);
 }
 
+// Builds a key carrying the `rollout`/`other` tag violationKey() in
+// cspReportStore.ts embeds for real (see isRolloutKey there), so eviction-
+// priority tests can construct genuine script-src evidence and fabricated
+// non-script-src flood entries that isRolloutKey tells apart the same way
+// the pruner does in production.
+function taggedKeyFromDaysAgo(
+  daysAgo: number,
+  tag: "rollout" | "other",
+  suffix: string,
+): string {
+  const receivedAt = new Date(NOW.getTime() - daysAgo * DAY_MS).toISOString();
+  return `${sanitizeTimestamp(receivedAt)}-${tag}-${suffix}.json`;
+}
+
 // A BlobPrunerClient backed by an in-memory key list, split across the given
 // pages, and a real delete mock, so tests assert both the final result and
 // exactly which keys were deleted, without touching `@netlify/blobs`.
@@ -145,6 +159,61 @@ describe("createCspReportPruner", () => {
       keyFromDaysAgo(5, "oldest"),
       keyFromDaysAgo(4, "older"),
     ]);
+  });
+
+  it("protects genuine script-src evidence from a flood of fabricated non-script-src reports, even though the evidence is the oldest key in the store (#135)", async () => {
+    // The genuine rollout evidence: one real script-src violation, older
+    // than every flood entry below — under plain oldest-first eviction this
+    // would be first in line for deletion.
+    const genuineEvidence = taggedKeyFromDaysAgo(10, "rollout", "genuine");
+    // An attacker flooding the public, unauthenticated /csp-report endpoint
+    // with fabricated non-script-src reports, all newer than the evidence
+    // above, sized well past the count cap.
+    const flood = Array.from({ length: 50 }, (_, index) =>
+      taggedKeyFromDaysAgo(
+        1,
+        "other",
+        `flood-${String(index).padStart(2, "0")}`,
+      ),
+    );
+    const client = fakeClient([[genuineEvidence, ...flood]]);
+    const pruner = createCspReportPruner(client, {
+      retentionDays: 30,
+      maxBlobs: 10,
+    });
+
+    const result = await pruner.prune();
+
+    const deleted = deletedKeys(client);
+    // 51 total over a cap of 10 = 41 deletes, every one of them a flood
+    // entry — the genuine evidence must never appear here.
+    expect(result).toEqual({ deleted: 41, remaining: 10, complete: true });
+    expect(deleted).not.toContain(genuineEvidence);
+    expect(deleted.every((key) => flood.includes(key))).toBe(true);
+  });
+
+  it("only reaches into rollout keys once every non-rollout fresh key is already evicted and the store is still over cap", async () => {
+    const rolloutKeys = [
+      taggedKeyFromDaysAgo(5, "rollout", "oldest-evidence"),
+      taggedKeyFromDaysAgo(4, "rollout", "older-evidence"),
+      taggedKeyFromDaysAgo(3, "rollout", "newest-evidence"),
+    ];
+    const otherKeys = [
+      taggedKeyFromDaysAgo(2, "other", "a"),
+      taggedKeyFromDaysAgo(1, "other", "b"),
+    ];
+    const client = fakeClient([[...rolloutKeys, ...otherKeys]]);
+    const pruner = createCspReportPruner(client, {
+      retentionDays: 30,
+      // 5 total, cap of 2: both `other` keys go first, then the excess (1)
+      // spills into the oldest rollout key.
+      maxBlobs: 2,
+    });
+
+    const result = await pruner.prune();
+
+    expect(result).toEqual({ deleted: 3, remaining: 2, complete: true });
+    expect(deletedKeys(client)).toEqual([...otherKeys, rolloutKeys[0]]);
   });
 
   it("sorts keys chronologically across list pages, regardless of the order list() returns them in", async () => {

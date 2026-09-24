@@ -12,8 +12,18 @@
 // that file for why).
 import { getStore } from "@netlify/blobs";
 
-import { CSP_REPORT_STORE_NAME } from "./cspReportStore";
+import {
+  CSP_REPORT_STORE_NAME,
+  ROLLOUT_DIRECTIVE,
+  isRolloutDirective,
+} from "./cspReportStore";
 import type { StoredCspViolation } from "./cspReportStore";
+
+// Re-exported for backward compatibility: these were originally defined here
+// and are still the natural import for this module's own callers/tests, but
+// now live in cspReportStore.ts (see the comment there) because the write
+// path needs the same classification to tag stored keys for the pruner.
+export { ROLLOUT_DIRECTIVE, isRolloutDirective };
 
 export type BlobListEntry = { key: string };
 export type BlobPage = { blobs: BlobListEntry[] };
@@ -27,11 +37,6 @@ export type BlobSummaryClient = {
   list(_options: { paginate: true }): AsyncIterable<BlobPage>;
   get(_key: string, _options: { type: "json" }): Promise<unknown>;
 };
-
-// The directive this repo's rollout is watching. Once it stops firing over
-// the observation window, `'unsafe-inline'` can be dropped from the
-// enforcing `script-src` in netlify.toml.
-export const ROLLOUT_DIRECTIVE = "script-src";
 
 export type DirectiveCount = { directive: string; count: number };
 export type BlockedUriCount = { blockedUri: string; count: number };
@@ -69,9 +74,12 @@ export type CspReportSummary = {
   // Tracked separately from invalidEntries below and never logged (a key
   // vanishing between list and get isn't evidence of a corrupted blob), but
   // still folded into summarizeRollout's fail-closed gate: the pruner's
-  // count-cap pass evicts fresh keys oldest-first whenever the store is over
-  // CSP_REPORT_MAX_BLOBS, not only retention-aged ones, so a missing key can
-  // genuinely have been a recent violation this run lost the race to read.
+  // count-cap pass evicts non-rollout fresh keys oldest-first before ever
+  // touching rollout (script-src) keys (see isRolloutKey in
+  // cspReportStore.ts and #135), but can still reach a rollout key once the
+  // non-rollout backlog is exhausted, or via the separate retention-days
+  // pass — so a missing key can genuinely have been a recent violation this
+  // run lost the race to read.
   missingEntries: number;
   // A key that fetched something other than `null` but didn't parse as a
   // StoredCspViolation (a corrupted blob, or a future incompatible shape).
@@ -250,19 +258,6 @@ function aggregateByBlockedUri(
   );
 }
 
-// Browsers report the specific sub-directive a violation matched
-// (script-src-elem, script-src-attr) even when only the parent script-src is
-// declared in the policy — this site's CSP never sets those sub-directives
-// separately (see netlify.toml), so any of the three is evidence against the
-// same script-src rollout. An exact-match-only check would silently miss
-// most real violations and falsely read the rollout as clean.
-function isRolloutDirective(directive: string): boolean {
-  return (
-    directive === ROLLOUT_DIRECTIVE ||
-    directive.startsWith(`${ROLLOUT_DIRECTIVE}-`)
-  );
-}
-
 // The single most recent violation, so the rollout signal can report the
 // latest offender without sorting the whole matched array just to read
 // index 0. `receivedAt` is an ISO timestamp, so a plain string comparison
@@ -304,13 +299,18 @@ function summarizeRollout(
     // Fails closed on every way a script-src violation could be sitting in
     // the store without this run having read it: a failed fetch or an
     // unparsed/corrupted blob (fetchFailures/invalidEntries), or a key the
-    // hourly pruner's count-cap pass evicted mid-walk (missingEntries) —
-    // that cap trims *fresh* keys oldest-first whenever the store is over
-    // CSP_REPORT_MAX_BLOBS (see overCapKeys in cspReportPruner.ts), not only
-    // retention-aged ones, so a "missing" key here can genuinely have been a
-    // recent violation this run simply lost the race to read. This signal is
-    // what the README says authorizes dropping 'unsafe-inline' from the
-    // enforcing script-src, so a false "stopped" here would weaken a live
+    // hourly pruner's count-cap pass evicted mid-walk (missingEntries) — that
+    // cap trims *fresh* keys oldest-first whenever the store is over
+    // CSP_REPORT_MAX_BLOBS (see overCapKeys in cspReportPruner.ts). Non-
+    // rollout keys are evicted first there (see #135 and isRolloutKey in
+    // cspReportStore.ts), so a genuine script-src violation is only ever
+    // among them once every non-rollout fresh key is already gone — this gate
+    // is the backstop for exactly that remaining race (and for retention-aged
+    // rollout keys, an intentional tradeoff, not the eviction-flood gap
+    // isRolloutKey closes), so a "missing" key here can still genuinely have
+    // been a recent violation this run simply lost the race to read. This
+    // signal is what the README says authorizes dropping 'unsafe-inline' from
+    // the enforcing script-src, so a false "stopped" here would weaken a live
     // security header on bad evidence.
     //
     // Deliberately NOT gated on the store being non-empty: an empty store

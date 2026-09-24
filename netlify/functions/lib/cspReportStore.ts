@@ -39,14 +39,81 @@ export function sanitizeTimestamp(isoTimestamp: string): string {
   return isoTimestamp.replace(/[:.]/g, "-");
 }
 
-function violationKey(receivedAt: string): string {
-  return `${sanitizeTimestamp(receivedAt)}-${randomUUID()}.json`;
+// The directive this repo's rollout is watching. Once it stops firing over
+// the observation window, `'unsafe-inline'` can be dropped from the
+// enforcing `script-src` in netlify.toml. Owned here (the key-encoding
+// module) rather than in cspReportSummary.ts, because the write path below
+// now needs the same classification to tag each stored key — see
+// isRolloutKey. cspReportSummary.ts re-exports both so existing callers of
+// the read/aggregation path are unaffected.
+export const ROLLOUT_DIRECTIVE = "script-src";
+
+// Browsers report the specific sub-directive a violation matched
+// (script-src-elem, script-src-attr) even when only the parent script-src is
+// declared in the policy — this site's CSP never sets those sub-directives
+// separately (see netlify.toml), so any of the three is evidence against the
+// same script-src rollout. An exact-match-only check would silently miss
+// most real violations.
+export function isRolloutDirective(directive: string): boolean {
+  return (
+    directive === ROLLOUT_DIRECTIVE ||
+    directive.startsWith(`${ROLLOUT_DIRECTIVE}-`)
+  );
 }
+
+// Tag embedded in every stored key (see violationKey) so the pruner can tell
+// a rollout-relevant violation from any other report using only what list()
+// already returns — a get()-per-key classification pass would blow the
+// pruner's own time budget on a store large enough to need pruning (see
+// cspReportPruner.ts). This is what closes #135: the endpoint is public and
+// unauthenticated, so an attacker can flood it with fabricated non-script-src
+// reports; without a way to tell them apart from list() alone, the hourly
+// pruner's count-cap pass would evict genuine script-src evidence
+// oldest-first right alongside the flood, sometimes before the daily summary
+// ever reads it, producing a false "stopped: true" rollout signal.
+const ROLLOUT_KEY_TAG = "rollout";
+const OTHER_KEY_TAG = "other";
+
+function directiveTag(violation: CspViolation): string {
+  return isRolloutDirective(violation.effectiveDirective)
+    ? ROLLOUT_KEY_TAG
+    : OTHER_KEY_TAG;
+}
+
+// Fixed-width-prefix, then a fixed-set tag, then the uuid: cspReportPruner.ts
+// already slices a fixed-length timestamp prefix off the front of every key
+// (see RECEIVED_AT_PREFIX_LENGTH there) to sort chronologically without
+// parsing back to a Date; the tag rides directly after that prefix so it can
+// be read with the same kind of plain string slice, not a full parse.
+function violationKey(receivedAt: string, violation: CspViolation): string {
+  return `${sanitizeTimestamp(receivedAt)}-${directiveTag(violation)}-${randomUUID()}.json`;
+}
+
+// Exported so cspReportPruner.ts can classify a listed key without a Blobs
+// get() per key. Deliberately permissive about anything before the ROLLOUT_
+// KEY_TAG segment isn't matched: a key written before this tagging existed
+// (or a future format change) falls back to "not rollout", the safer
+// direction — it can still be evicted by the count cap like today, rather
+// than being silently granted unbounded protection it was never tagged for.
+export function isRolloutKey(key: string): boolean {
+  return key
+    .slice(RECEIVED_AT_PREFIX_LENGTH)
+    .startsWith(`-${ROLLOUT_KEY_TAG}-`);
+}
+
+// Keys are `<sanitized ISO receivedAt>-<tag>-<uuid>.json`. The sanitized
+// timestamp is fixed-width, so this is how both this module and
+// cspReportPruner.ts locate where the timestamp ends and the tag begins,
+// without parsing each key back into a Date. Exported so the pruner and this
+// module can never drift apart on what "the timestamp part" means.
+export const RECEIVED_AT_PREFIX_LENGTH = sanitizeTimestamp(
+  new Date(0).toISOString(),
+).length;
 
 function writeViolation(blobWriter: BlobWriter, receivedAt: string) {
   return (violation: CspViolation) => {
     const stored: StoredCspViolation = { ...violation, receivedAt };
-    return blobWriter.setJSON(violationKey(receivedAt), stored);
+    return blobWriter.setJSON(violationKey(receivedAt, violation), stored);
   };
 }
 

@@ -10,7 +10,11 @@
 // grow the store without limit over time. This module is invoked on an hourly
 // schedule (see ../csp-report-prune.ts) and enforces two independent caps:
 // - retentionDays: blobs older than this are always deleted.
-// - maxBlobs: whatever remains is trimmed to this count, oldest first. This
+// - maxBlobs: whatever remains is trimmed to this count, oldest first among
+//   non-rollout (non-script-src) reports before rollout reports are ever
+//   touched (see overCapKeys/isRolloutKey below and #135) — otherwise a flood
+//   of fabricated non-script-src reports at the public endpoint could evict
+//   genuine script-src evidence the same way real traffic ages it out. This
 //   is applied even on a run that couldn't finish listing the whole store —
 //   the partial count is still a valid lower bound on the real count, so
 //   trimming `partialCount - maxBlobs` keys can never remove more than is
@@ -24,7 +28,12 @@
 // a share of the run even when listing alone would consume the whole thing.
 import { getStore } from "@netlify/blobs";
 
-import { CSP_REPORT_STORE_NAME, sanitizeTimestamp } from "./cspReportStore";
+import {
+  CSP_REPORT_STORE_NAME,
+  RECEIVED_AT_PREFIX_LENGTH,
+  isRolloutKey,
+  sanitizeTimestamp,
+} from "./cspReportStore";
 
 export type BlobListEntry = { key: string };
 export type BlobPage = { blobs: BlobListEntry[] };
@@ -83,14 +92,13 @@ export const LIST_TIME_BUDGET_MS = Math.floor(PRUNE_TIME_BUDGET_MS / 2);
 // the real batch boundary instead of mirroring a magic number.
 export const DELETE_BATCH_SIZE = 50;
 
-// Keys are `<sanitized ISO receivedAt>-<uuid>.json` (see violationKey in
-// cspReportStore.ts). The sanitized timestamp is fixed-width, so slicing it
-// off the front of every key and comparing two prefixes as plain strings
-// orders keys chronologically without parsing each one back into a Date.
-const RECEIVED_AT_PREFIX_LENGTH = sanitizeTimestamp(
-  new Date(0).toISOString(),
-).length;
-
+// Keys are `<sanitized ISO receivedAt>-<tag>-<uuid>.json` (see violationKey
+// in cspReportStore.ts). The sanitized timestamp is fixed-width (see
+// RECEIVED_AT_PREFIX_LENGTH, imported from there so this module and the one
+// that writes the keys can never drift apart on what "the timestamp part"
+// means), so slicing it off the front of every key and comparing two
+// prefixes as plain strings orders keys chronologically without parsing each
+// one back into a Date.
 function receivedAtPrefix(key: string): string {
   return key.slice(0, RECEIVED_AT_PREFIX_LENGTH);
 }
@@ -206,9 +214,33 @@ async function deleteKeys(
 // partial (incomplete-listing) view: the count of keys actually seen is a
 // lower bound on the real store size, so trimming `seen - maxBlobs` of them
 // can never remove more than is genuinely in excess.
+//
+// Non-rollout keys are evicted first, oldest first; rollout (script-src)
+// keys are only touched once every non-rollout fresh key is already gone and
+// the store is still over cap. Without this split, a flood of fabricated
+// non-script-src reports at the public /csp-report endpoint (see #135) could
+// outnumber genuine script-src evidence badly enough that plain oldest-first
+// eviction deletes the real evidence before the daily summary ever reads it
+// — the flood doesn't need to out-age the evidence, it only needs to push
+// the store's fresh-key count past maxBlobs while the evidence happens to
+// sort among the oldest fresh keys. `isRolloutKey` reads this from the key
+// alone (see cspReportStore.ts), so this split costs nothing beyond the
+// filter below — no extra Blobs calls, no change to the pruner's time
+// budget. Retention-based eviction above (isStaleKey) is unaffected: a
+// script-src violation aging out past retentionDays is the same intentional
+// tradeoff it always was, not the eviction-flood gap this closes.
 function overCapKeys(freshKeysOldestFirst: string[], maxBlobs: number) {
   const overflow = freshKeysOldestFirst.length - maxBlobs;
-  return overflow > 0 ? freshKeysOldestFirst.slice(0, overflow) : [];
+  if (overflow <= 0) {
+    return [];
+  }
+  const otherKeys = freshKeysOldestFirst.filter((key) => !isRolloutKey(key));
+  if (otherKeys.length >= overflow) {
+    return otherKeys.slice(0, overflow);
+  }
+  const rolloutKeys = freshKeysOldestFirst.filter(isRolloutKey);
+  const rolloutOverflow = overflow - otherKeys.length;
+  return [...otherKeys, ...rolloutKeys.slice(0, rolloutOverflow)];
 }
 
 // Sorted ascending, so every stale key (older than cutoffPrefix) sorts before

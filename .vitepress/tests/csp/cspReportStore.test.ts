@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 import {
   createCspReportStore,
+  isRolloutKey,
   sanitizeTimestamp,
   type BlobWriter,
   type StoredCspViolation,
@@ -47,15 +48,30 @@ describe("createCspReportStore", () => {
       StoredCspViolation,
     ];
     // Asserts the sanitized shape specifically (no `:` or `.` left over from
-    // the raw ISO timestamp) — a looser pattern here would still pass if the
-    // `.replace(/[:.]/g, "-")` sanitization in violationKey were removed.
+    // the raw ISO timestamp) and the `rollout` tag (this violation's
+    // `script-src-elem` directive is rollout-relevant — see isRolloutKey) —
+    // a looser pattern here would still pass if the
+    // `.replace(/[:.]/g, "-")` sanitization or the tagging in violationKey
+    // were removed.
     expect(key).toMatch(
-      /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[0-9a-f-]{36}\.json$/,
+      /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-rollout-[0-9a-f-]{36}\.json$/,
     );
     expect(value.effectiveDirective).toBe("script-src-elem");
     expect(value.blockedUri).toBe("inline");
     expect(typeof value.receivedAt).toBe("string");
     expect(() => new Date(value.receivedAt).toISOString()).not.toThrow();
+  });
+
+  it("tags a non-rollout violation's key as `other` rather than `rollout`", async () => {
+    const blobWriter = fakeBlobWriter();
+    const store = createCspReportStore(blobWriter);
+
+    await store.persist([violation({ effectiveDirective: "img-src" })]);
+
+    const [key] = blobWriter.setJSON.mock.calls[0] as [string];
+    expect(key).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-other-[0-9a-f-]{36}\.json$/,
+    );
   });
 
   it("writes a batch of violations as distinct blobs with distinct keys", async () => {
@@ -117,5 +133,31 @@ describe("createCspReportStore", () => {
     await expect(store.persist([violation(), violation()])).rejects.toThrow(
       /quota exceeded.*key conflict|key conflict.*quota exceeded/,
     );
+  });
+});
+
+describe("isRolloutKey", () => {
+  it("recognizes a key written for a rollout-relevant violation", async () => {
+    const blobWriter = fakeBlobWriter();
+    const store = createCspReportStore(blobWriter);
+    await store.persist([violation({ effectiveDirective: "script-src" })]);
+    const [key] = blobWriter.setJSON.mock.calls[0] as [string];
+
+    expect(isRolloutKey(key)).toBe(true);
+  });
+
+  it("does not recognize a key written for a non-rollout violation", async () => {
+    const blobWriter = fakeBlobWriter();
+    const store = createCspReportStore(blobWriter);
+    await store.persist([violation({ effectiveDirective: "connect-src" })]);
+    const [key] = blobWriter.setJSON.mock.calls[0] as [string];
+
+    expect(isRolloutKey(key)).toBe(false);
+  });
+
+  it("falls back to false (evictable) for a key that predates tagging, rather than granting it unbounded protection", () => {
+    const legacyKey = `${sanitizeTimestamp("2026-01-01T00:00:00.000Z")}-${"a".repeat(36)}.json`;
+
+    expect(isRolloutKey(legacyKey)).toBe(false);
   });
 });
