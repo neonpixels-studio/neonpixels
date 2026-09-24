@@ -7,10 +7,6 @@ import { getNoindexHeaderLines } from "./robots/getNoindexHeaderLines";
 import { PROJECTS, type Project } from "./theme/data/projects";
 
 const SITE_URL = "https://neonpixels.dev";
-// GA4 property for neonpixels.dev. gtag.js loads from googletagmanager.com and
-// sends collection beacons to *.google-analytics.com — both are granted in the
-// CSP (see netlify.toml script-src/img-src/connect-src).
-const GA_MEASUREMENT_ID = "G-Y4448RR4CR";
 const DESCRIPTION =
   "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, Wanderist, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
 const OG_TITLE = "Neon Pixels — We build the missing apps";
@@ -103,20 +99,11 @@ export default defineConfig({
     hostname: SITE_URL,
   },
   head: [
-    // Google Analytics (gtag.js). The inline config script is picked up and
-    // hashed by the Report-Only CSP rollout automatically (see .vitepress/csp).
-    [
-      "script",
-      {
-        async: "",
-        src: `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`,
-      },
-    ],
-    [
-      "script",
-      {},
-      `window.dataLayer = window.dataLayer || [];\nfunction gtag(){dataLayer.push(arguments);}\ngtag('js', new Date());\ngtag('config', '${GA_MEASUREMENT_ID}');`,
-    ],
+    // Google Analytics is intentionally not declared here — it's injected at
+    // runtime, gated behind DNT/GPC and a consent banner, by
+    // .vitepress/theme/components/ConsentBanner.vue (see
+    // .vitepress/theme/analytics/ and csp-head-crosscheck.test.ts).
+    //
     // Fonts are self-hosted — see .vitepress/theme/index.ts
     // Canonical + theme color
     ["link", { rel: "canonical", href: SITE_URL }],

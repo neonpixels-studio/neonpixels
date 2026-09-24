@@ -4,9 +4,11 @@ import {
   createFailureNotifier,
   createFetchGithubIssuesClient,
   sanitizeReportedError,
+  buildStillFailingCommentBody,
   GITHUB_TOKEN_ENV_VAR,
   RENOTIFY_INTERVAL_MS,
   type FailureNotifierConfig,
+  type GithubComment,
 } from "../../../netlify/functions/lib/githubFailureNotifier";
 import {
   buildGithubClientStub,
@@ -45,8 +47,30 @@ function testConfig(
   };
 }
 
-function trackedIssue(number: number, updatedAt?: string) {
-  return trackedIssueWithMarker(TEST_ISSUE_MARKER, number, updatedAt);
+function trackedIssue(number: number, createdAt?: string) {
+  return trackedIssueWithMarker(TEST_ISSUE_MARKER, number, createdAt);
+}
+
+// A comment authored by this notifier itself — carries the same marker as a
+// tracked issue's body. Built from the real production body-builder rather
+// than a hand-written literal, so this stays in lockstep with what the
+// notifier actually posts — a hand-written marker here would keep passing
+// even if buildStillFailingCommentBody stopped stamping the marker in
+// production.
+function notifierComment(createdAt: string): GithubComment {
+  return {
+    body: buildStillFailingCommentBody(TEST_ISSUE_MARKER, "boom"),
+    created_at: createdAt,
+  };
+}
+
+// A comment from someone/something other than this notifier (a human reply,
+// a label-change side effect, another bot) — no marker in the body.
+function humanComment(createdAt: string): GithubComment {
+  return {
+    body: "Looking into this.",
+    created_at: createdAt,
+  };
 }
 
 describe("createFailureNotifier", () => {
@@ -202,17 +226,19 @@ describe("createFailureNotifier", () => {
     const JUST_INSIDE_WINDOW_MS = RENOTIFY_INTERVAL_MS - 60_000;
     const JUST_OUTSIDE_WINDOW_MS = RENOTIFY_INTERVAL_MS + 60_000;
 
-    it("does not re-comment on a tracked issue updated just inside the re-notify window, and logs the throttle", async () => {
+    // No notifier comment exists yet, so the fallback (the tracked issue's
+    // own created_at — see resolveLastNotifiedAt) drives the throttle. This
+    // is the state right after the notifier's first "opened the issue"
+    // notification.
+    it("does not re-comment on a freshly-opened tracked issue created just inside the re-notify window, and logs the throttle", async () => {
       const consoleLogSpy = vi
         .spyOn(console, "log")
         .mockImplementation(() => {});
+      const trackedIssueCreatedAt = new Date(
+        Date.now() - JUST_INSIDE_WINDOW_MS,
+      ).toISOString();
       const client = buildGithubClientStub({
-        existingIssues: [
-          trackedIssue(
-            7,
-            new Date(Date.now() - JUST_INSIDE_WINDOW_MS).toISOString(),
-          ),
-        ],
+        existingIssues: [trackedIssue(7, trackedIssueCreatedAt)],
       });
       const notifier = createFailureNotifier(client, testConfig());
 
@@ -223,14 +249,19 @@ describe("createFailureNotifier", () => {
       // Without this, the throttled path is silent: the caller only logs
       // on the underlying failure, so a deliberate no-op and a
       // silently-broken notifier would otherwise be indistinguishable in
-      // the logs.
+      // the logs. Asserts the full payload (not just that the "issue"
+      // field is present) so a dropped, misnamed, or malformed
+      // lastNotifiedAt field would fail this test.
       expect(consoleLogSpy).toHaveBeenCalledWith(
         TEST_THROTTLED_LOG_PREFIX,
-        expect.stringContaining('"issue":7'),
+        JSON.stringify({
+          issue: 7,
+          lastNotifiedAt: trackedIssueCreatedAt,
+        }),
       );
     });
 
-    it("comments again once the tracked issue's last update is just outside the re-notify window", async () => {
+    it("comments again once a freshly-opened tracked issue's creation is just outside the re-notify window", async () => {
       const client = buildGithubClientStub({
         existingIssues: [
           trackedIssue(
@@ -246,7 +277,7 @@ describe("createFailureNotifier", () => {
       expect(client.createComment).toHaveBeenCalledTimes(1);
     });
 
-    it("comments when the tracked issue has no updated_at at all", async () => {
+    it("comments when the tracked issue has no created_at and no notifier comments at all", async () => {
       const client = buildGithubClientStub({
         existingIssues: [
           { number: 7, body: TEST_ISSUE_MARKER, pull_request: undefined },
@@ -259,31 +290,132 @@ describe("createFailureNotifier", () => {
       expect(client.createComment).toHaveBeenCalledTimes(1);
     });
 
-    // Number.isNaN(updatedAtMs) is the only guard against GitHub (or a
-    // malformed fixture) returning an unparseable timestamp — without it,
-    // Date.now() - NaN is NaN, which is neither >= 0 nor < a real window,
-    // so this must resolve to "not throttled" the same as the missing-
-    // updated_at case above.
-    it("comments when the tracked issue's updated_at is unparseable", async () => {
+    // This is the #139 fix itself: the tracked issue's own created_at is
+    // ancient (well outside the window), but this notifier's own last
+    // comment is recent — the throttle must key off the comment, not fall
+    // through to the stale issue-creation fallback.
+    it("does not re-comment when this notifier's own last comment is inside the re-notify window, even though the issue itself is old", async () => {
       const client = buildGithubClientStub({
-        existingIssues: [trackedIssue(7, "not-a-date")],
+        existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
+        comments: [
+          notifierComment(
+            new Date(Date.now() - JUST_INSIDE_WINDOW_MS).toISOString(),
+          ),
+        ],
       });
       const notifier = createFailureNotifier(client, testConfig());
 
       await notifier.notify("blobs unavailable");
 
+      expect(client.createComment).not.toHaveBeenCalled();
+    });
+
+    // The core regression this fixes: a human comment (or any other
+    // activity that used to bump the issue's `updated_at`, e.g. a label
+    // change) must NOT reset the throttle — only this notifier's own
+    // comment does. Both comments are inside the window; only one is this
+    // notifier's.
+    it("does not treat a human's own recent comment as a re-notification — only this notifier's own comment resets the throttle", async () => {
+      const client = buildGithubClientStub({
+        existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
+        comments: [
+          // This notifier's last comment is just outside the window...
+          notifierComment(
+            new Date(Date.now() - JUST_OUTSIDE_WINDOW_MS).toISOString(),
+          ),
+          // ...but a human replied well inside the window afterward. Under
+          // the old updated_at-based throttle this would have silenced the
+          // notifier; it must not here.
+          humanComment(new Date(Date.now() - 60_000).toISOString()),
+        ],
+      });
+      const notifier = createFailureNotifier(client, testConfig());
+
+      await notifier.notify("still broken");
+
+      // Throttled off the human comment, this would be a no-op; the fix
+      // means it re-comments because the notifier's own last comment is
+      // stale.
       expect(client.createComment).toHaveBeenCalledTimes(1);
+    });
+
+    // Guards isNotifierComment's use of startsWith over includes: GitHub's
+    // "Quote reply" copies a quoted comment's raw body — marker included —
+    // with each line prefixed by `> `. That must NOT be mistaken for a
+    // fresh notification, or a maintainer quoting the notifier's own "still
+    // failing" comment to reply "on it" would reintroduce the exact bug
+    // this throttle rework fixes (unrelated human activity silencing the
+    // notifier).
+    it("does not treat a human's quote-reply of the notifier's own comment as a re-notification", async () => {
+      const client = buildGithubClientStub({
+        existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
+        comments: [
+          notifierComment(
+            new Date(Date.now() - JUST_OUTSIDE_WINDOW_MS).toISOString(),
+          ),
+          {
+            body: `> ${buildStillFailingCommentBody(TEST_ISSUE_MARKER, "boom").replaceAll("\n", "\n> ")}\n\nOn it.`,
+            created_at: new Date(Date.now() - 60_000).toISOString(),
+          },
+        ],
+      });
+      const notifier = createFailureNotifier(client, testConfig());
+
+      await notifier.notify("still broken");
+
+      expect(client.createComment).toHaveBeenCalledTimes(1);
+    });
+
+    it("throttles based on the most recent of this notifier's own comments when it has posted more than one", async () => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      const client = buildGithubClientStub({
+        existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
+        comments: [
+          notifierComment(
+            new Date(Date.now() - JUST_OUTSIDE_WINDOW_MS).toISOString(),
+          ),
+          notifierComment(
+            new Date(Date.now() - JUST_INSIDE_WINDOW_MS).toISOString(),
+          ),
+        ],
+      });
+      const notifier = createFailureNotifier(client, testConfig());
+
+      await notifier.notify("blobs unavailable");
+
+      expect(client.createComment).not.toHaveBeenCalled();
+    });
+
+    // Guards resolveLastNotifiedAt's Math.max over parsed timestamps: an
+    // unparseable created_at on one notifier comment must not poison the
+    // comparison and hide a separate, genuinely recent, valid notifier
+    // comment behind it.
+    it("ignores a notifier comment with an unparseable created_at and still throttles off a valid recent one", async () => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      const client = buildGithubClientStub({
+        existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
+        comments: [
+          notifierComment("not-a-real-date"),
+          notifierComment(
+            new Date(Date.now() - JUST_INSIDE_WINDOW_MS).toISOString(),
+          ),
+        ],
+      });
+      const notifier = createFailureNotifier(client, testConfig());
+
+      await notifier.notify("blobs unavailable");
+
+      expect(client.createComment).not.toHaveBeenCalled();
     });
 
     // A notifier whose own schedule is already sparser than any meaningful
     // window (e.g. notifySummaryFailure.ts's daily cadence) passes
     // renotifyIntervalMs: 0 so every failed run comments/creates regardless
-    // of the tracked issue's updated_at.
-    it("never throttles when renotifyIntervalMs is 0, even for an issue updated a second ago", async () => {
+    // of the tracked issue's own comment history.
+    it("never throttles when renotifyIntervalMs is 0, even for a notifier comment posted a second ago", async () => {
       const client = buildGithubClientStub({
-        existingIssues: [
-          trackedIssue(7, new Date(Date.now() - 1000).toISOString()),
-        ],
+        existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
+        comments: [notifierComment(new Date(Date.now() - 1000).toISOString())],
       });
       const notifier = createFailureNotifier(
         client,
@@ -295,43 +427,71 @@ describe("createFailureNotifier", () => {
       expect(client.createComment).toHaveBeenCalledTimes(1);
     });
 
-    // GitHub can stamp updated_at slightly ahead of this container's own
-    // (NTP-skewed) clock, making Date.now() - updatedAtMs go negative. With
-    // renotifyIntervalMs: 0, that must still resolve to "not throttled" —
-    // relying on `elapsed < 0` (a naive `< renotifyIntervalMs` comparison)
-    // would instead read as "within the window" and silently swallow a real
-    // failure notification.
-    it("never throttles when renotifyIntervalMs is 0, even for a future-dated updated_at", async () => {
+    // Asserts against the fake client rather than only through the real
+    // fetch adapter's URL string: the throttle window (renotifyIntervalMs)
+    // is domain policy computed in notify() itself and handed to
+    // listComments as a plain argument, specifically so a fake client can
+    // observe and honor the same window a real GitHub call would.
+    it("passes the tracked issue's number and a since timestamp scoped to the re-notify window to listComments", async () => {
       const client = buildGithubClientStub({
-        existingIssues: [
-          trackedIssue(7, new Date(Date.now() + 60_000).toISOString()),
-        ],
+        existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
       });
-      const notifier = createFailureNotifier(
-        client,
-        testConfig({ renotifyIntervalMs: 0 }),
-      );
+      const notifier = createFailureNotifier(client, testConfig());
+      const beforeCall = Date.now();
 
       await notifier.notify("blobs unavailable");
 
-      expect(client.createComment).toHaveBeenCalledTimes(1);
+      expect(client.listComments).toHaveBeenCalledTimes(1);
+      const [issueNumber, sinceIso] = client.listComments.mock.calls[0];
+      expect(issueNumber).toBe(7);
+      const sinceMs = Date.parse(sinceIso);
+      const expectedSinceMs = beforeCall - RENOTIFY_INTERVAL_MS;
+      // Allow a small window for test execution time rather than asserting
+      // exact equality against a value computed before the call ran.
+      expect(Math.abs(sinceMs - expectedSinceMs)).toBeLessThan(5000);
     });
 
-    // The same clock-skew scenario, but with a real non-zero window (the
-    // prune notifier's case): a future-dated updated_at must not throttle
-    // either, since "not within the window" is the safe default when the
-    // elapsed time can't be trusted.
-    it("does not throttle a non-zero window either when updated_at is future-dated", async () => {
-      const client = buildGithubClientStub({
-        existingIssues: [
-          trackedIssue(7, new Date(Date.now() + 60_000).toISOString()),
-        ],
-      });
+    it("does not call listComments when opening a brand-new issue", async () => {
+      const client = buildGithubClientStub({ existingIssues: [] });
       const notifier = createFailureNotifier(client, testConfig());
 
       await notifier.notify("blobs unavailable");
 
-      expect(client.createComment).toHaveBeenCalledTimes(1);
+      expect(client.listComments).not.toHaveBeenCalled();
+    });
+
+    // A notifier with the throttle disabled (renotifyIntervalMs: 0) skips
+    // the listComments lookup entirely rather than paying for a call whose
+    // result can never matter.
+    it("does not call listComments when renotifyIntervalMs is 0", async () => {
+      const client = buildGithubClientStub({
+        existingIssues: [trackedIssue(7)],
+      });
+      const notifier = createFailureNotifier(
+        client,
+        testConfig({ renotifyIntervalMs: 0 }),
+      );
+
+      await notifier.notify("blobs unavailable");
+
+      expect(client.listComments).not.toHaveBeenCalled();
+    });
+
+    // Symmetric with the issue-creation/comment propagation tests above: a
+    // broken listComments call (bad token, disabled issues) must surface
+    // instead of silently falling back to "never notified" and commenting
+    // anyway.
+    it("propagates an error from listComments instead of swallowing it", async () => {
+      const client = buildGithubClientStub({
+        existingIssues: [trackedIssue(7)],
+        listCommentsImpl: () => Promise.reject(new Error("API unavailable")),
+      });
+      const notifier = createFailureNotifier(client, testConfig());
+
+      await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
+        "API unavailable",
+      );
+      expect(client.createComment).not.toHaveBeenCalled();
     });
   });
 });
@@ -608,6 +768,62 @@ describe("createFetchGithubIssuesClient", () => {
 
     await expect(client.listOpenIssuesByLabel(TEST_LABEL)).rejects.toThrow(
       "GitHub API issues list response was not an array",
+    );
+  });
+
+  it("authenticates a listComments request with the configured token, since param, and hits the right endpoint", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify([{ body: "still failing" }]), {
+        status: 200,
+      }),
+    );
+    const client = createFetchGithubIssuesClient();
+    const sinceIso = new Date(Date.now() - RENOTIFY_INTERVAL_MS).toISOString();
+
+    const comments = await client.listComments(7, sinceIso);
+
+    expect(comments).toEqual([{ body: "still failing" }]);
+    const [listUrl, listInit] = vi.mocked(fetch).mock.calls[0];
+    const listUrlString = String(listUrl);
+    expect(listUrlString).toContain(
+      "/repos/neonpixels-studio/neonpixels/issues/7/comments",
+    );
+    expect(listUrlString).toContain("per_page=100");
+    // Confirms the pagination fix: listComments must scope the request to
+    // the throttle window via `since` rather than trusting an unfiltered
+    // page 1, which on a busy issue could permanently hide a genuinely
+    // recent comment behind older ones (GitHub returns issue comments
+    // oldest-first).
+    expect(listUrlString).toContain(`since=${encodeURIComponent(sinceIso)}`);
+    expect((listInit?.headers as Record<string, string>).Authorization).toBe(
+      "Bearer test-token",
+    );
+  });
+
+  it("throws a descriptive error when the comments list response is valid JSON but not an array", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ message: "Bad credentials" }), {
+        status: 200,
+      }),
+    );
+    const client = createFetchGithubIssuesClient();
+
+    await expect(client.listComments(7, "2020-01-01T00:00:00.000Z")).rejects.toThrow(
+      "GitHub API comments list response was not an array",
+    );
+  });
+
+  it("throws a descriptive error when the comments list response isn't valid JSON", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch).mockResolvedValue(
+      new Response("<html>not json</html>", { status: 200 }),
+    );
+    const client = createFetchGithubIssuesClient();
+
+    await expect(client.listComments(7, "2020-01-01T00:00:00.000Z")).rejects.toThrow(
+      "GitHub API comments list response was not valid JSON",
     );
   });
 });

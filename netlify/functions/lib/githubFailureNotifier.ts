@@ -15,13 +15,22 @@ export type GithubIssueOrPullRequest = {
   number: number;
   body?: string;
   pull_request?: unknown;
-  // GitHub bumps this on every comment (not just edits), so it doubles as
-  // "when was this issue last touched" without a second API call to list
-  // comments. Used to throttle re-notification below.
-  updated_at?: string;
+  // Used as the re-notify fallback timestamp below: a notifier's own *first*
+  // notification for a failure streak is the moment it opened this issue,
+  // so before any of its own comments exist, throttling from here is
+  // correct. Once the notifier has posted a comment, that comment's
+  // created_at takes over — see resolveLastNotifiedAt.
+  created_at?: string;
 };
 
-// The three GitHub capabilities a notifier needs, so tests can inject a fake
+// A single comment on a tracked issue. Only the fields the duplicate-guard
+// needs to identify a notifier's own comments and time them.
+export type GithubComment = {
+  body?: string;
+  created_at?: string;
+};
+
+// The four GitHub capabilities a notifier needs, so tests can inject a fake
 // without mocking `fetch`/the GitHub API.
 export type GithubIssuesClient = {
   listOpenIssuesByLabel(_label: string): Promise<GithubIssueOrPullRequest[]>;
@@ -31,6 +40,19 @@ export type GithubIssuesClient = {
     body: string;
   }): Promise<void>;
   createComment(_issueNumber: number, _body: string): Promise<void>;
+  // Only called once a tracked issue is already found (the failure path) —
+  // see the re-notify throttle below. Not needed on the "open a fresh
+  // issue" path, so it stays off the hot path for a healthy run, and is
+  // skipped entirely by a notifier that disables the throttle (see
+  // renotifyIntervalMs on FailureNotifierConfig). `sinceIso` is the
+  // throttle window's start, computed by the caller (see notify() below)
+  // rather than inside an adapter — domain policy (renotifyIntervalMs)
+  // stays in the notifier, so a fake client in tests can observe and honor
+  // the exact same window a real GitHub call would.
+  listComments(
+    _issueNumber: number,
+    _sinceIso: string,
+  ): Promise<GithubComment[]>;
 };
 
 // GitHub caps the issues list endpoint at 30 results per page by default;
@@ -80,47 +102,44 @@ export function sanitizeReportedError(errorMessage: string): string {
 // meaningful at all: at the pruner's hourly cadence, a failure streak would
 // otherwise bury the original diagnosis under one near-identical "still
 // failing" comment per run, so RENOTIFY_INTERVAL_MS below suppresses that.
-// GitHub bumps an issue's updated_at on every comment (not just edits), so
-// this needs no extra API call to check. Trade-off: updated_at also moves on
-// a human's own comment (e.g. "looking into this"), which silences a
-// notifier for the same window even if the failure's error message changes
-// in the meantime — a deliberate choice to keep this at one API call per run
-// rather than a second `listComments` call to track each notifier's own
-// last-comment time specifically (see issue #139 for revisiting this). A
-// notifier whose schedule is already sparser than the window (e.g. the
-// summary notifier's `@daily` run against a multi-hour window) would only
-// ever pay that trade-off's downside for none of the upside — consecutive
-// runs are already far enough apart that a real streak can't pile up
-// same-window comments — so such a notifier passes `renotifyIntervalMs: 0`
-// in its FailureNotifierConfig instead of reusing this constant.
+//
+// This used to throttle off the issue's `updated_at`, which GitHub bumps on
+// *any* activity — a human comment, label change, or edit — not just a
+// notifier's own comments. That silenced re-notification for up to
+// RENOTIFY_INTERVAL_MS after unrelated human activity even while the
+// underlying failure kept changing (see #139). Instead this throttles off
+// the created_at of a notifier's own last comment (marked with the
+// configured issueMarker, same as the issue body — see
+// resolveLastNotifiedAt), found via one extra `listComments` call on the
+// failure path (an existing tracked issue is already found). That call is
+// deliberately confined to the failure path rather than made unconditional:
+// a healthy run never reaches here at all, and the common failure case
+// (first failure of a streak) opens a fresh issue instead of listing
+// comments on one.
+//
+// A notifier whose schedule is already sparser than any meaningful window
+// (e.g. the summary notifier's `@daily` run) would only ever pay the extra
+// `listComments` call for no throttling benefit — consecutive runs are
+// already far enough apart that a real streak can't pile up same-window
+// comments — so such a notifier passes `renotifyIntervalMs: 0` in its
+// FailureNotifierConfig instead of reusing this constant, which skips the
+// throttle computation (and the `listComments` call) entirely.
 export const RENOTIFY_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+// Takes a required epoch-ms timestamp rather than `number | undefined` — the
+// caller (notify() below) already has to narrow the undefined case for
+// TypeScript to accept indexing into it for the log line, so this stays a
+// single guard at the one call site instead of two.
 function isWithinRenotifyWindow(
-  issue: GithubIssueOrPullRequest,
+  lastNotifiedAtMs: number,
   renotifyIntervalMs: number,
 ): boolean {
-  // A notifier that wants no throttling passes 0 (see notifySummaryFailure.ts).
-  // Handled explicitly rather than relying on the arithmetic below to yield
-  // "never throttled": a tracked issue's updated_at stamped by GitHub
-  // slightly ahead of this container's own (NTP-skewed) clock would
-  // otherwise produce a negative elapsed time, which is still `< 0` and so
-  // would incorrectly throttle — exactly the silent-failure mode this
-  // feature exists to prevent.
-  if (renotifyIntervalMs <= 0) {
-    return false;
-  }
-  if (!issue.updated_at) {
-    return false;
-  }
-  const updatedAtMs = Date.parse(issue.updated_at);
-  if (Number.isNaN(updatedAtMs)) {
-    return false;
-  }
-  const elapsedMs = Date.now() - updatedAtMs;
-  // elapsedMs can itself go slightly negative from the same clock-skew
-  // scenario even with a non-zero window; treated as "not within the
-  // window" (comment/create fires) rather than as "infinitely within it"
-  // for the same reason as the renotifyIntervalMs <= 0 guard above.
+  const elapsedMs = Date.now() - lastNotifiedAtMs;
+  // elapsedMs can go slightly negative if GitHub stamps a timestamp ahead of
+  // this container's own (NTP-skewed) clock; treated as "not within the
+  // window" (comment/create fires) rather than as "infinitely within it" —
+  // the safe direction is an extra notification, not a silently swallowed
+  // one.
   return elapsedMs >= 0 && elapsedMs < renotifyIntervalMs;
 }
 
@@ -139,6 +158,66 @@ function isTrackedFailureIssue(
   );
 }
 
+// A comment counts as a notifier's own only if it carries the same marker
+// the notifier stamps into every issue body and "still failing" comment it
+// writes, as the *first* line specifically — mirrors isTrackedFailureIssue's
+// reasoning above (a human reply or an unrelated bot comment must not be
+// mistaken for a prior notification), but checking `startsWith` rather than
+// `includes` also rules out GitHub's "Quote reply", which copies the quoted
+// body verbatim (HTML comments included) with each line prefixed by `> `.
+// Without this distinction, a maintainer quoting the notifier's own comment
+// to reply "on it" would itself look like a fresh notification and
+// reintroduce the exact bug this throttle rework fixes (see #139): unrelated
+// human activity silencing the notifier.
+function isNotifierComment(comment: GithubComment, issueMarker: string): boolean {
+  return (comment.body ?? "").startsWith(issueMarker);
+}
+
+// GitHub's per-issue comments endpoint returns oldest-first with no
+// sort/direction override; `listComments` narrows the request with `since`
+// (the throttle window) so an unfiltered page 1 doesn't get stuck showing
+// only the oldest matches, but page 1 within that window can still miss a
+// recent comment if the issue receives more than LIST_PAGE_SIZE comments
+// inside a single renotifyIntervalMs window. That's an extreme, essentially
+// pathological rate for a multi-hour throttle to be exercised against — and
+// if it happens, this fails open (falls back to `issue.created_at`, so the
+// notifier re-comments), which is the safe direction: an extra "still
+// failing" comment on an already-noisy issue, not a silently missed one.
+function resolveLastNotifiedAt(
+  issue: GithubIssueOrPullRequest,
+  comments: GithubComment[],
+  issueMarker: string,
+): number | undefined {
+  const notifierCommentTimestampsMs = comments
+    .filter((comment) => isNotifierComment(comment, issueMarker))
+    .map((comment) => Date.parse(comment.created_at ?? ""))
+    .filter((timestampMs) => !Number.isNaN(timestampMs));
+  if (notifierCommentTimestampsMs.length === 0) {
+    // No (parseable) comment from this notifier yet — the issue's own
+    // creation (which this notifier performed, and which already carries
+    // the marker) is the most recent notification.
+    const issueCreatedAtMs = Date.parse(issue.created_at ?? "");
+    return Number.isNaN(issueCreatedAtMs) ? undefined : issueCreatedAtMs;
+  }
+  return Math.max(...notifierCommentTimestampsMs);
+}
+
+// Reuses the issue-body marker rather than a second constant: both mean the
+// same thing ("this notifier authored this"), just on different GitHub
+// objects (issue vs. comment). Carrying it into every "still failing"
+// comment is what lets resolveLastNotifiedAt above tell a notifier's own
+// comments apart from a human's "looking into this" reply when it lists
+// comments on the failure path.
+export function buildStillFailingCommentBody(
+  issueMarker: string,
+  errorMessage: string,
+): string {
+  return [
+    issueMarker,
+    `Still failing. Latest error: ${sanitizeReportedError(errorMessage)}`,
+  ].join("\n");
+}
+
 export type FailureNotifier = {
   notify(_errorMessage: string): Promise<void>;
 };
@@ -154,9 +233,10 @@ export type FailureNotifierConfig = {
   // Distinct per notifier so a grep for one Function's throttle log doesn't
   // also turn up the other's.
   throttledLogPrefix: string;
-  // How long a tracked issue's own updated_at suppresses a re-comment for —
-  // see the comment on RENOTIFY_INTERVAL_MS above for why this is
-  // per-notifier rather than a single shared constant.
+  // How long a notifier's own last comment (or the tracked issue's creation,
+  // before any comment exists) suppresses a re-comment for — see the
+  // comment on RENOTIFY_INTERVAL_MS above for why this is per-notifier
+  // rather than a single shared constant. 0 disables the throttle entirely.
   renotifyIntervalMs: number;
 };
 
@@ -180,36 +260,58 @@ export function createFailureNotifier(
       const existingIssue = openIssues.find((issue) =>
         isTrackedFailureIssue(issue, config.issueMarker),
       );
-      if (
-        existingIssue &&
-        isWithinRenotifyWindow(existingIssue, config.renotifyIntervalMs)
-      ) {
-        // Otherwise a throttled run leaves zero trace anywhere: the handler
-        // only logs on the underlying failure, not on this deliberate
-        // no-op, so a real failure whose only visible effect was "notify
-        // did nothing" would be indistinguishable from a notifier that
-        // silently broke.
-        console.log(
-          config.throttledLogPrefix,
-          JSON.stringify({
-            issue: existingIssue.number,
-            updatedAt: existingIssue.updated_at,
-          }),
-        );
+      if (!existingIssue) {
+        await client.createIssue({
+          title: config.issueTitle,
+          labels: [config.trackingLabel],
+          body: config.buildIssueBody(errorMessage),
+        });
         return;
       }
-      if (existingIssue) {
-        await client.createComment(
+      // A notifier that disables the throttle (renotifyIntervalMs: 0, e.g.
+      // the daily summary notifier) always comments — skipping the
+      // `listComments` call and its throttle bookkeeping entirely rather
+      // than paying for a lookup whose result can never matter.
+      if (config.renotifyIntervalMs > 0) {
+        // Computed here (domain policy — the throttle window) rather than
+        // inside the adapter, so a fake GithubIssuesClient in tests can
+        // observe and honor the same window the real one does instead of
+        // the adapter silently deciding it out of the fake's reach.
+        const sinceIso = new Date(
+          Date.now() - config.renotifyIntervalMs,
+        ).toISOString();
+        const comments = await client.listComments(
           existingIssue.number,
-          `Still failing. Latest error: ${sanitizeReportedError(errorMessage)}`,
+          sinceIso,
         );
-        return;
+        const lastNotifiedAtMs = resolveLastNotifiedAt(
+          existingIssue,
+          comments,
+          config.issueMarker,
+        );
+        if (
+          lastNotifiedAtMs !== undefined &&
+          isWithinRenotifyWindow(lastNotifiedAtMs, config.renotifyIntervalMs)
+        ) {
+          // Otherwise a throttled run leaves zero trace anywhere: the
+          // caller only logs on the underlying failure, not on this
+          // deliberate no-op, so a real failure whose only visible effect
+          // was "notify did nothing" would be indistinguishable from a
+          // notifier that silently broke.
+          console.log(
+            config.throttledLogPrefix,
+            JSON.stringify({
+              issue: existingIssue.number,
+              lastNotifiedAt: new Date(lastNotifiedAtMs).toISOString(),
+            }),
+          );
+          return;
+        }
       }
-      await client.createIssue({
-        title: config.issueTitle,
-        labels: [config.trackingLabel],
-        body: config.buildIssueBody(errorMessage),
-      });
+      await client.createComment(
+        existingIssue.number,
+        buildStillFailingCommentBody(config.issueMarker, errorMessage),
+      );
     },
   };
 }
@@ -375,6 +477,24 @@ export function createFetchGithubIssuesClient(): GithubIssuesClient {
       // Unlike createIssue, this response body is never inspected — drain it
       // explicitly rather than leaving it unconsumed.
       await response.body?.cancel();
+    },
+    async listComments(issueNumber, sinceIso) {
+      // Scoped to the throttle window (sinceIso, computed by the caller)
+      // rather than relying on page-1 ordering: GitHub returns issue
+      // comments oldest-first with no sort/direction override, so an
+      // unscoped page 1 on a busy issue could permanently miss a genuinely
+      // recent comment once the issue passes LIST_PAGE_SIZE comments total.
+      // `since` filters server-side instead, so only comments that could
+      // possibly matter for the throttle are ever fetched.
+      const response = await githubRequest(
+        `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issueNumber}/comments?per_page=${LIST_PAGE_SIZE}&since=${encodeURIComponent(sinceIso)}`,
+        { method: "GET" },
+      );
+      const payload = await parseJson(response, "comments list");
+      if (!Array.isArray(payload)) {
+        throw new Error("GitHub API comments list response was not an array");
+      }
+      return payload as GithubComment[];
     },
   };
 }
