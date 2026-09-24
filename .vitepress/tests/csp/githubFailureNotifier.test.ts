@@ -710,6 +710,51 @@ describe("createFetchGithubIssuesClient", () => {
     });
   });
 
+  // A 200/201 isn't proof of the expected shape — mirrors the
+  // Array.isArray guards on listOpenIssuesByLabel/listComments below, but
+  // matters more here: by this point the issue already exists on GitHub
+  // (the POST already succeeded), so an unguarded cast would throw a raw,
+  // unattributed TypeError from dereferencing `created.labels` on a
+  // malformed payload, orphaning an issue the next run's duplicate guard
+  // can never find again (it's unlabeled and untracked).
+  it("throws a descriptive error when the issue creation response is valid JSON but not an issue object", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: "Bad credentials" }), {
+        status: 200,
+      }),
+    );
+    const client = createFetchGithubIssuesClient();
+
+    await expect(
+      client.createIssue({
+        title: TEST_ISSUE_TITLE,
+        labels: [TEST_LABEL],
+        body: "body text",
+      }),
+    ).rejects.toThrow(
+      "GitHub API issue creation response was not an issue object",
+    );
+  });
+
+  it("throws a descriptive error when the issue creation response is null", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify(null), { status: 200 }),
+    );
+    const client = createFetchGithubIssuesClient();
+
+    await expect(
+      client.createIssue({
+        title: TEST_ISSUE_TITLE,
+        labels: [TEST_LABEL],
+        body: "body text",
+      }),
+    ).rejects.toThrow(
+      "GitHub API issue creation response was not an issue object",
+    );
+  });
+
   // GitHub silently drops labels the token can't apply instead of erroring.
   // If that happened here, the duplicate guard (which filters
   // listOpenIssuesByLabel by this exact label) would never see the issue

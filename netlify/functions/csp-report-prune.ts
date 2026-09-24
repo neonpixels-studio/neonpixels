@@ -1,3 +1,4 @@
+import { errorMessage } from "./lib/errorMessage";
 import { getCspReportPruner } from "./lib/cspReportPruner";
 import { getPruneFailureNotifier } from "./lib/notifyPruneFailure";
 import { withTimeout } from "./lib/withTimeout";
@@ -60,10 +61,6 @@ export const NOTIFY_TIMEOUT_MS = 5000;
 // csp-report-prune-failed marker instead of the run being silently killed
 // with nothing written to the logs.
 export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - NOTIFY_TIMEOUT_MS;
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 // Best-effort: a broken notifier (bad/missing PRUNE_FAILURE_GITHUB_TOKEN,
 // GitHub API outage, hang past NOTIFY_TIMEOUT_MS) must not crash the handler

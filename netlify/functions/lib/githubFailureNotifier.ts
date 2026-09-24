@@ -1,4 +1,13 @@
-import { errorMessage } from "./errorMessage";
+// Aliased on import: this module's own functions (sanitizeReportedError,
+// buildStillFailingCommentBody, notify) all take a parameter named
+// `errorMessage` (a string — the failure text being reported), which would
+// otherwise shadow this import (a function) inside every one of them. The
+// shadowing wouldn't be a compile error — TypeScript accepts a parameter
+// that shadows an outer function binding — so a later call to
+// `errorMessage(...)` added inside any of those functions would silently
+// resolve to the shadowed string and fail at runtime instead of at compile
+// time.
+import { errorMessage as toErrorMessage } from "./errorMessage";
 
 // Generic GitHub-issue duplicate-guard notifier, extracted so a second
 // scheduled Function's failure notifier (csp-report-summary's, in
@@ -448,13 +457,17 @@ async function attachLabels(
     );
   } catch (labelAttachError) {
     throw new Error(
-      `GitHub API issue creation did not apply all requested labels (${labels.join(", ")}) to issue #${issueNumber}, and retrying the label attach also failed: ${errorMessage(labelAttachError)}`,
+      `GitHub API issue creation did not apply all requested labels (${labels.join(", ")}) to issue #${issueNumber}, and retrying the label attach also failed: ${toErrorMessage(labelAttachError)}`,
       { cause: labelAttachError },
     );
   }
   // Never inspected, same as createComment's response below — drain it
-  // explicitly rather than leaving it unconsumed.
-  await labelResponse.body?.cancel();
+  // explicitly rather than leaving it unconsumed. The label is already
+  // applied on GitHub's side by this point (the POST above already
+  // resolved), so a rejected drain (e.g. a disturbed/errored stream) is
+  // swallowed rather than propagated: letting it reject here would surface
+  // as a broken notification even though the label attach itself succeeded.
+  await labelResponse.body?.cancel().catch(() => {});
 }
 
 export function createFetchGithubIssuesClient(): GithubIssuesClient {
@@ -479,7 +492,24 @@ export function createFetchGithubIssuesClient(): GithubIssuesClient {
         `/repos/${REPO_OWNER}/${REPO_NAME}/issues`,
         { method: "POST", body: JSON.stringify(input) },
       );
-      const created = (await parseJson(response, "issue creation")) as {
+      const payload = await parseJson(response, "issue creation");
+      // Same reasoning as the array checks in listOpenIssuesByLabel/
+      // listComments below: a 200/201 isn't proof of the expected shape. This
+      // one matters more than those — by this point the issue already exists
+      // on GitHub (the POST above already succeeded), so an uncaught
+      // TypeError from dereferencing a malformed payload wouldn't just be an
+      // unclear error, it would also leak an orphaned, possibly-unlabeled
+      // issue that the next run's duplicate guard can't find.
+      if (
+        typeof payload !== "object" ||
+        payload === null ||
+        typeof (payload as { number?: unknown }).number !== "number"
+      ) {
+        throw new Error(
+          "GitHub API issue creation response was not an issue object",
+        );
+      }
+      const created = payload as {
         number: number;
         labels?: Array<{ name?: string }>;
       };
@@ -500,8 +530,11 @@ export function createFetchGithubIssuesClient(): GithubIssuesClient {
         { method: "POST", body: JSON.stringify({ body }) },
       );
       // Unlike createIssue, this response body is never inspected — drain it
-      // explicitly rather than leaving it unconsumed.
-      await response.body?.cancel();
+      // explicitly rather than leaving it unconsumed. The comment is already
+      // posted by this point, so a rejected drain is swallowed rather than
+      // propagated — otherwise a disturbed/errored stream here would
+      // misreport a successfully-delivered notification as broken.
+      await response.body?.cancel().catch(() => {});
     },
     async listComments(issueNumber, sinceIso) {
       // Scoped to the throttle window (sinceIso, computed by the caller)
