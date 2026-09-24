@@ -49,13 +49,15 @@ export function buildGithubClientStub({
       ? vi.fn().mockImplementation(listCommentsImpl)
       : vi
           .fn()
-          .mockImplementation(async (_issueNumber: number, sinceIso: string) => {
-            const sinceMs = Date.parse(sinceIso);
-            return comments.filter((comment) => {
-              const createdAtMs = Date.parse(comment.created_at ?? "");
-              return Number.isNaN(createdAtMs) || createdAtMs >= sinceMs;
-            });
-          }),
+          .mockImplementation(
+            async (_issueNumber: number, sinceIso: string) => {
+              const sinceMs = Date.parse(sinceIso);
+              return comments.filter((comment) => {
+                const createdAtMs = Date.parse(comment.created_at ?? "");
+                return Number.isNaN(createdAtMs) || createdAtMs >= sinceMs;
+              });
+            },
+          ),
   };
 }
 

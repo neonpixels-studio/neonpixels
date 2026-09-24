@@ -169,7 +169,10 @@ function isTrackedFailureIssue(
 // to reply "on it" would itself look like a fresh notification and
 // reintroduce the exact bug this throttle rework fixes (see #139): unrelated
 // human activity silencing the notifier.
-function isNotifierComment(comment: GithubComment, issueMarker: string): boolean {
+function isNotifierComment(
+  comment: GithubComment,
+  issueMarker: string,
+): boolean {
   return (comment.body ?? "").startsWith(issueMarker);
 }
 

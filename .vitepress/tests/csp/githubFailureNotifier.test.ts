@@ -810,9 +810,9 @@ describe("createFetchGithubIssuesClient", () => {
     );
     const client = createFetchGithubIssuesClient();
 
-    await expect(client.listComments(7, "2020-01-01T00:00:00.000Z")).rejects.toThrow(
-      "GitHub API comments list response was not an array",
-    );
+    await expect(
+      client.listComments(7, "2020-01-01T00:00:00.000Z"),
+    ).rejects.toThrow("GitHub API comments list response was not an array");
   });
 
   it("throws a descriptive error when the comments list response isn't valid JSON", async () => {
@@ -822,8 +822,8 @@ describe("createFetchGithubIssuesClient", () => {
     );
     const client = createFetchGithubIssuesClient();
 
-    await expect(client.listComments(7, "2020-01-01T00:00:00.000Z")).rejects.toThrow(
-      "GitHub API comments list response was not valid JSON",
-    );
+    await expect(
+      client.listComments(7, "2020-01-01T00:00:00.000Z"),
+    ).rejects.toThrow("GitHub API comments list response was not valid JSON");
   });
 });
