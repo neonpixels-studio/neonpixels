@@ -185,10 +185,11 @@ export function buildStillFailingCommentBody(errorMessage: string): string {
 // pass for any interval between roughly a second and several years.
 export const RENOTIFY_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-function isWithinRenotifyWindow(lastNotifiedAtMs: number | undefined): boolean {
-  if (lastNotifiedAtMs === undefined) {
-    return false;
-  }
+// Takes a required epoch-ms timestamp rather than `number | undefined` — the
+// caller (notify() below) already has to narrow the undefined case for
+// TypeScript to accept indexing into it for the log line, so this stays a
+// single guard at the one call site instead of two.
+function isWithinRenotifyWindow(lastNotifiedAtMs: number): boolean {
   return Date.now() - lastNotifiedAtMs < RENOTIFY_INTERVAL_MS;
 }
 

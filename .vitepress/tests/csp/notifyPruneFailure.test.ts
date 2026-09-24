@@ -50,9 +50,25 @@ function buildGithubClientStub({
       ? vi.fn().mockImplementation(createIssueImpl)
       : vi.fn().mockResolvedValue(undefined),
     createComment: vi.fn().mockResolvedValue(undefined),
+    // Defaults to honoring `sinceIso` the same way the real fetch adapter's
+    // `since` query param would (GitHub still returns a comment with an
+    // unparseable created_at rather than excluding it — only this
+    // notifier's own filtering in resolveLastNotifiedAt does that) — tests
+    // that hand the notifier a comment outside the window are exercising
+    // input the real adapter could never actually produce otherwise.
     listComments: listCommentsImpl
       ? vi.fn().mockImplementation(listCommentsImpl)
-      : vi.fn().mockResolvedValue(comments),
+      : vi
+          .fn()
+          .mockImplementation(
+            async (_issueNumber: number, sinceIso: string) => {
+              const sinceMs = Date.parse(sinceIso);
+              return comments.filter((comment) => {
+                const createdAtMs = Date.parse(comment.created_at ?? "");
+                return Number.isNaN(createdAtMs) || createdAtMs >= sinceMs;
+              });
+            },
+          ),
   };
 }
 
@@ -270,13 +286,11 @@ describe("createPruneFailureNotifier", () => {
   // state right after the notifier's first "opened the issue" notification.
   it("does not re-comment on a freshly-opened tracked issue created just inside the re-notify window, and logs the throttle", async () => {
     const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const trackedIssueCreatedAt = new Date(
+      Date.now() - JUST_INSIDE_WINDOW_MS,
+    ).toISOString();
     const client = buildGithubClientStub({
-      existingIssues: [
-        trackedIssue(
-          7,
-          new Date(Date.now() - JUST_INSIDE_WINDOW_MS).toISOString(),
-        ),
-      ],
+      existingIssues: [trackedIssue(7, trackedIssueCreatedAt)],
     });
     const notifier = createPruneFailureNotifier(client);
 
@@ -286,10 +300,15 @@ describe("createPruneFailureNotifier", () => {
     expect(client.createIssue).not.toHaveBeenCalled();
     // Without this, the throttled path is silent: the handler only logs on
     // prune failure, so a deliberate no-op and a silently-broken notifier
-    // would otherwise be indistinguishable in the logs.
+    // would otherwise be indistinguishable in the logs. Asserts the full
+    // payload (not just that the "issue" field is present) so a dropped,
+    // misnamed, or malformed lastNotifiedAt field would fail this test.
     expect(consoleLogSpy).toHaveBeenCalledWith(
       NOTIFY_THROTTLED_LOG_PREFIX,
-      expect.stringContaining('"issue":7'),
+      JSON.stringify({
+        issue: 7,
+        lastNotifiedAt: trackedIssueCreatedAt,
+      }),
     );
   });
 
@@ -631,10 +650,11 @@ describe("getPruneFailureNotifier", () => {
     );
   });
 
-  // The "authenticates both GitHub API requests" test above only exercises
-  // the comment branch (a tracked issue already exists) — this covers the
-  // other branch through the real fetch adapter: opening a brand-new issue,
-  // which is the primary path on the first failure of a streak.
+  // The "authenticates all three GitHub API requests" test above only
+  // exercises the comment branch (a tracked issue already exists) — this
+  // covers the other branch through the real fetch adapter: opening a
+  // brand-new issue, which is the primary path on the first failure of a
+  // streak.
   it("opens a new issue through the real fetch adapter when no tracked issue exists", async () => {
     process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
     vi.mocked(fetch)
