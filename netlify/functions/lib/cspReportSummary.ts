@@ -139,15 +139,19 @@ async function pullPage(
 // to list" from "that was the last page and it merely arrived late", which
 // would misreport `complete: false` on a fully-listed store — a false
 // negative on the signal that gates `rollout.stopped`. Once the deadline
-// has passed, one further page is pulled and, if real, absorbed before
-// giving up; only actually running out of pages (`done`) reports complete.
+// has passed, exactly one further page is pulled as a probe: a `done`
+// result there proves the page just appended really was the last one, so
+// `complete: true` is still reported; a real (non-`done`) result proves
+// further, uncaptured data exists, so it is discarded rather than merged
+// into `keys` — the run keeps only pages it fully committed to before the
+// deadline, so `complete: false` always means real data was left out, never
+// a store this run actually finished draining.
 async function listAllKeys(
   client: BlobSummaryClient,
   deadlineMs: number,
 ): Promise<ListedKeys> {
   const keys: string[] = [];
   const pages = client.list({ paginate: true })[Symbol.asyncIterator]();
-  let deadlinePassed = false;
   for (;;) {
     const result = await pullPage(pages);
     if (result === null) {
@@ -157,8 +161,7 @@ async function listAllKeys(
       return { keys, complete: true };
     }
     keys.push(...result.value.blobs.map((blob) => blob.key));
-    if (!deadlinePassed) {
-      deadlinePassed = isPastDeadline(deadlineMs);
+    if (!isPastDeadline(deadlineMs)) {
       continue;
     }
     const lookahead = await pullPage(pages);
@@ -168,7 +171,6 @@ async function listAllKeys(
     if (lookahead.done) {
       return { keys, complete: true };
     }
-    keys.push(...lookahead.value.blobs.map((blob) => blob.key));
     await pages.return?.()?.catch(() => {});
     return { keys, complete: false };
   }

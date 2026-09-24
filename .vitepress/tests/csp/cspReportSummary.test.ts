@@ -484,25 +484,29 @@ describe("createCspReportSummary", () => {
     expect(client.get).not.toHaveBeenCalled();
   });
 
-  it("stops listing within two pages of its own time budget, but still hands fetchAll every key found by then", async () => {
-    // Once the deadline trips after page 1, listAllKeys always absorbs
-    // page 2 (pushed before the check) and, via its one-page lookahead,
-    // page 3 if it's real — then stops for good without checking page 4.
+  it("stops listing after one probe page past its own time budget, discarding that page rather than absorbing it", async () => {
+    // Once the deadline trips after page 1, listAllKeys pulls exactly one
+    // further page as a probe. Finding it real (not `done`) proves more
+    // data exists beyond the deadline, so that probe page's keys are
+    // discarded rather than merged in — keeping `complete: false` accurate
+    // (real data was left out) without ever absorbing more than one extra
+    // page past the deadline. Neither the probe page nor anything after it
+    // reaches fetchAll.
     const page1Keys = ["key-a", "key-b"];
-    const page2Keys = ["key-peeked-1"];
-    const page3Keys = ["key-peeked-2"];
+    const probePageKey = "key-peeked";
     const neverReachedKey = "key-never-reached";
-    const foundKeys = [...page1Keys, ...page2Keys, ...page3Keys];
     const blobs = Object.fromEntries(
-      foundKeys.map((key) => [key, violation()]),
+      [...page1Keys, probePageKey, neverReachedKey].map((key) => [
+        key,
+        violation(),
+      ]),
     );
     const client: BlobSummaryClient & { get: ReturnType<typeof vi.fn> } = {
       get: vi.fn(async (key: string) => blobs[key]),
       async *list() {
         vi.setSystemTime(new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1));
         yield { blobs: page1Keys.map((key) => ({ key })) };
-        yield { blobs: page2Keys.map((key) => ({ key })) };
-        yield { blobs: page3Keys.map((key) => ({ key })) };
+        yield { blobs: [{ key: probePageKey }] };
         yield { blobs: [{ key: neverReachedKey }] };
       },
     };
@@ -512,9 +516,10 @@ describe("createCspReportSummary", () => {
     expect(summary.complete).toBe(false);
     expect(summary.listComplete).toBe(false);
     expect(summary.fetchComplete).toBe(true);
-    expect(summary.totalListed).toBe(foundKeys.length);
-    expect(summary.totalFetched).toBe(foundKeys.length);
-    expect(summary.totalViolations).toBe(foundKeys.length);
+    expect(summary.totalListed).toBe(page1Keys.length);
+    expect(summary.totalFetched).toBe(page1Keys.length);
+    expect(summary.totalViolations).toBe(page1Keys.length);
+    expect(client.get).not.toHaveBeenCalledWith(probePageKey);
     expect(client.get).not.toHaveBeenCalledWith(neverReachedKey);
   });
 
@@ -541,6 +546,99 @@ describe("createCspReportSummary", () => {
     expect(summary.listComplete).toBe(false);
     expect(summary.complete).toBe(false);
     expect(summary.totalListed).toBe(0);
+    expect(warn).toHaveBeenCalledWith(
+      "csp-report-summary-list-failed",
+      JSON.stringify({ message: "blobs list unavailable" }),
+    );
+  });
+
+  it("retains already-listed keys and returns partial when a later page rejects mid-walk", async () => {
+    // Proves pullPage's "count it, don't crash" contract for a rejection
+    // that lands before the deadline is even a factor: keys already
+    // collected must survive a later page's rejection, not just produce the
+    // same empty result a plain throw-and-catch would.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const page1Keys = ["key-a", "key-b"];
+    const blobs = Object.fromEntries(
+      page1Keys.map((key) => [key, violation()]),
+    );
+    let callCount = 0;
+    const client: BlobSummaryClient & { get: ReturnType<typeof vi.fn> } = {
+      get: vi.fn(async (key: string) => blobs[key]),
+      list(): AsyncIterable<BlobPage> {
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next: () => {
+                callCount += 1;
+                if (callCount === 1) {
+                  return Promise.resolve({
+                    done: false,
+                    value: { blobs: page1Keys.map((key) => ({ key })) },
+                  });
+                }
+                return Promise.reject(new Error("blobs list unavailable"));
+              },
+            };
+          },
+        };
+      },
+    };
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.listComplete).toBe(false);
+    expect(summary.complete).toBe(false);
+    expect(summary.totalListed).toBe(page1Keys.length);
+    expect(client.get).toHaveBeenCalledTimes(page1Keys.length);
+    expect(warn).toHaveBeenCalledWith(
+      "csp-report-summary-list-failed",
+      JSON.stringify({ message: "blobs list unavailable" }),
+    );
+  });
+
+  it("returns a partial, fail-closed result when the rejection lands in the post-deadline probe pull", async () => {
+    // Same "count it, don't crash" contract as the test above, but for a
+    // rejection in the one-page probe pull past the deadline specifically
+    // (the other call site pullPage guards), not the ordinary pre-deadline
+    // walk.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const page1Keys = ["key-a", "key-b"];
+    const blobs = Object.fromEntries(
+      page1Keys.map((key) => [key, violation()]),
+    );
+    let callCount = 0;
+    const client: BlobSummaryClient & { get: ReturnType<typeof vi.fn> } = {
+      get: vi.fn(async (key: string) => blobs[key]),
+      list(): AsyncIterable<BlobPage> {
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next: () => {
+                callCount += 1;
+                if (callCount === 1) {
+                  vi.setSystemTime(
+                    new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1),
+                  );
+                  return Promise.resolve({
+                    done: false,
+                    value: { blobs: page1Keys.map((key) => ({ key })) },
+                  });
+                }
+                return Promise.reject(new Error("blobs list unavailable"));
+              },
+            };
+          },
+        };
+      },
+    };
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.listComplete).toBe(false);
+    expect(summary.complete).toBe(false);
+    expect(summary.totalListed).toBe(page1Keys.length);
+    expect(client.get).toHaveBeenCalledTimes(page1Keys.length);
     expect(warn).toHaveBeenCalledWith(
       "csp-report-summary-list-failed",
       JSON.stringify({ message: "blobs list unavailable" }),
@@ -585,12 +683,10 @@ describe("createCspReportSummary", () => {
     // truncated list pass hiding an unlisted script-src violation would
     // wrongly report stopped: true.
     const page1Keys = ["key-a", "key-b"];
-    const page2Keys = ["key-peeked-1"];
-    const page3Keys = ["key-peeked-2"];
+    const probePageKey = "key-peeked";
     const neverReachedKey = "key-never-reached";
-    const foundKeys = [...page1Keys, ...page2Keys, ...page3Keys];
     const blobs = Object.fromEntries(
-      foundKeys.map((key) => [
+      [...page1Keys, probePageKey, neverReachedKey].map((key) => [
         key,
         violation({ effectiveDirective: "style-src" }),
       ]),
@@ -600,8 +696,7 @@ describe("createCspReportSummary", () => {
       async *list() {
         vi.setSystemTime(new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1));
         yield { blobs: page1Keys.map((key) => ({ key })) };
-        yield { blobs: page2Keys.map((key) => ({ key })) };
-        yield { blobs: page3Keys.map((key) => ({ key })) };
+        yield { blobs: [{ key: probePageKey }] };
         yield { blobs: [{ key: neverReachedKey }] };
       },
     };
@@ -612,7 +707,8 @@ describe("createCspReportSummary", () => {
     expect(summary.listComplete).toBe(false);
     expect(summary.fetchComplete).toBe(true);
     expect(summary.totalFetched).toBe(summary.totalListed);
-    expect(summary.totalListed).toBe(foundKeys.length);
+    expect(summary.totalListed).toBe(page1Keys.length);
+    expect(client.get).not.toHaveBeenCalledWith(probePageKey);
     expect(client.get).not.toHaveBeenCalledWith(neverReachedKey);
     expect(summary.rollout.count).toBe(0);
     expect(summary.rollout.stopped).toBe(false);
