@@ -61,8 +61,10 @@ wired to a collector — a `Reporting-Endpoints` header plus `report-to` /
 records them to the function logs **and** persists each accepted,
 same-origin violation to [Netlify Blobs](https://docs.netlify.com/blobs/overview/)
 (store name `csp-reports`, one blob per violation, key
-`<receivedAt ISO timestamp, colons/periods replaced with dashes>-<uuid>.json`)
-so the rollout signal is queryable instead of grep-only. Being public and
+`<receivedAt ISO timestamp, colons/periods replaced with dashes>-<rollout|other tag>-<uuid>.json`,
+the tag derived from whether the violation's own `effectiveDirective` belongs
+to the `script-src` family — see `isRolloutKey` below for what the tag is
+for) so the rollout signal is queryable instead of grep-only. Being public and
 unauthenticated, the Function's `config` also sets a Netlify
 [rate limit](https://docs.netlify.com/manage/security/secure-access-to-sites/rate-limiting/)
 (60 requests per 60s, aggregated per IP + domain) so a single caller can't
@@ -105,19 +107,41 @@ the `csp-reports` store without bound. An hourly Netlify scheduled Function
 ([`netlify/functions/csp-report-prune.ts`](netlify/functions/csp-report-prune.ts))
 prunes it: blobs older than `CSP_REPORT_RETENTION_DAYS` (default 30, clamped to
 `MAX_RETENTION_DAYS`) are always deleted, and whatever the run saw is then
-trimmed to `CSP_REPORT_MAX_BLOBS` (default 5000, clamped to `MAX_MAX_BLOBS`),
-oldest first — including on a run that couldn't finish listing the whole
-store, since the count it did see is still a valid lower bound on the real
-total. Both are optional site environment variables (set via the Netlify
-dashboard or CLI, not a `.env` file — this repo has none) for tuning the
-window/cap without a code change; neither is required for pruning to run.
-Because the count cap evicts oldest-first with no per-caller identity, a
-single flood larger than `CSP_REPORT_MAX_BLOBS` within one run can still evict
-genuine historical reports along with the flood — a deliberate trade-off
+trimmed to `CSP_REPORT_MAX_BLOBS` (default 5000, clamped to `MAX_MAX_BLOBS`)
+— including on a run that couldn't finish listing the whole store, since the
+count it did see is still a valid lower bound on the real total. Both are
+optional site environment variables (set via the Netlify dashboard or CLI,
+not a `.env` file — this repo has none) for tuning the window/cap without a
+code change; neither is required for pruning to run.
+
+The count-cap trim is not plain oldest-first: non-rollout (`other`-tagged,
+i.e. not `script-src` family) reports are evicted oldest-first ahead of every
+rollout-tagged one, so the script-src rollout signal below can't be starved
+by an attacker flooding `/csp-report` with fabricated non-`script-src`
+reports (#135) — rollout keys are only reached once the non-rollout backlog
+is exhausted and the store is still over cap (see `isRolloutKey`/`overCapKeys`
+in [`cspReportPruner.ts`](netlify/functions/lib/cspReportPruner.ts)). A key
+written before this tagging existed is treated as rollout (protected) rather
+than `other`, so pre-existing evidence isn't penalized for predating the tag
+— for up to `CSP_REPORT_RETENTION_DAYS` after this shipped, that means a
+brand-new genuine non-rollout report can be evicted ahead of untagged legacy
+noise from before the tag existed; retention still ages every untagged key
+out within that same window, so the effect is bounded to one retention
+window and self-corrects. This still isn't a forgery-proof guarantee: the tag
+is derived from the violation's own self-reported `effectiveDirective`, the
+same attacker-controlled field discussed above for `documentUrl` — a flood
+that also forges `effectiveDirective: "script-src"` lands in the protected
+class too, and eviction within that class is still oldest-first, so it can
+still evict genuine, older `script-src` evidence; the fail-closed gate on the
+rollout signal itself (`missingEntries` etc., described below) is what still
+holds against that case. Because the count cap has no per-caller identity, a
+flood larger than `CSP_REPORT_MAX_BLOBS` within one run can still evict every
+non-rollout historical report along with the flood — a deliberate trade-off
 favoring "the store never grows unbounded" over "every genuine report is
-preserved forever"; the endpoint's own rate limit (above) narrows how much a
-single caller can contribute to that within one hour, but raise the cap
-further if the trade-off stops being acceptable. Netlify scheduled Functions
+preserved forever" (bounded, since #135, to non-rollout reports first); the
+endpoint's own rate limit (above) narrows how much a single caller can
+contribute to that within one hour, but raise the cap further if the
+trade-off stops being acceptable. Netlify scheduled Functions
 have a hard 30s execution limit, so the list and delete passes each run
 against their own wall-clock budget (`LIST_TIME_BUDGET_MS` /
 `PRUNE_TIME_BUDGET_MS`) rather than sharing one deadline — otherwise a slow
@@ -180,7 +204,12 @@ reads and aggregates the store: counts of stored violations by
 how many stored violations belong to the `script-src` family (`script-src`
 itself plus the `script-src-elem`/`script-src-attr` sub-directives browsers
 report even though this site never declares them separately) and, if any
-remain, the most recent one. Reading the store scales with its size the same
+remain, the most recent one. Since the pruner above now protects rollout-
+tagged reports first under count-cap pressure, the `byDirective`/`byBlockedUri`
+breakdowns (not the rollout signal itself) can skew toward `script-src` during
+and after a sustained flood — treat them as unreliable totals for non-
+`script-src` directives in that case; the rollout signal, the property #135
+cares about, is unaffected. Reading the store scales with its size the same
 way pruning does, so the list and fetch passes each carry their own
 cooperative time budget (`LIST_TIME_BUDGET_MS`/`SUMMARY_TIME_BUDGET_MS` in
 `lib/cspReportSummary.ts`, split the same way the pruner splits its budget

@@ -2,14 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import {
   createCspReportSummary,
-  ROLLOUT_DIRECTIVE,
   FETCH_BATCH_SIZE,
   SUMMARY_TIME_BUDGET_MS,
   LIST_TIME_BUDGET_MS,
   type BlobSummaryClient,
   type BlobPage,
 } from "../../../netlify/functions/lib/cspReportSummary";
-import type { StoredCspViolation } from "../../../netlify/functions/lib/cspReportStore";
+import {
+  ROLLOUT_DIRECTIVE,
+  type StoredCspViolation,
+} from "../../../netlify/functions/lib/cspReportStore";
 
 const NOW = new Date("2026-06-15T00:00:00.000Z");
 
