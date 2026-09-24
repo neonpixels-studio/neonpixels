@@ -10,7 +10,11 @@
 // grow the store without limit over time. This module is invoked on an hourly
 // schedule (see ../csp-report-prune.ts) and enforces two independent caps:
 // - retentionDays: blobs older than this are always deleted.
-// - maxBlobs: whatever remains is trimmed to this count, oldest first. This
+// - maxBlobs: whatever remains is trimmed to this count, oldest first among
+//   non-rollout (non-script-src) reports before rollout reports are ever
+//   touched (see overCapKeys/isRolloutKey below and #135) — otherwise a flood
+//   of fabricated non-script-src reports at the public endpoint could evict
+//   genuine script-src evidence the same way real traffic ages it out. This
 //   is applied even on a run that couldn't finish listing the whole store —
 //   the partial count is still a valid lower bound on the real count, so
 //   trimming `partialCount - maxBlobs` keys can never remove more than is
@@ -24,7 +28,12 @@
 // a share of the run even when listing alone would consume the whole thing.
 import { getStore } from "@netlify/blobs";
 
-import { CSP_REPORT_STORE_NAME, sanitizeTimestamp } from "./cspReportStore";
+import {
+  CSP_REPORT_STORE_NAME,
+  RECEIVED_AT_PREFIX_LENGTH,
+  isRolloutKey,
+  sanitizeTimestamp,
+} from "./cspReportStore";
 
 export type BlobListEntry = { key: string };
 export type BlobPage = { blobs: BlobListEntry[] };
@@ -83,14 +92,13 @@ export const LIST_TIME_BUDGET_MS = Math.floor(PRUNE_TIME_BUDGET_MS / 2);
 // the real batch boundary instead of mirroring a magic number.
 export const DELETE_BATCH_SIZE = 50;
 
-// Keys are `<sanitized ISO receivedAt>-<uuid>.json` (see violationKey in
-// cspReportStore.ts). The sanitized timestamp is fixed-width, so slicing it
-// off the front of every key and comparing two prefixes as plain strings
-// orders keys chronologically without parsing each one back into a Date.
-const RECEIVED_AT_PREFIX_LENGTH = sanitizeTimestamp(
-  new Date(0).toISOString(),
-).length;
-
+// Keys are `<sanitized ISO receivedAt>-<tag>-<uuid>.json` (see violationKey
+// in cspReportStore.ts). The sanitized timestamp is fixed-width (see
+// RECEIVED_AT_PREFIX_LENGTH, imported from there so this module and the one
+// that writes the keys can never drift apart on what "the timestamp part"
+// means), so slicing it off the front of every key and comparing two
+// prefixes as plain strings orders keys chronologically without parsing each
+// one back into a Date.
 function receivedAtPrefix(key: string): string {
   return key.slice(0, RECEIVED_AT_PREFIX_LENGTH);
 }
@@ -202,13 +210,69 @@ async function deleteKeys(
   return { deleted, complete: start >= keys.length };
 }
 
-// The oldest-first excess beyond maxBlobs. Safe to apply even against a
-// partial (incomplete-listing) view: the count of keys actually seen is a
-// lower bound on the real store size, so trimming `seen - maxBlobs` of them
-// can never remove more than is genuinely in excess.
-function overCapKeys(freshKeysOldestFirst: string[], maxBlobs: number) {
+// Splits an oldest-first key list into non-rollout and rollout groups, each
+// still in its original oldest-first order, in one pass (rather than
+// filtering the list twice). The split itself — and why non-rollout keys go
+// first in eviction order — is explained at its one call site, overCapKeys,
+// below.
+function partitionByRolloutTag(keys: string[]): {
+  otherKeys: string[];
+  rolloutKeys: string[];
+} {
+  const otherKeys: string[] = [];
+  const rolloutKeys: string[] = [];
+  for (const key of keys) {
+    if (isRolloutKey(key)) {
+      rolloutKeys.push(key);
+      continue;
+    }
+    otherKeys.push(key);
+  }
+  return { otherKeys, rolloutKeys };
+}
+
+// Logged when overCapKeys has to spill into rollout keys on a run that
+// didn't finish listing the whole store — the one case where the #135
+// priority ordering (non-rollout evicted before rollout) is only a property
+// of the listed subset, not the real store: a flood large enough to prevent
+// a complete listing could, in principle, be under-represented in what this
+// run saw, leaving rollout keys taking the spill instead. Not logged for a
+// complete run, where the ordering is a property of the whole store. See
+// README, csp-reports section, for the full caveat.
+const PARTIAL_LIST_ROLLOUT_SPILL_LOG_PREFIX =
+  "csp-report-prune-rollout-evicted-on-partial-view";
+
+// The excess beyond maxBlobs, non-rollout keys evicted first (oldest first
+// within each group) so a flood of fabricated non-script-src reports can't
+// push genuine script-src evidence out of the store before the daily summary
+// reads it (#135); rollout keys are only reached once every non-rollout key
+// is gone and the store is still over cap. See README, csp-reports section,
+// for what this does and doesn't guarantee (self-reported tag; partial
+// listings). Takes only as many keys from each group as `overflow` needs,
+// rather than concatenating and slicing both full groups.
+function overCapKeys(
+  freshKeysOldestFirst: string[],
+  maxBlobs: number,
+  listComplete: boolean,
+) {
   const overflow = freshKeysOldestFirst.length - maxBlobs;
-  return overflow > 0 ? freshKeysOldestFirst.slice(0, overflow) : [];
+  if (overflow <= 0) {
+    return [];
+  }
+  const { otherKeys, rolloutKeys } =
+    partitionByRolloutTag(freshKeysOldestFirst);
+  const fromOtherKeys = otherKeys.slice(0, overflow);
+  if (fromOtherKeys.length === overflow) {
+    return fromOtherKeys;
+  }
+  if (!listComplete) {
+    console.warn(
+      PARTIAL_LIST_ROLLOUT_SPILL_LOG_PREFIX,
+      JSON.stringify({ rolloutKeysListed: rolloutKeys.length }),
+    );
+  }
+  const fromRolloutKeys = rolloutKeys.slice(0, overflow - fromOtherKeys.length);
+  return [...fromOtherKeys, ...fromRolloutKeys];
 }
 
 // Sorted ascending, so every stale key (older than cutoffPrefix) sorts before
@@ -218,6 +282,7 @@ function selectKeysToDelete(
   sortedKeys: string[],
   cutoffPrefix: string,
   maxBlobs: number,
+  listComplete: boolean,
 ): string[] {
   const firstFreshIndex = sortedKeys.findIndex(
     (key) => !isStaleKey(key, cutoffPrefix),
@@ -226,7 +291,7 @@ function selectKeysToDelete(
     firstFreshIndex === -1 ? sortedKeys.length : firstFreshIndex;
   const staleKeys = sortedKeys.slice(0, splitIndex);
   const freshKeys = sortedKeys.slice(splitIndex);
-  return [...staleKeys, ...overCapKeys(freshKeys, maxBlobs)];
+  return [...staleKeys, ...overCapKeys(freshKeys, maxBlobs, listComplete)];
 }
 
 // Pure factory: given anything that can list and delete blobs, returns a
@@ -248,7 +313,12 @@ export function createCspReportPruner(
       const keys = unsortedKeys.sort();
       const cutoffMs = Date.now() - retentionDays * MS_PER_DAY;
       const cutoffPrefix = sanitizeTimestamp(new Date(cutoffMs).toISOString());
-      const toDelete = selectKeysToDelete(keys, cutoffPrefix, maxBlobs);
+      const toDelete = selectKeysToDelete(
+        keys,
+        cutoffPrefix,
+        maxBlobs,
+        listComplete,
+      );
       const { deleted, complete: deleteComplete } = await deleteKeys(
         client,
         toDelete,
