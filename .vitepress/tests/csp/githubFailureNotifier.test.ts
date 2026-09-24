@@ -259,6 +259,22 @@ describe("createFailureNotifier", () => {
       expect(client.createComment).toHaveBeenCalledTimes(1);
     });
 
+    // Number.isNaN(updatedAtMs) is the only guard against GitHub (or a
+    // malformed fixture) returning an unparseable timestamp — without it,
+    // Date.now() - NaN is NaN, which is neither >= 0 nor < a real window,
+    // so this must resolve to "not throttled" the same as the missing-
+    // updated_at case above.
+    it("comments when the tracked issue's updated_at is unparseable", async () => {
+      const client = buildGithubClientStub({
+        existingIssues: [trackedIssue(7, "not-a-date")],
+      });
+      const notifier = createFailureNotifier(client, testConfig());
+
+      await notifier.notify("blobs unavailable");
+
+      expect(client.createComment).toHaveBeenCalledTimes(1);
+    });
+
     // A notifier whose own schedule is already sparser than any meaningful
     // window (e.g. notifySummaryFailure.ts's daily cadence) passes
     // renotifyIntervalMs: 0 so every failed run comments/creates regardless
@@ -346,13 +362,17 @@ describe("sanitizeReportedError", () => {
 
   // A leaked credential is not always inside a URL (e.g. echoed from a
   // header), so this is a second, independent redaction pass rather than
-  // relying on the URL pattern above to also catch it.
+  // relying on the URL pattern above to also catch it. Uses a
+  // credential-shaped value with no recognized vendor prefix (gh*_/nfp_) so
+  // this actually exercises the bearer/token alternative of SECRET_PATTERN
+  // rather than passing for the wrong reason via the vendor-prefix
+  // alternative below.
   it("redacts a bearer-style credential with no URL present", () => {
     expect(
       sanitizeReportedError(
-        "Netlify Blobs: request rejected, sent header authorization: Bearer nfp_9x7k2m failed",
+        "Netlify Blobs: request rejected, sent header authorization: Bearer AbCdEf0123456789 failed",
       ),
-    ).not.toContain("nfp_9x7k2m");
+    ).not.toContain("AbCdEf0123456789");
   });
 
   it("redacts a GitHub-style prefixed token", () => {

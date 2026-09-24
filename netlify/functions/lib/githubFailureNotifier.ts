@@ -292,6 +292,44 @@ async function parseJson(
   }
 }
 
+// GitHub silently drops labels the token doesn't have permission to apply
+// instead of erroring — if that happened after createIssue's POST, the
+// duplicate guard's only entry point (listOpenIssuesByLabel, filtered by
+// the tracking label requested in `input.labels`) would never see the
+// issue again, and every subsequent failure would open a fresh, unlabeled
+// duplicate instead of finding this one. The issue already exists by the
+// time this runs (the create call already succeeded), so simply throwing
+// on a missing label would itself cause the flood it's trying to prevent —
+// orphaning an unlabeled issue every run. This retries attaching the
+// originally-requested labels directly, and only throws (naming the
+// orphaned issue number, so it's findable) if that retry also fails.
+async function attachLabels(
+  issueNumber: number,
+  labels: string[],
+): Promise<void> {
+  // The `try` covers only the request itself, not the drain below: by the
+  // time the POST resolves, the label is already applied on GitHub's side,
+  // so a stream error while draining the (unused) response body must not
+  // be mistaken for the attach itself having failed — that would
+  // misreport a successfully-delivered notification as broken and send a
+  // human chasing the wrong system.
+  let labelResponse: Response;
+  try {
+    labelResponse = await githubRequest(
+      `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issueNumber}/labels`,
+      { method: "POST", body: JSON.stringify({ labels }) },
+    );
+  } catch (labelAttachError) {
+    throw new Error(
+      `GitHub API issue creation did not apply all requested labels (${labels.join(", ")}) to issue #${issueNumber}, and retrying the label attach also failed: ${labelAttachError instanceof Error ? labelAttachError.message : String(labelAttachError)}`,
+      { cause: labelAttachError },
+    );
+  }
+  // Never inspected, same as createComment's response below — drain it
+  // explicitly rather than leaving it unconsumed.
+  await labelResponse.body?.cancel();
+}
+
 export function createFetchGithubIssuesClient(): GithubIssuesClient {
   return {
     async listOpenIssuesByLabel(label) {
@@ -318,53 +356,16 @@ export function createFetchGithubIssuesClient(): GithubIssuesClient {
         number: number;
         labels?: Array<{ name?: string }>;
       };
-      // GitHub silently drops labels the token doesn't have permission to
-      // apply instead of erroring — if that happened here, the duplicate
-      // guard's only entry point (listOpenIssuesByLabel, filtered by the
-      // tracking label requested in `input.labels`) would never see this
-      // issue again, and every subsequent failure would open a fresh,
-      // unlabeled duplicate instead of finding this one. The issue already
-      // exists at this point (the create call above already succeeded), so
-      // simply throwing here would itself cause the flood it's trying to
-      // prevent — orphaning an unlabeled issue every run. Retry attaching
-      // the originally-requested labels directly before giving up, and only
-      // throw (naming the orphaned issue number, so it's findable) if that
-      // retry also fails. Checked against `input.labels` rather than a
-      // single hardcoded label so this adapter stays generic across every
-      // notifier built on this module, not just the one that first needed
-      // it.
       const createdLabelNames = new Set(
         (created.labels ?? []).map((label) => label.name),
       );
       const hasAllRequestedLabels = input.labels.every((requestedLabel) =>
         createdLabelNames.has(requestedLabel),
       );
-      if (!hasAllRequestedLabels) {
-        // The `try` covers only the request itself, not the drain below: by
-        // the time the POST resolves, the label is already applied on
-        // GitHub's side, so a stream error while draining the (unused)
-        // response body must not be mistaken for the attach itself having
-        // failed — that would misreport a successfully-delivered
-        // notification as broken and send a human chasing the wrong system.
-        let labelResponse: Response;
-        try {
-          labelResponse = await githubRequest(
-            `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${created.number}/labels`,
-            {
-              method: "POST",
-              body: JSON.stringify({ labels: input.labels }),
-            },
-          );
-        } catch (labelAttachError) {
-          throw new Error(
-            `GitHub API issue creation did not apply all requested labels (${input.labels.join(", ")}) to issue #${created.number}, and retrying the label attach also failed: ${labelAttachError instanceof Error ? labelAttachError.message : String(labelAttachError)}`,
-            { cause: labelAttachError },
-          );
-        }
-        // Never inspected, same as createComment's response below — drain
-        // it explicitly rather than leaving it unconsumed.
-        await labelResponse.body?.cancel();
+      if (hasAllRequestedLabels) {
+        return;
       }
+      await attachLabels(created.number, input.labels);
     },
     async createComment(issueNumber, body) {
       const response = await githubRequest(
