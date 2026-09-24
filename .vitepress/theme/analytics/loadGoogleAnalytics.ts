@@ -1,21 +1,13 @@
 // The one place this codebase talks to Google Analytics (gtag.js). Isolated
-// here so the decision of *whether* to load it (analyticsConsent.ts) never
-// has to know *how* GA4 is bootstrapped, and so a test can assert on the
-// call without a real network request or a real gtag.js on the page.
-//
-// GA4 property for neonpixels.dev. gtag.js loads from googletagmanager.com
-// and sends collection beacons to *.google-analytics.com — both are granted
-// in the CSP (see netlify.toml script-src/img-src/connect-src). Unlike the
-// rest of that CSP grant, this script tag is no longer declared statically
-// in .vitepress/config.ts — see the exception documented in
-// csp-head-crosscheck.test.ts.
+// so the decision of *whether* to load it (analyticsConsent.ts) never has to
+// know *how* GA4 is bootstrapped, and so a test can assert on the call
+// without a real network request or a real gtag.js on the page.
 export const GA_MEASUREMENT_ID = "G-Y4448RR4CR";
 
-const GTAG_SCRIPT_URL = "https://www.googletagmanager.com/gtag/js";
+// Exported so csp-head-crosscheck.test.ts can derive its documented CSP
+// exception from this value instead of a second, independently-drifting copy.
+export const GTAG_SCRIPT_URL = "https://www.googletagmanager.com/gtag/js";
 
-// gtag.js's own contract: it expects `window.dataLayer` to already exist (or
-// be created) before it starts draining commands pushed onto it. Not part of
-// TypeScript's DOM lib, so it's declared here, once, for every caller.
 declare global {
   // Base ESLint (no type-aware TS plugin is configured here) doesn't
   // understand declare-global interface merging and reads this as an unused
@@ -37,15 +29,24 @@ export interface AnalyticsTarget {
   window: Pick<Window, "dataLayer">;
 }
 
-// gtag.js's own bootstrap: seed `window.dataLayer` and push the two startup
-// commands it expects to find waiting once the script itself loads and
-// starts draining the queue. Mirrors Google's documented gtag.js snippet.
+// gtag.js's documented bootstrap snippet, translated 1:1: define a `gtag`
+// function that queues its raw `arguments` object — NOT a plain array, since
+// gtag.js's own queue processor (loaded moments later, once the script tag
+// below resolves) is defined against that exact shape — then call it for the
+// two startup commands gtag.js expects to find waiting when it starts
+// draining the queue.
 function queueGtagBootstrapCommands(
   dataLayer: unknown[],
   measurementId: string,
 ) {
-  dataLayer.push(["js", new Date()]);
-  dataLayer.push(["config", measurementId]);
+  function gtag(..._args: unknown[]) {
+    // Deliberately `arguments`, not `_args`: gtag.js's queue processor
+    // requires the actual `arguments` object. `_args` exists only so
+    // TypeScript checks call-site arity for the two calls below.
+    dataLayer.push(arguments);
+  }
+  gtag("js", new Date());
+  gtag("config", measurementId);
 }
 
 function appendGtagScriptTag(target: AnalyticsTarget, measurementId: string) {
@@ -55,14 +56,25 @@ function appendGtagScriptTag(target: AnalyticsTarget, measurementId: string) {
   target.document.head.appendChild(scriptElement);
 }
 
+// Tracked per target `window` (a WeakSet, not a module-level boolean) so
+// distinct fake targets in different tests never share state, while a real
+// page still only ever gets one script tag/one "config" call even if a
+// caller (or a future dev-mode HMR remount of ConsentBanner.vue) invokes this
+// twice — GA4 would otherwise count that as duplicate pageviews.
+const initializedAnalyticsWindows = new WeakSet<object>();
+
 // Dynamically injects gtag.js and initializes it for the given measurement
 // ID. Callers (ConsentBanner.vue) are responsible for only calling this once
-// consent has actually been established — this function does no gating of
-// its own.
+// consent has actually been established — this function does no consent
+// gating of its own, only load-once gating.
 export function loadGoogleAnalytics(
   measurementId: string,
   target: AnalyticsTarget = { document, window },
 ) {
+  if (initializedAnalyticsWindows.has(target.window)) {
+    return;
+  }
+  initializedAnalyticsWindows.add(target.window);
   target.window.dataLayer = target.window.dataLayer ?? [];
   queueGtagBootstrapCommands(target.window.dataLayer, measurementId);
   appendGtagScriptTag(target, measurementId);

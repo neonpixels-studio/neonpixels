@@ -3,10 +3,12 @@ import { onMounted, ref } from "vue";
 import { WORDMARK_GRADIENT } from "../brand";
 import {
   CONSENT_CHOICES,
+  getConsentStorage,
   setStoredConsentChoice,
   shouldLoadAnalytics,
   shouldPromptForConsent,
   type ConsentChoice,
+  type ConsentStorage,
 } from "../analytics/analyticsConsent";
 import {
   GA_MEASUREMENT_ID,
@@ -21,16 +23,25 @@ import {
 // touching `navigator`/`localStorage` on the server.
 const isVisible = ref(false);
 
+// Assigned inside onMounted, never at setup() top level: getConsentStorage()
+// touches `window.localStorage`, and VitePress's SSG build runs this
+// component's setup() on the server, where no `window` exists at all. Safe to
+// read from recordChoice() below without an existence check — that function
+// is only reachable via a click on a rendered button, and the banner never
+// renders (isVisible only flips true) until after onMounted has run.
+let consentStorage: ConsentStorage;
+
 onMounted(() => {
-  if (shouldLoadAnalytics(navigator, localStorage)) {
+  consentStorage = getConsentStorage();
+  if (shouldLoadAnalytics(navigator, consentStorage)) {
     loadGoogleAnalytics(GA_MEASUREMENT_ID);
     return;
   }
-  isVisible.value = shouldPromptForConsent(navigator, localStorage);
+  isVisible.value = shouldPromptForConsent(navigator, consentStorage);
 });
 
 function recordChoice(choice: ConsentChoice) {
-  setStoredConsentChoice(localStorage, choice);
+  setStoredConsentChoice(consentStorage, choice);
   isVisible.value = false;
   if (choice === CONSENT_CHOICES.accepted) {
     loadGoogleAnalytics(GA_MEASUREMENT_ID);

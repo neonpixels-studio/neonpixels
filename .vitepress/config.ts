@@ -99,17 +99,10 @@ export default defineConfig({
     hostname: SITE_URL,
   },
   head: [
-    // Google Analytics (gtag.js) is intentionally NOT declared here anymore.
-    // Loading it unconditionally for every visitor — including ones sending
-    // Do-Not-Track/Global Privacy Control, or who haven't been asked at all —
-    // was issue #136. It's now injected at runtime, gated behind those
-    // signals and a minimal accept/decline banner, by
+    // Google Analytics is intentionally not declared here — it's injected at
+    // runtime, gated behind DNT/GPC and a consent banner, by
     // .vitepress/theme/components/ConsentBanner.vue (see
-    // .vitepress/theme/analytics/ for the isolated consent + loader logic).
-    // Its origin is still granted in the CSP (netlify.toml
-    // script-src/img-src/connect-src) with a documented static-analysis
-    // exception in csp-head-crosscheck.test.ts, since a runtime-injected
-    // script tag has no static `config.head` entry for that check to see.
+    // .vitepress/theme/analytics/ and csp-head-crosscheck.test.ts).
     //
     // Fonts are self-hosted — see .vitepress/theme/index.ts
     // Canonical + theme color

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import config from "../config";
+import { GTAG_SCRIPT_URL } from "../theme/analytics/loadGoogleAnalytics";
 import type { HeadConfig } from "vitepress";
 
 // Cross-checks the origins the configured `head` loads against the CSP in netlify.toml
@@ -307,17 +308,19 @@ function cspExternalOrigins(directives: CspDirectives) {
   return [...new Set(origins)];
 }
 
-// GA4's gtag.js (googletagmanager.com) is granted in the CSP's script-src but,
-// since issue #136, is no longer declared as a static `config.head` script
-// entry — it's injected at runtime by
+// GA4's gtag.js is granted in the CSP's script-src but is no longer declared
+// as a static `config.head` script entry — it's injected at runtime by
 // .vitepress/theme/components/ConsentBanner.vue (via
 // .vitepress/theme/analytics/loadGoogleAnalytics.ts), gated behind
-// Do-Not-Track/Global Privacy Control and a consent banner. That's exactly
-// the kind of "resources reached via a theme layout" this file's top-comment
-// already scopes out of static analysis, so it's the one documented baseline
-// exception to the reverse check below rather than a true orphaned CSP grant.
+// Do-Not-Track/Global Privacy Control and a consent banner (issue #136).
+// That's exactly the kind of "resources reached via a theme layout" this
+// file's top-comment already scopes out of static analysis, so it's the one
+// documented baseline exception to the reverse check below rather than a true
+// orphaned CSP grant. Derived from the loader's own URL constant, and
+// verified below to actually be granted, so this can't silently drift into
+// excusing an origin that isn't real.
 const DOCUMENTED_RUNTIME_INJECTED_ORIGINS = new Set([
-  "https://www.googletagmanager.com",
+  new URL(GTAG_SCRIPT_URL).origin,
 ]);
 
 // The forward check: external origins a head entry loads that the CSP fails to grant.
@@ -532,5 +535,14 @@ describe("CSP and config head origin cross-check", () => {
 
   it("references every external CSP origin from a head entry", () => {
     expect(unbackedCspOrigins(config.head ?? [], cspDirectives)).toEqual([]);
+  });
+
+  it("still actually grants script-src to the runtime-injected gtag.js origin", () => {
+    // The exception above only suppresses the "no head entry backs this"
+    // false positive for a runtime-injected script — it must never be used to
+    // wave through an origin the CSP doesn't really grant.
+    const gtagOrigin = new URL(GTAG_SCRIPT_URL).origin;
+    expect(DOCUMENTED_RUNTIME_INJECTED_ORIGINS.has(gtagOrigin)).toBe(true);
+    expect(originGranted(gtagOrigin, "script-src", cspDirectives)).toBe(true);
   });
 });

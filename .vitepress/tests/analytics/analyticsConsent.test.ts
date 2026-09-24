@@ -1,7 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   CONSENT_CHOICES,
   CONSENT_STORAGE_KEY,
+  getConsentStorage,
   getStoredConsentChoice,
   setStoredConsentChoice,
   shouldLoadAnalytics,
@@ -166,5 +167,47 @@ describe("shouldPromptForConsent", () => {
     expect(
       shouldPromptForConsent(createNavigatorFixture(), declinedStorage),
     ).toBe(false);
+  });
+});
+
+describe("setStoredConsentChoice", () => {
+  it("does not throw when the underlying storage.setItem throws (e.g. quota exceeded)", () => {
+    const throwingStorage: ConsentStorage = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("quota exceeded");
+      },
+    };
+    expect(() =>
+      setStoredConsentChoice(throwingStorage, CONSENT_CHOICES.accepted),
+    ).not.toThrow();
+  });
+});
+
+describe("getConsentStorage", () => {
+  const PROBE_KEY = "np-analytics-consent-probe-test";
+
+  afterEach(() => {
+    localStorage.removeItem(PROBE_KEY);
+  });
+
+  it("returns the real localStorage when it's usable", () => {
+    const storage = getConsentStorage();
+    storage.setItem(PROBE_KEY, "1");
+    expect(localStorage.getItem(PROBE_KEY)).toBe("1");
+  });
+
+  it("falls back to an in-memory no-op storage when localStorage throws (e.g. Safari 'Block all cookies')", () => {
+    const originalSetItem = window.localStorage.setItem;
+    window.localStorage.setItem = () => {
+      throw new DOMException("blocked", "SecurityError");
+    };
+    try {
+      const storage = getConsentStorage();
+      expect(storage.getItem("anything")).toBeNull();
+      expect(() => storage.setItem("anything", "value")).not.toThrow();
+    } finally {
+      window.localStorage.setItem = originalSetItem;
+    }
   });
 });

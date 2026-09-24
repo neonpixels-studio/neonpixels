@@ -12,6 +12,9 @@ const GTAG_SRC_PATTERN = /^https:\/\/www\.googletagmanager\.com\/gtag\/js\?id=/;
 // through `unknown` at the boundary since the fake only implements the
 // handful of members loadGoogleAnalytics actually calls, not every member of
 // the real Document/Window types AnalyticsTarget's fields are drawn from.
+// A fresh `fakeWindow` object per call also gives each test its own identity
+// for loadGoogleAnalytics's per-window idempotency guard (a WeakSet keyed on
+// `target.window`), so tests never see state bleed from one another.
 function createFakeAnalyticsTarget() {
   const appendedScripts: { async: boolean; src: string }[] = [];
   const fakeDocument = {
@@ -32,12 +35,29 @@ function createFakeAnalyticsTarget() {
   return { target, fakeDocument, fakeWindow, appendedScripts };
 }
 
+// gtag.js's queue processor is defined against the raw `arguments` object
+// gtag.js's documented snippet pushes — not a plain array — so assert on that
+// exact shape rather than a loose `toEqual` an array might pass on false
+// grounds. `Array.from` reads it back as a plain array for the values check.
+function expectQueuedGtagCommand(
+  queuedEntry: unknown,
+  expectedArgs: unknown[],
+) {
+  expect(Object.prototype.toString.call(queuedEntry)).toBe(
+    "[object Arguments]",
+  );
+  expect(Array.from(queuedEntry as ArrayLike<unknown>)).toEqual(expectedArgs);
+}
+
 describe("loadGoogleAnalytics", () => {
   it("seeds dataLayer with the gtag.js bootstrap commands for the given measurement id", () => {
     const { target, fakeWindow } = createFakeAnalyticsTarget();
     loadGoogleAnalytics("G-TEST123", target);
-    expect(fakeWindow.dataLayer?.[0]).toEqual(["js", expect.any(Date)]);
-    expect(fakeWindow.dataLayer?.[1]).toEqual(["config", "G-TEST123"]);
+    expectQueuedGtagCommand(fakeWindow.dataLayer?.[0], [
+      "js",
+      expect.any(Date),
+    ]);
+    expectQueuedGtagCommand(fakeWindow.dataLayer?.[1], ["config", "G-TEST123"]);
   });
 
   it("preserves an existing dataLayer instead of replacing it", () => {
@@ -60,5 +80,24 @@ describe("loadGoogleAnalytics", () => {
       "https://www.googletagmanager.com/gtag/js?id=G-TEST123",
     );
     expect(appendedScripts[0].src).toMatch(GTAG_SRC_PATTERN);
+  });
+
+  it("is idempotent per target window: a second call appends no second script and queues no second config", () => {
+    const { target, fakeDocument, fakeWindow, appendedScripts } =
+      createFakeAnalyticsTarget();
+    loadGoogleAnalytics("G-TEST123", target);
+    loadGoogleAnalytics("G-TEST123", target);
+    expect(fakeDocument.head.appendChild).toHaveBeenCalledTimes(1);
+    expect(appendedScripts).toHaveLength(1);
+    expect(fakeWindow.dataLayer).toHaveLength(2);
+  });
+
+  it("still loads for a different target window even after another window was already initialized", () => {
+    const first = createFakeAnalyticsTarget();
+    const second = createFakeAnalyticsTarget();
+    loadGoogleAnalytics("G-TEST123", first.target);
+    loadGoogleAnalytics("G-TEST123", second.target);
+    expect(first.appendedScripts).toHaveLength(1);
+    expect(second.appendedScripts).toHaveLength(1);
   });
 });

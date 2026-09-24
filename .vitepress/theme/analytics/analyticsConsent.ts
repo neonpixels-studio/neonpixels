@@ -1,15 +1,6 @@
-// Consent + tracking-signal logic for GA4 (issue #136: GA4 loaded with no
-// consent gate or Do-Not-Track/GPC check). Kept isolated from both the GA4
+// Consent + tracking-signal logic for GA4. Kept isolated from both the GA4
 // script loader (loadGoogleAnalytics.ts) and the UI (ConsentBanner.vue) so
-// each half — "should we track this visitor" vs. "how do we actually load
-// the third-party script" vs. "how do we ask" — is independently testable.
-//
-// Scope decision (see PR body for the full writeup): this repo ships no
-// personal-data-processing beyond GA4 pageview analytics, so respecting an
-// explicit browser opt-out signal (DNT/GPC) PLUS a lightweight accept/decline
-// banner for visitors who haven't signaled either way is treated as enough —
-// a full CMP (IAB TCF, granular purpose categories, geo-targeted prompts) is
-// out of scope for a single-page marketing site.
+// each half is independently testable.
 
 // Both the legacy `"1"` (the only value the DNT spec ever defined) and the
 // deprecated `"yes"` some older browsers (IE10/11) shipped. Treated as a
@@ -41,6 +32,25 @@ export interface TrackingSignalSource {
 // The subset of `Storage` this module reads/writes, so tests can pass an
 // in-memory fake instead of touching real localStorage/happy-dom.
 export type ConsentStorage = Pick<Storage, "getItem" | "setItem">;
+
+// Merely reading `window.localStorage` (not just calling a method on it)
+// throws a SecurityError in Safari with "Block all cookies", some locked-down
+// webviews, and old Safari private-mode quota edge cases. A privacy-hardened
+// visitor is exactly who this feature is for, so probe it and fall back to an
+// in-memory no-op rather than letting ConsentBanner.vue's onMounted throw.
+// The no-op always reads back null, so downstream checks fail closed:
+// analytics stays off and the banner re-prompts every visit instead of
+// crashing.
+export function getConsentStorage(): ConsentStorage {
+  try {
+    const probeKey = "__np_analytics_consent_probe__";
+    window.localStorage.setItem(probeKey, probeKey);
+    window.localStorage.removeItem(probeKey);
+    return window.localStorage;
+  } catch {
+    return { getItem: () => null, setItem: () => {} };
+  }
+}
 
 // True when the visitor's browser has asked, via either standard signal, not
 // to be tracked. This is an opt-out signal, not a consent record — it's
@@ -75,7 +85,13 @@ export function setStoredConsentChoice(
   storage: ConsentStorage,
   choice: ConsentChoice,
 ) {
-  storage.setItem(CONSENT_STORAGE_KEY, choice);
+  try {
+    storage.setItem(CONSENT_STORAGE_KEY, choice);
+  } catch {
+    // Best-effort persistence: if this throws (e.g. a Safari private-mode
+    // quota), the choice just doesn't survive a reload and the banner
+    // reappears next visit — safe degradation, not a thrown error mid-click.
+  }
 }
 
 // GA4 loads only when the visitor hasn't signaled DNT/GPC AND has actively
