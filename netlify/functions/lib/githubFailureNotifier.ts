@@ -99,6 +99,16 @@ function isWithinRenotifyWindow(
   issue: GithubIssueOrPullRequest,
   renotifyIntervalMs: number,
 ): boolean {
+  // A notifier that wants no throttling passes 0 (see notifySummaryFailure.ts).
+  // Handled explicitly rather than relying on the arithmetic below to yield
+  // "never throttled": a tracked issue's updated_at stamped by GitHub
+  // slightly ahead of this container's own (NTP-skewed) clock would
+  // otherwise produce a negative elapsed time, which is still `< 0` and so
+  // would incorrectly throttle — exactly the silent-failure mode this
+  // feature exists to prevent.
+  if (renotifyIntervalMs <= 0) {
+    return false;
+  }
   if (!issue.updated_at) {
     return false;
   }
@@ -106,7 +116,12 @@ function isWithinRenotifyWindow(
   if (Number.isNaN(updatedAtMs)) {
     return false;
   }
-  return Date.now() - updatedAtMs < renotifyIntervalMs;
+  const elapsedMs = Date.now() - updatedAtMs;
+  // elapsedMs can itself go slightly negative from the same clock-skew
+  // scenario even with a non-zero window; treated as "not within the
+  // window" (comment/create fires) rather than as "infinitely within it"
+  // for the same reason as the renotifyIntervalMs <= 0 guard above.
+  return elapsedMs >= 0 && elapsedMs < renotifyIntervalMs;
 }
 
 // The issues list endpoint returns pull requests alongside issues, and the
@@ -325,23 +340,30 @@ export function createFetchGithubIssuesClient(): GithubIssuesClient {
         createdLabelNames.has(requestedLabel),
       );
       if (!hasAllRequestedLabels) {
+        // The `try` covers only the request itself, not the drain below: by
+        // the time the POST resolves, the label is already applied on
+        // GitHub's side, so a stream error while draining the (unused)
+        // response body must not be mistaken for the attach itself having
+        // failed — that would misreport a successfully-delivered
+        // notification as broken and send a human chasing the wrong system.
+        let labelResponse: Response;
         try {
-          const labelResponse = await githubRequest(
+          labelResponse = await githubRequest(
             `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${created.number}/labels`,
             {
               method: "POST",
               body: JSON.stringify({ labels: input.labels }),
             },
           );
-          // Never inspected, same as createComment's response below — drain
-          // it explicitly rather than leaving it unconsumed.
-          await labelResponse.body?.cancel();
         } catch (labelAttachError) {
           throw new Error(
             `GitHub API issue creation did not apply all requested labels (${input.labels.join(", ")}) to issue #${created.number}, and retrying the label attach also failed: ${labelAttachError instanceof Error ? labelAttachError.message : String(labelAttachError)}`,
             { cause: labelAttachError },
           );
         }
+        // Never inspected, same as createComment's response below — drain
+        // it explicitly rather than leaving it unconsumed.
+        await labelResponse.body?.cancel();
       }
     },
     async createComment(issueNumber, body) {

@@ -7,10 +7,12 @@ import {
   PRUNE_FAILURE_ISSUE_TITLE,
   PRUNE_FAILURE_ISSUE_MARKER,
   NOTIFY_THROTTLED_LOG_PREFIX,
-  type GithubIssueOrPullRequest,
-  type GithubIssuesClient,
 } from "../../../netlify/functions/lib/notifyPruneFailure";
 import { GITHUB_TOKEN_ENV_VAR } from "../../../netlify/functions/lib/githubFailureNotifier";
+import {
+  buildGithubClientStub,
+  trackedIssue as trackedIssueWithMarker,
+} from "../helpers/githubIssuesClientStub";
 
 // The generic duplicate-guard/throttle mechanics and the fetch-based GitHub
 // REST adapter this notifier is built on (createFailureNotifier,
@@ -20,26 +22,8 @@ import { GITHUB_TOKEN_ENV_VAR } from "../../../netlify/functions/lib/githubFailu
 // createPruneFailureNotifier configures, and that getPruneFailureNotifier()
 // wires them through to the real adapter. See #123, #137.
 
-function trackedIssue(
-  number: number,
-  updatedAt: string,
-): GithubIssueOrPullRequest {
-  return {
-    number,
-    body: `${PRUNE_FAILURE_ISSUE_MARKER}\nOriginal failure body.`,
-    pull_request: undefined,
-    updated_at: updatedAt,
-  };
-}
-
-function buildGithubClientStub(
-  existingIssues: GithubIssueOrPullRequest[] = [],
-): GithubIssuesClient {
-  return {
-    listOpenIssuesByLabel: vi.fn().mockResolvedValue(existingIssues),
-    createIssue: vi.fn().mockResolvedValue(undefined),
-    createComment: vi.fn().mockResolvedValue(undefined),
-  };
+function trackedIssue(number: number, updatedAt: string) {
+  return trackedIssueWithMarker(PRUNE_FAILURE_ISSUE_MARKER, number, updatedAt);
 }
 
 describe("createPruneFailureNotifier", () => {
@@ -70,9 +54,9 @@ describe("createPruneFailureNotifier", () => {
     // that createPruneFailureNotifier wires its own
     // NOTIFY_THROTTLED_LOG_PREFIX through.
     const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const client = buildGithubClientStub([
-      trackedIssue(7, new Date().toISOString()),
-    ]);
+    const client = buildGithubClientStub({
+      existingIssues: [trackedIssue(7, new Date().toISOString())],
+    });
     const notifier = createPruneFailureNotifier(client);
 
     await notifier.notify("blobs unavailable");

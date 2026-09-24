@@ -20,7 +20,11 @@ import {
   type GithubIssuesClient,
 } from "./githubFailureNotifier";
 
-export { sanitizeReportedError };
+// Only the two types are re-exported — notifySummaryFailure.test.ts uses
+// them to type its own GithubIssuesClient stubs. sanitizeReportedError is
+// used internally below (buildIssueBody) but has no consumer outside this
+// file that needs it re-exported — a forwarding export with no importer is
+// just a second public path to the same symbol.
 export type {
   GithubIssueOrPullRequest,
   GithubIssuesClient,

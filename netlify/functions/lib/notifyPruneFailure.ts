@@ -26,20 +26,19 @@ import {
   createFailureNotifier,
   createFetchGithubIssuesClient,
   sanitizeReportedError,
-  GITHUB_TOKEN_ENV_VAR,
   RENOTIFY_INTERVAL_MS,
   type FailureNotifier,
   type GithubIssueOrPullRequest,
   type GithubIssuesClient,
 } from "./githubFailureNotifier";
 
-export {
-  sanitizeReportedError,
-  GITHUB_TOKEN_ENV_VAR,
-  RENOTIFY_INTERVAL_MS,
-  type GithubIssueOrPullRequest,
-  type GithubIssuesClient,
-};
+// Only the two types are re-exported — notifyPruneFailure.test.ts uses them
+// to type its own GithubIssuesClient stubs. sanitizeReportedError,
+// GITHUB_TOKEN_ENV_VAR and RENOTIFY_INTERVAL_MS are used internally below
+// (buildIssueBody, createPruneFailureNotifier) but have no consumer outside
+// this file that needs them re-exported — a forwarding export with no
+// importer is just a second public path to the same symbol.
+export { type GithubIssueOrPullRequest, type GithubIssuesClient };
 
 // Named like the other log markers in this feature (PRUNE_FAILED_LOG_PREFIX
 // etc. in csp-report-prune.ts) rather than an inline literal, and exported

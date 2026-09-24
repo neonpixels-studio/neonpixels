@@ -7,10 +7,12 @@ import {
   SUMMARY_FAILURE_ISSUE_TITLE,
   SUMMARY_FAILURE_ISSUE_MARKER,
   NOTIFY_THROTTLED_LOG_PREFIX,
-  type GithubIssueOrPullRequest,
-  type GithubIssuesClient,
 } from "../../../netlify/functions/lib/notifySummaryFailure";
 import { GITHUB_TOKEN_ENV_VAR } from "../../../netlify/functions/lib/githubFailureNotifier";
+import {
+  buildGithubClientStub,
+  trackedIssue as trackedIssueWithMarker,
+} from "../helpers/githubIssuesClientStub";
 
 // The generic duplicate-guard/throttle mechanics and the fetch-based GitHub
 // REST adapter this notifier is built on (createFailureNotifier,
@@ -22,26 +24,12 @@ import { GITHUB_TOKEN_ENV_VAR } from "../../../netlify/functions/lib/githubFailu
 // and that getSummaryFailureNotifier() wires them through to the real
 // adapter. See #137.
 
-function trackedIssue(
-  number: number,
-  updatedAt: string,
-): GithubIssueOrPullRequest {
-  return {
+function trackedIssue(number: number, updatedAt: string) {
+  return trackedIssueWithMarker(
+    SUMMARY_FAILURE_ISSUE_MARKER,
     number,
-    body: `${SUMMARY_FAILURE_ISSUE_MARKER}\nOriginal failure body.`,
-    pull_request: undefined,
-    updated_at: updatedAt,
-  };
-}
-
-function buildGithubClientStub(
-  existingIssues: GithubIssueOrPullRequest[] = [],
-): GithubIssuesClient {
-  return {
-    listOpenIssuesByLabel: vi.fn().mockResolvedValue(existingIssues),
-    createIssue: vi.fn().mockResolvedValue(undefined),
-    createComment: vi.fn().mockResolvedValue(undefined),
-  };
+    updatedAt,
+  );
 }
 
 describe("createSummaryFailureNotifier", () => {
@@ -79,9 +67,11 @@ describe("createSummaryFailureNotifier", () => {
   // createSummaryFailureNotifier is wired to disable it.
   it("comments even when a tracked issue was updated a second ago, since the daily cadence disables the throttle", async () => {
     const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const client = buildGithubClientStub([
-      trackedIssue(7, new Date(Date.now() - 1000).toISOString()),
-    ]);
+    const client = buildGithubClientStub({
+      existingIssues: [
+        trackedIssue(7, new Date(Date.now() - 1000).toISOString()),
+      ],
+    });
     const notifier = createSummaryFailureNotifier(client);
 
     await notifier.notify("blobs unavailable");

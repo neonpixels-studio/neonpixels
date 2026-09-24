@@ -7,9 +7,11 @@ import {
   GITHUB_TOKEN_ENV_VAR,
   RENOTIFY_INTERVAL_MS,
   type FailureNotifierConfig,
-  type GithubIssueOrPullRequest,
-  type GithubIssuesClient,
 } from "../../../netlify/functions/lib/githubFailureNotifier";
+import {
+  buildGithubClientStub,
+  trackedIssue as trackedIssueWithMarker,
+} from "../helpers/githubIssuesClientStub";
 
 // Exercises the generic duplicate-guard/throttle mechanics
 // (createFailureNotifier) and the fetch-based GitHub REST adapter
@@ -43,47 +45,8 @@ function testConfig(
   };
 }
 
-type GithubStubOptions = {
-  existingIssues?: GithubIssueOrPullRequest[];
-  listOpenIssuesByLabelImpl?: () => Promise<GithubIssueOrPullRequest[]>;
-  createIssueImpl?: () => Promise<void>;
-};
-
-function buildGithubClientStub({
-  existingIssues = [],
-  listOpenIssuesByLabelImpl,
-  createIssueImpl,
-}: GithubStubOptions = {}): GithubIssuesClient & {
-  listOpenIssuesByLabel: ReturnType<typeof vi.fn>;
-  createIssue: ReturnType<typeof vi.fn>;
-  createComment: ReturnType<typeof vi.fn>;
-} {
-  return {
-    listOpenIssuesByLabel: listOpenIssuesByLabelImpl
-      ? vi.fn().mockImplementation(listOpenIssuesByLabelImpl)
-      : vi.fn().mockResolvedValue(existingIssues),
-    createIssue: createIssueImpl
-      ? vi.fn().mockImplementation(createIssueImpl)
-      : vi.fn().mockResolvedValue(undefined),
-    createComment: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-// A tracked issue is one a notifier itself opened: carries the marker in
-// its body (the label alone isn't a reliable match — see the "unrelated
-// issue" tests below). Defaults `updated_at` to well outside the re-notify
-// throttle window so existing comment tests aren't coupled to it; tests of
-// the throttle itself override it explicitly.
-function trackedIssue(
-  number: number,
-  updatedAt = "2020-01-01T00:00:00.000Z",
-): GithubIssueOrPullRequest {
-  return {
-    number,
-    body: `${TEST_ISSUE_MARKER}\nOriginal failure body.`,
-    pull_request: undefined,
-    updated_at: updatedAt,
-  };
+function trackedIssue(number: number, updatedAt?: string) {
+  return trackedIssueWithMarker(TEST_ISSUE_MARKER, number, updatedAt);
 }
 
 describe("createFailureNotifier", () => {
@@ -310,6 +273,45 @@ describe("createFailureNotifier", () => {
         client,
         testConfig({ renotifyIntervalMs: 0 }),
       );
+
+      await notifier.notify("blobs unavailable");
+
+      expect(client.createComment).toHaveBeenCalledTimes(1);
+    });
+
+    // GitHub can stamp updated_at slightly ahead of this container's own
+    // (NTP-skewed) clock, making Date.now() - updatedAtMs go negative. With
+    // renotifyIntervalMs: 0, that must still resolve to "not throttled" —
+    // relying on `elapsed < 0` (a naive `< renotifyIntervalMs` comparison)
+    // would instead read as "within the window" and silently swallow a real
+    // failure notification.
+    it("never throttles when renotifyIntervalMs is 0, even for a future-dated updated_at", async () => {
+      const client = buildGithubClientStub({
+        existingIssues: [
+          trackedIssue(7, new Date(Date.now() + 60_000).toISOString()),
+        ],
+      });
+      const notifier = createFailureNotifier(
+        client,
+        testConfig({ renotifyIntervalMs: 0 }),
+      );
+
+      await notifier.notify("blobs unavailable");
+
+      expect(client.createComment).toHaveBeenCalledTimes(1);
+    });
+
+    // The same clock-skew scenario, but with a real non-zero window (the
+    // prune notifier's case): a future-dated updated_at must not throttle
+    // either, since "not within the window" is the safe default when the
+    // elapsed time can't be trusted.
+    it("does not throttle a non-zero window either when updated_at is future-dated", async () => {
+      const client = buildGithubClientStub({
+        existingIssues: [
+          trackedIssue(7, new Date(Date.now() + 60_000).toISOString()),
+        ],
+      });
+      const notifier = createFailureNotifier(client, testConfig());
 
       await notifier.notify("blobs unavailable");
 
