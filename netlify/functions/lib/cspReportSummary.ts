@@ -45,10 +45,26 @@ export type RolloutSignal = {
 };
 
 export type CspReportSummary = {
-  // Every key the store listed, regardless of whether it fetched or parsed
-  // successfully — the denominator for fetchFailures/missingEntries/
-  // invalidEntries below.
+  // listComplete && fetchComplete — real data either way, never zeroed out.
+  // Folded into summarizeRollout's fail-closed gate the same as
+  // fetchFailures/missingEntries/invalidEntries: a key the run never got to
+  // can hide a script-src violation just as easily as a failed one.
+  complete: boolean;
+  // False when listAllKeys was cut short by LIST_TIME_BUDGET_MS (totalListed
+  // is then a lower bound, same caveat cspReportPruner.ts's own partial
+  // listing carries).
+  listComplete: boolean;
+  // False when fetchAll was cut short by SUMMARY_TIME_BUDGET_MS before
+  // attempting every key listAllKeys handed it.
+  fetchComplete: boolean;
+  // Every key list() returned, regardless of whether fetchAll got to it.
   totalListed: number;
+  // Keys fetchAll actually attempted — the real denominator for
+  // fetchFailures/missingEntries/invalidEntries/totalViolations below. Can
+  // equal totalListed even when `complete` is false (a cut-short *list*
+  // pass still gets every key it did find fully fetched) — check `complete`,
+  // not this equality, to know the run was whole.
+  totalFetched: number;
   totalViolations: number;
   // Descending by count (ties broken alphabetically for a deterministic
   // order), so the loudest directive/URI is first without the caller
@@ -84,12 +100,71 @@ export type CspReportSummaryTool = {
   summarize(): Promise<CspReportSummary>;
 };
 
-async function listAllKeys(client: BlobSummaryClient): Promise<string[]> {
-  const keys: string[] = [];
-  for await (const page of client.list({ paginate: true })) {
-    keys.push(...page.blobs.map((blob) => blob.key));
+function isPastDeadline(deadlineMs: number): boolean {
+  return Date.now() > deadlineMs;
+}
+
+type ListedKeys = { keys: string[]; complete: boolean };
+
+const SUMMARY_LIST_FAILED_LOG_PREFIX = "csp-report-summary-list-failed";
+
+// Wraps a single pages.next() call so a rejected list() page (Blobs outage
+// mid-walk) degrades listAllKeys to a partial, fail-closed result instead of
+// throwing the whole run away — the same "count it, don't crash" contract
+// fetchOne already gives get() failures below.
+async function pullPage(
+  pages: AsyncIterator<BlobPage>,
+): Promise<IteratorResult<BlobPage> | null> {
+  try {
+    return await pages.next();
+  } catch (reason) {
+    console.warn(
+      SUMMARY_LIST_FAILED_LOG_PREFIX,
+      JSON.stringify({ message: reasonMessage(reason) }),
+    );
+    return null;
   }
-  return keys;
+}
+
+// Budgeted the same way cspReportPruner.ts's own listAllKeys is (see
+// LIST_TIME_BUDGET_MS), but pulls pages manually instead of `for await`:
+// checking the deadline immediately upon appending a page can't tell "more
+// to list" from "that was the last page and it merely arrived late", which
+// would misreport `complete: false` on a fully-listed store — a false
+// negative on the signal that gates `rollout.stopped`. Once the deadline
+// has passed, one further page is pulled and, if real, absorbed before
+// giving up; only actually running out of pages (`done`) reports complete.
+async function listAllKeys(
+  client: BlobSummaryClient,
+  deadlineMs: number,
+): Promise<ListedKeys> {
+  const keys: string[] = [];
+  const pages = client.list({ paginate: true })[Symbol.asyncIterator]();
+  let deadlinePassed = false;
+  for (;;) {
+    const result = await pullPage(pages);
+    if (result === null) {
+      return { keys, complete: false };
+    }
+    if (result.done) {
+      return { keys, complete: true };
+    }
+    keys.push(...result.value.blobs.map((blob) => blob.key));
+    if (!deadlinePassed) {
+      deadlinePassed = isPastDeadline(deadlineMs);
+      continue;
+    }
+    const lookahead = await pullPage(pages);
+    if (lookahead === null) {
+      return { keys, complete: false };
+    }
+    if (lookahead.done) {
+      return { keys, complete: true };
+    }
+    keys.push(...lookahead.value.blobs.map((blob) => blob.key));
+    await pages.return?.()?.catch(() => {});
+    return { keys, complete: false };
+  }
 }
 
 // cspReportStore.ts always writes `receivedAt` as `new Date().toISOString()`
@@ -288,11 +363,20 @@ type SummaryCompleteness = {
   fetchFailures: number;
   missingEntries: number;
   invalidEntries: number;
+  // See the `complete` field on CspReportSummary — an incomplete fetchAll
+  // run leaves some listed keys never attempted at all, which is exactly as
+  // dangerous to a "stopped" verdict as a key that was attempted and failed.
+  complete: boolean;
 };
 
 function summarizeRollout(
   violations: StoredCspViolation[],
-  { fetchFailures, missingEntries, invalidEntries }: SummaryCompleteness,
+  {
+    fetchFailures,
+    missingEntries,
+    invalidEntries,
+    complete,
+  }: SummaryCompleteness,
 ): RolloutSignal {
   const matches = violations.filter((violation) =>
     isRolloutDirective(violation.effectiveDirective),
@@ -303,31 +387,35 @@ function summarizeRollout(
     mostRecent: mostRecentOf(matches),
     // Fails closed on every way a script-src violation could be sitting in
     // the store without this run having read it: a failed fetch or an
-    // unparsed/corrupted blob (fetchFailures/invalidEntries), or a key the
+    // unparsed/corrupted blob (fetchFailures/invalidEntries), a key the
     // hourly pruner's count-cap pass evicted mid-walk (missingEntries) —
     // that cap trims *fresh* keys oldest-first whenever the store is over
     // CSP_REPORT_MAX_BLOBS (see overCapKeys in cspReportPruner.ts), not only
     // retention-aged ones, so a "missing" key here can genuinely have been a
-    // recent violation this run simply lost the race to read. This signal is
-    // what the README says authorizes dropping 'unsafe-inline' from the
-    // enforcing script-src, so a false "stopped" here would weaken a live
-    // security header on bad evidence.
+    // recent violation this run simply lost the race to read — or a key
+    // fetchAll never got to at all before its own time budget ran out
+    // (complete: false). An unattempted key is no more evidence of "clean"
+    // than a failed or missing one. This signal is what the README says
+    // authorizes dropping 'unsafe-inline' from the enforcing script-src, so
+    // a false "stopped" here would weaken a live security header on bad
+    // evidence.
     //
     // Deliberately NOT gated on the store being non-empty: an empty store
-    // that's read cleanly (zero of every completeness counter above) is the
-    // designed end state of a successful rollout, not evidence of anything
-    // wrong — treating it as "can't tell" would make `stopped` permanently
-    // unreachable once the rollout actually finishes and the 30-day
-    // retention window rolls the last evidence off. A collector that stops
-    // receiving traffic entirely (a 500 from /csp-report, a mistyped
-    // report-uri) is a distinct failure mode already covered by its own
-    // signal (csp-report-persist-failed in csp-report.ts), not this one's
-    // job to re-derive from store volume.
+    // that's read cleanly and completely (zero of every completeness
+    // counter above, complete: true) is the designed end state of a
+    // successful rollout, not evidence of anything wrong — treating it as
+    // "can't tell" would make `stopped` permanently unreachable once the
+    // rollout actually finishes and the 30-day retention window rolls the
+    // last evidence off. A collector that stops receiving traffic entirely
+    // (a 500 from /csp-report, a mistyped report-uri) is a distinct failure
+    // mode already covered by its own signal (csp-report-persist-failed in
+    // csp-report.ts), not this one's job to re-derive from store volume.
     stopped:
       matches.length === 0 &&
       fetchFailures === 0 &&
       missingEntries === 0 &&
-      invalidEntries === 0,
+      invalidEntries === 0 &&
+      complete,
   };
 }
 
@@ -342,33 +430,73 @@ function summarizeRollout(
 // DELETE_BATCH_SIZE in cspReportPruner.ts).
 export const FETCH_BATCH_SIZE = 25;
 
+// The run's combined list+fetch budget (mirrors PRUNE_TIME_BUDGET_MS in
+// cspReportPruner.ts), split in half so a slow list() walk can't starve
+// fetchAll of its share. Kept 8000ms under the adapter's HARD_TIMEOUT_MS
+// (../csp-report-summary.ts) — same gap as the pruner's own budget vs. its
+// hard timeout — so whatever batch is in flight when this trips has real
+// room to finish before the hard timeout would instead discard the whole
+// run (margin asserted in cspReportSummaryFunction.test.ts).
+export const SUMMARY_TIME_BUDGET_MS = 20000;
+export const LIST_TIME_BUDGET_MS = Math.floor(SUMMARY_TIME_BUDGET_MS / 2);
+
+type FetchAllResult = {
+  outcomes: FetchOutcome[];
+  // False when the deadline was reached before every key was attempted —
+  // see SUMMARY_TIME_BUDGET_MS and the `fetchComplete` field on
+  // CspReportSummary.
+  complete: boolean;
+};
+
+// Checks the deadline in the loop condition (mirrors deleteKeys in
+// cspReportPruner.ts) so stopping early and finishing normally are the same
+// exit, not two separate return points; checked once per batch boundary,
+// not within a batch, since the concurrent Promise.all already in flight
+// always finishes.
 async function fetchAll(
   client: BlobSummaryClient,
   keys: string[],
-): Promise<FetchOutcome[]> {
+  deadlineMs: number,
+): Promise<FetchAllResult> {
   const outcomes: FetchOutcome[] = [];
-  for (let start = 0; start < keys.length; start += FETCH_BATCH_SIZE) {
+  let start = 0;
+  while (start < keys.length && !isPastDeadline(deadlineMs)) {
     const batch = keys.slice(start, start + FETCH_BATCH_SIZE);
     outcomes.push(
       ...(await Promise.all(batch.map((key) => fetchOne(client, key)))),
     );
+    start += batch.length;
   }
-  return outcomes;
+  return { outcomes, complete: start >= keys.length };
 }
 
 // Pure factory: given anything that can list and get blobs, returns a tool
-// that reads every stored violation and aggregates it. It has no
-// cooperative time budget of its own (unlike the pruner's list/delete
-// passes) — the scheduled adapter (../csp-report-summary.ts) wraps the
-// whole call in a hard timeout instead, so a store too large to summarize
-// in time aborts the run rather than silently returning partial counts.
+// that reads every stored violation and aggregates it. The list and fetch
+// passes each have their own cooperative time budget (see
+// LIST_TIME_BUDGET_MS / SUMMARY_TIME_BUDGET_MS above), so a store too large
+// to finish in one pass still returns a real, partial summary (complete:
+// false) instead of being discarded wholesale; the scheduled adapter
+// (../csp-report-summary.ts) still wraps the whole call in a hard timeout
+// as a backstop for a genuine hang that neither cooperative check would
+// catch.
 export function createCspReportSummary(
   client: BlobSummaryClient,
 ): CspReportSummaryTool {
   return {
     async summarize() {
-      const keys = await listAllKeys(client);
-      const outcomes = await fetchAll(client, keys);
+      const startMs = Date.now();
+      const listDeadlineMs = startMs + LIST_TIME_BUDGET_MS;
+      const fetchDeadlineMs = startMs + SUMMARY_TIME_BUDGET_MS;
+      const { keys, complete: listComplete } = await listAllKeys(
+        client,
+        listDeadlineMs,
+      );
+      const { outcomes, complete: fetchComplete } = await fetchAll(
+        client,
+        keys,
+        fetchDeadlineMs,
+      );
+      const complete = listComplete && fetchComplete;
       for (const outcome of outcomes) {
         logFetchOutcome(outcome);
       }
@@ -379,7 +507,11 @@ export function createCspReportSummary(
       const missingEntries = countStatus(outcomes, "missing");
       const invalidEntries = countStatus(outcomes, "invalid");
       return {
+        complete,
+        listComplete,
+        fetchComplete,
         totalListed: keys.length,
+        totalFetched: outcomes.length,
         totalViolations: violations.length,
         byDirective: aggregateByDirective(violations),
         byBlockedUri: aggregateByBlockedUri(violations),
@@ -387,6 +519,7 @@ export function createCspReportSummary(
           fetchFailures,
           missingEntries,
           invalidEntries,
+          complete,
         }),
         fetchFailures,
         missingEntries,

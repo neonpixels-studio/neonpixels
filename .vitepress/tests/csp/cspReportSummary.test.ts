@@ -1,13 +1,17 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import {
   createCspReportSummary,
   ROLLOUT_DIRECTIVE,
   FETCH_BATCH_SIZE,
+  SUMMARY_TIME_BUDGET_MS,
+  LIST_TIME_BUDGET_MS,
   type BlobSummaryClient,
   type BlobPage,
 } from "../../../netlify/functions/lib/cspReportSummary";
 import type { StoredCspViolation } from "../../../netlify/functions/lib/cspReportStore";
+
+const NOW = new Date("2026-06-15T00:00:00.000Z");
 
 function violation(
   overrides: Partial<StoredCspViolation> = {},
@@ -46,7 +50,13 @@ function fakeClient(
   };
 }
 
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -62,7 +72,11 @@ describe("createCspReportSummary", () => {
     const summary = await createCspReportSummary(client).summarize();
 
     expect(summary).toEqual({
+      complete: true,
+      listComplete: true,
+      fetchComplete: true,
       totalListed: 0,
+      totalFetched: 0,
       totalViolations: 0,
       byDirective: [],
       byBlockedUri: [],
@@ -371,6 +385,233 @@ describe("createCspReportSummary", () => {
 
     const summary = await createCspReportSummary(client).summarize();
 
+    expect(summary.rollout.count).toBe(0);
+    expect(summary.rollout.stopped).toBe(false);
+  });
+
+  it("returns a partial summary — real counts, not zeroed out — when fetchAll's own time budget runs out mid-walk", async () => {
+    // One extra batch beyond FETCH_BATCH_SIZE so the deadline check between
+    // batches has a second batch to correctly refuse.
+    const keys = Array.from(
+      { length: FETCH_BATCH_SIZE + 5 },
+      (_, index) => `key-${index}`,
+    );
+    const blobs = Object.fromEntries(keys.map((key) => [key, violation()]));
+    const client = fakeClient([keys], blobs);
+    let getCalls = 0;
+    client.get.mockImplementation(async (key: string) => {
+      getCalls += 1;
+      // Once the first batch finishes, the budget is spent — the second,
+      // shorter batch after it must never be attempted.
+      if (getCalls === FETCH_BATCH_SIZE) {
+        vi.setSystemTime(new Date(NOW.getTime() + SUMMARY_TIME_BUDGET_MS + 1));
+      }
+      return blobs[key];
+    });
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.complete).toBe(false);
+    // totalListed reflects every key list() returned, regardless of whether
+    // fetchAll got to it — totalFetched/totalViolations are the real,
+    // non-zero counts of what was actually fetched before the deadline.
+    expect(summary.totalListed).toBe(keys.length);
+    expect(summary.totalFetched).toBe(FETCH_BATCH_SIZE);
+    expect(summary.totalViolations).toBe(FETCH_BATCH_SIZE);
+    expect(client.get).toHaveBeenCalledTimes(FETCH_BATCH_SIZE);
+  });
+
+  it("still returns a complete summary when the run finishes within the time budget", async () => {
+    const keys = Array.from(
+      { length: FETCH_BATCH_SIZE + 5 },
+      (_, index) => `key-${index}`,
+    );
+    const blobs = Object.fromEntries(keys.map((key) => [key, violation()]));
+    const client = fakeClient([keys], blobs);
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.complete).toBe(true);
+    expect(summary.totalListed).toBe(keys.length);
+    expect(summary.totalFetched).toBe(keys.length);
+    expect(summary.totalViolations).toBe(keys.length);
+    expect(client.get).toHaveBeenCalledTimes(keys.length);
+  });
+
+  it("reports listComplete: true when the deadline passes on the store's true last page (clock advances before that page is yielded)", async () => {
+    const keys = ["key-a", "key-b"];
+    const blobs = Object.fromEntries(keys.map((key) => [key, violation()]));
+    const client: BlobSummaryClient & { get: ReturnType<typeof vi.fn> } = {
+      get: vi.fn(async (key: string) => blobs[key]),
+      async *list() {
+        vi.setSystemTime(new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1));
+        yield { blobs: keys.map((key) => ({ key })) };
+      },
+    };
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.listComplete).toBe(true);
+    expect(summary.complete).toBe(true);
+    expect(summary.totalListed).toBe(keys.length);
+  });
+
+  it("reports listComplete: true but fetchComplete: false when only the store's one page stalls past the whole run budget", async () => {
+    const keys = Array.from(
+      { length: FETCH_BATCH_SIZE + 5 },
+      (_, index) => `key-${index}`,
+    );
+    const blobs = Object.fromEntries(keys.map((key) => [key, violation()]));
+    const client: BlobSummaryClient & { get: ReturnType<typeof vi.fn> } = {
+      get: vi.fn(async (key: string) => blobs[key]),
+      async *list() {
+        // The one and only page stalls past the whole run's budget.
+        vi.setSystemTime(new Date(NOW.getTime() + SUMMARY_TIME_BUDGET_MS + 1));
+        yield { blobs: keys.map((key) => ({ key })) };
+      },
+    };
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.listComplete).toBe(true);
+    expect(summary.fetchComplete).toBe(false);
+    expect(summary.complete).toBe(false);
+    expect(summary.totalListed).toBe(keys.length);
+    expect(summary.totalFetched).toBe(0);
+    expect(summary.totalViolations).toBe(0);
+    expect(client.get).not.toHaveBeenCalled();
+  });
+
+  it("stops listing within two pages of its own time budget, but still hands fetchAll every key found by then", async () => {
+    // Once the deadline trips after page 1, listAllKeys always absorbs
+    // page 2 (pushed before the check) and, via its one-page lookahead,
+    // page 3 if it's real — then stops for good without checking page 4.
+    const page1Keys = ["key-a", "key-b"];
+    const page2Keys = ["key-peeked-1"];
+    const page3Keys = ["key-peeked-2"];
+    const neverReachedKey = "key-never-reached";
+    const foundKeys = [...page1Keys, ...page2Keys, ...page3Keys];
+    const blobs = Object.fromEntries(
+      foundKeys.map((key) => [key, violation()]),
+    );
+    const client: BlobSummaryClient & { get: ReturnType<typeof vi.fn> } = {
+      get: vi.fn(async (key: string) => blobs[key]),
+      async *list() {
+        vi.setSystemTime(new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1));
+        yield { blobs: page1Keys.map((key) => ({ key })) };
+        yield { blobs: page2Keys.map((key) => ({ key })) };
+        yield { blobs: page3Keys.map((key) => ({ key })) };
+        yield { blobs: [{ key: neverReachedKey }] };
+      },
+    };
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.complete).toBe(false);
+    expect(summary.listComplete).toBe(false);
+    expect(summary.fetchComplete).toBe(true);
+    expect(summary.totalListed).toBe(foundKeys.length);
+    expect(summary.totalFetched).toBe(foundKeys.length);
+    expect(summary.totalViolations).toBe(foundKeys.length);
+    expect(client.get).not.toHaveBeenCalledWith(neverReachedKey);
+  });
+
+  it("returns a partial, fail-closed result instead of throwing when the list pass itself rejects", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const client: BlobSummaryClient & { get: ReturnType<typeof vi.fn> } = {
+      get: vi.fn(async () => violation()),
+      // Not a generator (require-yield would flag one with no yield): a
+      // plain AsyncIterable whose first next() rejects, simulating a
+      // list() call that fails outright rather than ever yielding a page.
+      list(): AsyncIterable<BlobPage> {
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next: () => Promise.reject(new Error("blobs list unavailable")),
+            };
+          },
+        };
+      },
+    };
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.listComplete).toBe(false);
+    expect(summary.complete).toBe(false);
+    expect(summary.totalListed).toBe(0);
+    expect(warn).toHaveBeenCalledWith(
+      "csp-report-summary-list-failed",
+      JSON.stringify({ message: "blobs list unavailable" }),
+    );
+  });
+
+  it("reports the rollout as not stopped when the fetch pass is cut short, even if every fetched entry was clean", async () => {
+    // Proves the fail-closed gate treats an unattempted key (never fetched
+    // at all, because the budget ran out) the same as a failed or missing
+    // one — none of the keys that *were* fetched are script-src, so without
+    // folding `complete` into the gate this would wrongly read as stopped.
+    const keys = Array.from(
+      { length: FETCH_BATCH_SIZE + 1 },
+      (_, index) => `key-${index}`,
+    );
+    const blobs = Object.fromEntries(
+      keys.map((key) => [key, violation({ effectiveDirective: "style-src" })]),
+    );
+    const client = fakeClient([keys], blobs);
+    let getCalls = 0;
+    client.get.mockImplementation(async (key: string) => {
+      getCalls += 1;
+      if (getCalls === FETCH_BATCH_SIZE) {
+        vi.setSystemTime(new Date(NOW.getTime() + SUMMARY_TIME_BUDGET_MS + 1));
+      }
+      return blobs[key];
+    });
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.complete).toBe(false);
+    expect(summary.fetchComplete).toBe(false);
+    expect(summary.rollout.count).toBe(0);
+    expect(summary.rollout.stopped).toBe(false);
+  });
+
+  it("reports the rollout as not stopped when the list pass is cut short, even though every fetched entry was clean and fetchAll itself finished", async () => {
+    // The sibling of the test above, for the other half of `complete`
+    // (listComplete rather than fetchComplete): totalFetched === totalListed
+    // here, so this is exactly the case where the summary could look fully
+    // read at a glance — without folding `complete` into the gate, a
+    // truncated list pass hiding an unlisted script-src violation would
+    // wrongly report stopped: true.
+    const page1Keys = ["key-a", "key-b"];
+    const page2Keys = ["key-peeked-1"];
+    const page3Keys = ["key-peeked-2"];
+    const neverReachedKey = "key-never-reached";
+    const foundKeys = [...page1Keys, ...page2Keys, ...page3Keys];
+    const blobs = Object.fromEntries(
+      foundKeys.map((key) => [
+        key,
+        violation({ effectiveDirective: "style-src" }),
+      ]),
+    );
+    const client: BlobSummaryClient & { get: ReturnType<typeof vi.fn> } = {
+      get: vi.fn(async (key: string) => blobs[key]),
+      async *list() {
+        vi.setSystemTime(new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1));
+        yield { blobs: page1Keys.map((key) => ({ key })) };
+        yield { blobs: page2Keys.map((key) => ({ key })) };
+        yield { blobs: page3Keys.map((key) => ({ key })) };
+        yield { blobs: [{ key: neverReachedKey }] };
+      },
+    };
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.complete).toBe(false);
+    expect(summary.listComplete).toBe(false);
+    expect(summary.fetchComplete).toBe(true);
+    expect(summary.totalFetched).toBe(summary.totalListed);
+    expect(summary.totalListed).toBe(foundKeys.length);
+    expect(client.get).not.toHaveBeenCalledWith(neverReachedKey);
     expect(summary.rollout.count).toBe(0);
     expect(summary.rollout.stopped).toBe(false);
   });

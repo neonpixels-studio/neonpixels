@@ -180,12 +180,20 @@ reads and aggregates the store: counts of stored violations by
 how many stored violations belong to the `script-src` family (`script-src`
 itself plus the `script-src-elem`/`script-src-attr` sub-directives browsers
 report even though this site never declares them separately) and, if any
-remain, the most recent one. The signal fails closed: it only reports
-`stopped: true` once nothing belongs to `script-src` **and** nothing went
-unread — no failed fetch, no key the pruner's count-cap pass evicted mid-walk
-(`fetchFailures`/`missingEntries`/`invalidEntries` all 0), since any of those
-could have been hiding a script-src violation this run simply lost the race
-to see. It is deliberately _not_ gated on the store being non-empty, though —
+remain, the most recent one. Reading the store scales with its size the same
+way pruning does, so the list and fetch passes each carry their own
+cooperative time budget (`LIST_TIME_BUDGET_MS`/`SUMMARY_TIME_BUDGET_MS` in
+`lib/cspReportSummary.ts`, split the same way the pruner splits its budget
+across list/delete) — a store too large to read in one run still returns a
+real, partial summary (`complete: false`) instead of the whole run being
+discarded. The signal fails closed: it only reports `stopped: true` once
+nothing belongs to `script-src` **and** nothing went unread **and** the run
+itself was complete — no failed fetch, no key the pruner's count-cap pass
+evicted mid-walk, no key the time budget never got to
+(`fetchFailures`/`missingEntries`/`invalidEntries` all 0 and `complete:
+true`), since any of those could have been hiding a script-src violation
+this run simply lost the race to see. It is deliberately _not_ gated on the
+store being non-empty, though —
 an empty store read cleanly is the designed end state of a successful
 rollout, not a fault, and treating it as "can't tell" would make `stopped`
 permanently unreachable once retention (`CSP_REPORT_RETENTION_DAYS`) rolls
@@ -216,8 +224,14 @@ lines: `csp-report-summarized` carries the rollout signal and totals, and
 counts (capped to the top 20 each) — split and capped because `blockedUri` is
 attacker-influenced free text arriving through a public endpoint, so an
 unbounded breakdown could otherwise grow into a multi-hundred-KB single log
-line and risk the rollout signal itself being truncated. A run that errors or
-times out logs `csp-report-summary-failed` instead, mirroring
+line and risk the rollout signal itself being truncated. A run cut short by
+its own time budget still logs those two lines with real (if partial) data
+and a 200, plus a separate `csp-report-summary-incomplete` warning so a store
+consistently too large to finish in one run has its own greppable, alertable
+signal — unlike the hourly pruner's self-correcting next run, there's no
+other run coming to surface the problem on its own. A run that errors, hits
+a genuine hang, or times out past its hard timeout logs
+`csp-report-summary-failed` instead, mirroring
 `csp-report-pruned`/`csp-report-prune-failed` above.
 
 ## Git hooks
