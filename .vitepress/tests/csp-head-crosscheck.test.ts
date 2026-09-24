@@ -307,6 +307,19 @@ function cspExternalOrigins(directives: CspDirectives) {
   return [...new Set(origins)];
 }
 
+// GA4's gtag.js (googletagmanager.com) is granted in the CSP's script-src but,
+// since issue #136, is no longer declared as a static `config.head` script
+// entry — it's injected at runtime by
+// .vitepress/theme/components/ConsentBanner.vue (via
+// .vitepress/theme/analytics/loadGoogleAnalytics.ts), gated behind
+// Do-Not-Track/Global Privacy Control and a consent banner. That's exactly
+// the kind of "resources reached via a theme layout" this file's top-comment
+// already scopes out of static analysis, so it's the one documented baseline
+// exception to the reverse check below rather than a true orphaned CSP grant.
+const DOCUMENTED_RUNTIME_INJECTED_ORIGINS = new Set([
+  "https://www.googletagmanager.com",
+]);
+
 // The forward check: external origins a head entry loads that the CSP fails to grant.
 function uncoveredHeadOrigins(
   head: readonly HeadConfig[],
@@ -332,7 +345,9 @@ function unbackedCspOrigins(
     externalHeadOrigins(head).map((entry) => entry.origin),
   );
   return cspExternalOrigins(directives).filter(
-    (origin) => !loadedOrigins.has(origin),
+    (origin) =>
+      !loadedOrigins.has(origin) &&
+      !DOCUMENTED_RUNTIME_INJECTED_ORIGINS.has(origin),
   );
 }
 

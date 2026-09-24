@@ -2,6 +2,7 @@
 import { useData } from "vitepress";
 import NeonPixelsPage from "./components/NeonPixelsPage.vue";
 import NotFound from "./components/NotFound.vue";
+import ConsentBanner from "./components/ConsentBanner.vue";
 import { MAIN_CONTENT_ID } from "./a11y";
 
 const { page } = useData();
@@ -38,6 +39,7 @@ function skipToContent(event: MouseEvent) {
   </a>
   <NotFound v-if="page.isNotFound" />
   <NeonPixelsPage v-else />
+  <ConsentBanner />
 </template>
 
 <style scoped>
