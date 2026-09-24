@@ -6,7 +6,6 @@ import {
   SUMMARY_FAILURE_LABEL,
   SUMMARY_FAILURE_ISSUE_TITLE,
   SUMMARY_FAILURE_ISSUE_MARKER,
-  NOTIFY_THROTTLED_LOG_PREFIX,
 } from "../../../netlify/functions/lib/notifySummaryFailure";
 import { GITHUB_TOKEN_ENV_VAR } from "../../../netlify/functions/lib/githubFailureNotifier";
 import {
@@ -66,7 +65,6 @@ describe("createSummaryFailureNotifier", () => {
   // githubFailureNotifier.test.ts; this only pins that
   // createSummaryFailureNotifier is wired to disable it.
   it("comments even when a tracked issue was created a second ago, since the daily cadence disables the throttle", async () => {
-    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const client = buildGithubClientStub({
       existingIssues: [
         trackedIssue(7, new Date(Date.now() - 1000).toISOString()),
@@ -77,10 +75,21 @@ describe("createSummaryFailureNotifier", () => {
     await notifier.notify("blobs unavailable");
 
     expect(client.createComment).toHaveBeenCalledTimes(1);
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(
-      NOTIFY_THROTTLED_LOG_PREFIX,
-      expect.anything(),
-    );
+  });
+
+  // With the throttle disabled (renotifyIntervalMs: 0), listComments must
+  // never be called at all — there is no window to compute a "since" bound
+  // against, and calling it anyway would be a wasted GitHub API round trip
+  // on every single failed daily run.
+  it("never calls listComments, since the daily cadence disables the throttle entirely", async () => {
+    const client = buildGithubClientStub({
+      existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
+    });
+    const notifier = createSummaryFailureNotifier(client);
+
+    await notifier.notify("blobs unavailable");
+
+    expect(client.listComments).not.toHaveBeenCalled();
   });
 });
 

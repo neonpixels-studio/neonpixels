@@ -20,13 +20,6 @@ import {
   type GithubIssuesClient,
 } from "./githubFailureNotifier";
 
-// Named like the other log markers in this feature
-// (SUMMARY_FAILED_LOG_PREFIX etc. in csp-report-summary.ts) rather than an
-// inline literal, and exported so notifySummaryFailure.test.ts can assert
-// against it directly.
-export const NOTIFY_THROTTLED_LOG_PREFIX =
-  "csp-report-summary-notify-throttled";
-
 export const SUMMARY_FAILURE_LABEL = "csp-summary-failure";
 export const SUMMARY_FAILURE_ISSUE_TITLE =
   "Scheduled csp-report-summary Function failed";
@@ -63,13 +56,13 @@ export function createSummaryFailureNotifier(
     trackingLabel: SUMMARY_FAILURE_LABEL,
     issueTitle: SUMMARY_FAILURE_ISSUE_TITLE,
     issueMarker: SUMMARY_FAILURE_ISSUE_MARKER,
-    throttledLogPrefix: NOTIFY_THROTTLED_LOG_PREFIX,
     buildIssueBody,
     // The summary run is daily — already sparser than any re-notify window
     // worth setting, so every failed run comments/creates rather than
     // risking a human's unrelated issue touch silencing a whole day's
     // failure for no throttling benefit (see RENOTIFY_INTERVAL_MS in
-    // githubFailureNotifier.ts).
+    // githubFailureNotifier.ts). No throttledLogPrefix: with the throttle
+    // disabled, the throttled branch that would log it can never run.
     renotifyIntervalMs: 0,
   });
 }

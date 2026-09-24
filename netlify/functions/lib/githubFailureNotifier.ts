@@ -1,3 +1,5 @@
+import { errorMessage } from "./errorMessage";
+
 // Generic GitHub-issue duplicate-guard notifier, extracted so a second
 // scheduled Function's failure notifier (csp-report-summary's, in
 // notifySummaryFailure.ts) can reuse the exact same seam as the first
@@ -234,8 +236,11 @@ export type FailureNotifierConfig = {
   issueMarker: string;
   buildIssueBody(_errorMessage: string): string;
   // Distinct per notifier so a grep for one Function's throttle log doesn't
-  // also turn up the other's.
-  throttledLogPrefix: string;
+  // also turn up the other's. Optional because a notifier that disables the
+  // throttle entirely (renotifyIntervalMs: 0) can never reach the throttled
+  // branch that would log it — omitted rather than a marker that's provably
+  // dead code.
+  throttledLogPrefix?: string;
   // How long a notifier's own last comment (or the tracked issue's creation,
   // before any comment exists) suppresses a re-comment for — see the
   // comment on RENOTIFY_INTERVAL_MS above for why this is per-notifier
@@ -282,14 +287,18 @@ async function isRenotifyThrottled(
   // Otherwise a throttled run leaves zero trace anywhere: the caller only
   // logs on the underlying failure, not on this deliberate no-op, so a real
   // failure whose only visible effect was "notify did nothing" would be
-  // indistinguishable from a notifier that silently broke.
-  console.log(
-    config.throttledLogPrefix,
-    JSON.stringify({
-      issue: existingIssue.number,
-      lastNotifiedAt: new Date(lastNotifiedAtMs).toISOString(),
-    }),
-  );
+  // indistinguishable from a notifier that silently broke. throttledLogPrefix
+  // is only actually optional in the type — every notifier with a non-zero
+  // renotifyIntervalMs (the only way to reach this line) supplies one.
+  if (config.throttledLogPrefix) {
+    console.log(
+      config.throttledLogPrefix,
+      JSON.stringify({
+        issue: existingIssue.number,
+        lastNotifiedAt: new Date(lastNotifiedAtMs).toISOString(),
+      }),
+    );
+  }
   return true;
 }
 
@@ -439,7 +448,7 @@ async function attachLabels(
     );
   } catch (labelAttachError) {
     throw new Error(
-      `GitHub API issue creation did not apply all requested labels (${labels.join(", ")}) to issue #${issueNumber}, and retrying the label attach also failed: ${labelAttachError instanceof Error ? labelAttachError.message : String(labelAttachError)}`,
+      `GitHub API issue creation did not apply all requested labels (${labels.join(", ")}) to issue #${issueNumber}, and retrying the label attach also failed: ${errorMessage(labelAttachError)}`,
       { cause: labelAttachError },
     );
   }

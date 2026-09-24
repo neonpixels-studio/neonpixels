@@ -462,6 +462,27 @@ describe("createFailureNotifier", () => {
       expect(client.createComment).toHaveBeenCalledTimes(1);
     });
 
+    // GitHub can stamp a comment's created_at slightly ahead of this
+    // container's own (NTP-skewed) clock, making Date.now() - lastNotifiedAtMs
+    // go negative. That must still resolve to "not throttled" — relying on a
+    // naive `elapsed < renotifyIntervalMs` comparison alone (without the
+    // `elapsed >= 0` guard in isWithinRenotifyWindow) would instead read a
+    // negative elapsed time as "within the window" and silently swallow a
+    // real failure notification.
+    it("re-comments when this notifier's own last comment is stamped ahead of this container's clock", async () => {
+      const client = buildGithubClientStub({
+        existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
+        comments: [
+          notifierComment(new Date(Date.now() + 60_000).toISOString()),
+        ],
+      });
+      const notifier = createFailureNotifier(client, testConfig());
+
+      await notifier.notify("blobs unavailable");
+
+      expect(client.createComment).toHaveBeenCalledTimes(1);
+    });
+
     // Asserts against the fake client rather than only through the real
     // fetch adapter's URL string: the throttle window (renotifyIntervalMs)
     // is domain policy computed in notify() itself and handed to
