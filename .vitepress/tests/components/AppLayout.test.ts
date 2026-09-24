@@ -65,6 +65,22 @@ describe("AppLayout", () => {
     expect(wrapper.findComponent({ name: "NotFound" }).exists()).toBe(false);
   });
 
+  // Deleting the wiring in AppLayout.vue (the only place ConsentBanner is
+  // mounted anywhere in the app) would otherwise leave every other test in
+  // this file, and ConsentBanner.test.ts itself (which mounts the component
+  // directly), green while GA4's consent gate silently never renders on a
+  // real page.
+  it.each([
+    ["homepage", false],
+    ["404 view", true],
+  ])("renders the consent banner on the %s", (_label, isNotFound) => {
+    pageState.isNotFound = isNotFound;
+    const wrapper = shallowMount(AppLayout);
+    expect(wrapper.findComponent({ name: "ConsentBanner" }).exists()).toBe(
+      true,
+    );
+  });
+
   it("renders the 404 view when the page is not found", () => {
     pageState.isNotFound = true;
     const wrapper = shallowMount(AppLayout);
