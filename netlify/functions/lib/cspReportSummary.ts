@@ -75,13 +75,10 @@ export type CspReportSummary = {
   // than throwing) — most often the hourly pruner deleting it mid-walk.
   // Tracked separately from invalidEntries below and never logged (a key
   // vanishing between list and get isn't evidence of a corrupted blob), but
-  // still folded into summarizeRollout's fail-closed gate: the pruner's
-  // count-cap pass evicts non-rollout fresh keys oldest-first before ever
-  // touching rollout (script-src) keys (see isRolloutKey in
-  // cspReportStore.ts and #135), but can still reach a rollout key once the
-  // non-rollout backlog is exhausted, or via the separate retention-days
-  // pass — so a missing key can genuinely have been a recent violation this
-  // run lost the race to read.
+  // still folded into summarizeRollout's fail-closed gate below: the pruner
+  // can still reach a rollout key (see byDirective/byBlockedUri above for
+  // when/why), so a missing key can genuinely have been a recent violation
+  // this run lost the race to read.
   missingEntries: number;
   // A key that fetched something other than `null` but didn't parse as a
   // StoredCspViolation (a corrupted blob, or a future incompatible shape).
@@ -301,19 +298,11 @@ function summarizeRollout(
     // Fails closed on every way a script-src violation could be sitting in
     // the store without this run having read it: a failed fetch or an
     // unparsed/corrupted blob (fetchFailures/invalidEntries), or a key the
-    // hourly pruner's count-cap pass evicted mid-walk (missingEntries) — that
-    // cap trims *fresh* keys oldest-first whenever the store is over
-    // CSP_REPORT_MAX_BLOBS (see overCapKeys in cspReportPruner.ts). Non-
-    // rollout keys are evicted first there (see #135 and isRolloutKey in
-    // cspReportStore.ts), so a genuine script-src violation is only ever
-    // among them once every non-rollout fresh key is already gone — this gate
-    // is the backstop for exactly that remaining race (and for retention-aged
-    // rollout keys, an intentional tradeoff, not the eviction-flood gap
-    // isRolloutKey closes), so a "missing" key here can still genuinely have
-    // been a recent violation this run simply lost the race to read. This
-    // signal is what the README says authorizes dropping 'unsafe-inline' from
-    // the enforcing script-src, so a false "stopped" here would weaken a live
-    // security header on bad evidence.
+    // pruner evicted mid-walk (missingEntries — see that field's comment
+    // above for when a rollout key can still be the one evicted). This
+    // signal is what the README says authorizes dropping 'unsafe-inline'
+    // from the enforcing script-src, so a false "stopped" here would weaken
+    // a live security header on bad evidence.
     //
     // Deliberately NOT gated on the store being non-empty: an empty store
     // that's read cleanly (zero of every completeness counter above) is the

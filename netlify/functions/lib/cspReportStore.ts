@@ -107,24 +107,32 @@ function violationKey(receivedAt: string, violation: CspViolation): string {
   return `${sanitizeTimestamp(receivedAt)}-${directiveTag(violation)}-${randomUUID()}.json`;
 }
 
+// A legacy key predates the `-<tag>-` segment: just `-<uuid>.json` straight
+// after the timestamp (see violationKey's shape before this tagging
+// existed). Matched positively, rather than "not other", so only the two
+// shapes this module has ever actually written classify as rollout by
+// default — see isRolloutKey below for why that distinction matters.
+const LEGACY_UNTAGGED_KEY_SUFFIX = /^-[0-9a-f-]{36}\.json$/;
+
 // Exported so cspReportPruner.ts can classify a listed key without a Blobs
-// get() per key. Only a key explicitly tagged `other` is treated as
-// non-rollout; a rollout-tagged key AND an untagged legacy key (written
-// before this tagging existed) both count as rollout — the safer direction
-// for evidence the pruner can't positively rule out as irrelevant. The two
-// remaining bounds on that: the retention-days pass ages every key out
-// regardless of tag, and overCapKeys' spill branch still trims to maxBlobs
-// once every `other`-tagged key is gone, so treating "unknown" as
-// "protected" does not make the count cap unenforceable. Concrete cost of
-// this choice, for one retention window after deploy: a brand-new genuine
-// non-rollout report can be evicted an hour after arrival ahead of
-// month-old untagged legacy noise, since the legacy key still reads as
-// "protected" until it ages out on its own. That's judged an acceptable,
-// self-correcting (≤ CSP_REPORT_RETENTION_DAYS) migration cost rather than
-// a reason to add a third eviction tier for "untagged" — see the README's
-// csp-reports section for the fuller trade-off.
+// get() per key. Rollout-tagged and legacy-untagged keys (written before
+// this tagging existed) both count as rollout — the safer default for
+// evidence the pruner can't positively rule out as irrelevant, bounded by
+// retention (ages every key out regardless of tag) and by overCapKeys' spill
+// branch (still trims to maxBlobs once every `other`-tagged key is gone).
+// Anything matching neither known shape — a future format, a different
+// producer, a truncated/corrupted key — falls to `other` instead of
+// inheriting that protection by default: unlike a legacy key (a shape this
+// module wrote and fully understands), an unrecognized one isn't provably
+// safe to protect, and defaulting it to "protected" would make it
+// permanently unprunable by the count cap. See README, csp-reports section,
+// for the fuller trade-off.
 export function isRolloutKey(key: string): boolean {
-  return !key.slice(RECEIVED_AT_PREFIX_LENGTH).startsWith(`-${OTHER_KEY_TAG}-`);
+  const suffix = key.slice(RECEIVED_AT_PREFIX_LENGTH);
+  return (
+    suffix.startsWith(`-${ROLLOUT_KEY_TAG}-`) ||
+    LEGACY_UNTAGGED_KEY_SUFFIX.test(suffix)
+  );
 }
 
 function writeViolation(blobWriter: BlobWriter, receivedAt: string) {

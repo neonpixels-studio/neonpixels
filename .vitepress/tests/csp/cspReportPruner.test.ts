@@ -146,6 +146,26 @@ describe("createCspReportPruner", () => {
     expect(deletedKeys(client)).toEqual([justOverKey]);
   });
 
+  it("deletes a rollout-tagged key once it's past the retention window — the tag protects against the count cap, not against retention", async () => {
+    // isRolloutKey's own protection is bounded by retention regardless of
+    // tag; every existing stale-key test above uses an untagged key, which
+    // passes only incidentally (untagged also reads as rollout). This is
+    // the case that would actually catch a regression where a rollout tag
+    // started exempting a key from the retention pass too.
+    const staleRollout = taggedKeyFromDaysAgo(40, "rollout", "stale-evidence");
+    const freshRollout = taggedKeyFromDaysAgo(1, "rollout", "fresh-evidence");
+    const client = fakeClient([[staleRollout, freshRollout]]);
+    const pruner = createCspReportPruner(client, {
+      retentionDays: 30,
+      maxBlobs: 100,
+    });
+
+    const result = await pruner.prune();
+
+    expect(result).toEqual({ deleted: 1, remaining: 1, complete: true });
+    expect(deletedKeys(client)).toEqual([staleRollout]);
+  });
+
   it("evicts the oldest blobs first when over the max count cap, even though none are stale", async () => {
     const keys = [
       keyFromDaysAgo(5, "oldest"),
@@ -428,6 +448,39 @@ describe("createCspReportPruner", () => {
     // just because the run couldn't see the whole store.
     expect(result).toEqual({ deleted: 2, remaining: 1, complete: false });
     expect(deletedKeys(client)).toEqual([foundKeys[0], foundKeys[1]]);
+  });
+
+  it("logs a marker when an incomplete listing forces eviction to spill into rollout keys, since the #135 priority ordering is only a property of what this run actually saw", async () => {
+    const rolloutKeys = [
+      taggedKeyFromDaysAgo(2, "rollout", "evidence-a"),
+      taggedKeyFromDaysAgo(1, "rollout", "evidence-b"),
+    ];
+    const client: BlobPrunerClient & { delete: ReturnType<typeof vi.fn> } = {
+      delete: vi.fn().mockResolvedValue(undefined),
+      // Same "listing cut short" shape as the test above, except every key
+      // this truncated run actually saw is rollout-tagged — the case where
+      // a flood large enough to prevent a complete listing could leave the
+      // non-rollout keys that should have been evicted first outside this
+      // run's view entirely.
+      async *list() {
+        vi.setSystemTime(new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1));
+        yield { blobs: rolloutKeys.map((key) => ({ key })) };
+      },
+    };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const pruner = createCspReportPruner(client, {
+      retentionDays: 30,
+      maxBlobs: 1,
+    });
+
+    const result = await pruner.prune();
+
+    expect(result.complete).toBe(false);
+    expect(deletedKeys(client)).toEqual([rolloutKeys[0]]);
+    expect(warn).toHaveBeenCalledWith(
+      "csp-report-prune-rollout-evicted-on-partial-view",
+      JSON.stringify({ rolloutKeysListed: 2 }),
+    );
   });
 
   it("never calls delete when the list pass finds nothing before its own budget runs out", async () => {

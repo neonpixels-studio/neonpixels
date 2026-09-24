@@ -166,4 +166,10 @@ describe("isRolloutKey", () => {
 
     expect(isRolloutKey(otherTaggedKey)).toBe(false);
   });
+
+  it("treats a key matching neither known shape (not the legacy uuid-only format, not a recognized tag) as evictable, not permanently protected", () => {
+    const malformedKey = `${sanitizeTimestamp("2026-01-01T00:00:00.000Z")}-not-a-real-shape.json`;
+
+    expect(isRolloutKey(malformedKey)).toBe(false);
+  });
 });
