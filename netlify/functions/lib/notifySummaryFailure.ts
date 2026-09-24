@@ -71,6 +71,12 @@ export function createSummaryFailureNotifier(
     issueMarker: SUMMARY_FAILURE_ISSUE_MARKER,
     throttledLogPrefix: NOTIFY_THROTTLED_LOG_PREFIX,
     buildIssueBody,
+    // The summary run is daily — already sparser than any re-notify window
+    // worth setting, so every failed run comments/creates rather than
+    // risking a human's unrelated issue touch silencing a whole day's
+    // failure for no throttling benefit (see RENOTIFY_INTERVAL_MS in
+    // githubFailureNotifier.ts).
+    renotifyIntervalMs: 0,
   });
 }
 

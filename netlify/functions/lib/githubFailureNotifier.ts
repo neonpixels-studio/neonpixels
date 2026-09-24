@@ -76,23 +76,29 @@ export function sanitizeReportedError(errorMessage: string): string {
   return `${redacted.slice(0, MAX_REPORTED_ERROR_LENGTH)}… (truncated)`;
 }
 
-// A run's scheduled cadence (hourly for prune, daily for summary) is what
-// makes a fixed re-notify window meaningful at all; without one, a failure
-// streak would bury the original diagnosis under one near-identical "still
-// failing" comment per run. GitHub bumps an issue's updated_at on every
-// comment (not just edits), so this needs no extra API call to check.
-// Trade-off: updated_at also moves on a human's own comment (e.g. "looking
-// into this"), which silences a notifier for the same window even if the
-// failure's error message changes in the meantime — a deliberate choice to
-// keep this at one API call per run rather than a second `listComments` call
-// to track each notifier's own last-comment time specifically (see issue
-// #139 for revisiting this). Exported so notifier test files can pin the
-// boundary itself, rather than only testing with values (e.g. "now" vs.
-// 2020) that would pass for any interval between roughly a second and
-// several years.
+// A run's scheduled cadence is what makes a fixed re-notify window
+// meaningful at all: at the pruner's hourly cadence, a failure streak would
+// otherwise bury the original diagnosis under one near-identical "still
+// failing" comment per run, so RENOTIFY_INTERVAL_MS below suppresses that.
+// GitHub bumps an issue's updated_at on every comment (not just edits), so
+// this needs no extra API call to check. Trade-off: updated_at also moves on
+// a human's own comment (e.g. "looking into this"), which silences a
+// notifier for the same window even if the failure's error message changes
+// in the meantime — a deliberate choice to keep this at one API call per run
+// rather than a second `listComments` call to track each notifier's own
+// last-comment time specifically (see issue #139 for revisiting this). A
+// notifier whose schedule is already sparser than the window (e.g. the
+// summary notifier's `@daily` run against a multi-hour window) would only
+// ever pay that trade-off's downside for none of the upside — consecutive
+// runs are already far enough apart that a real streak can't pile up
+// same-window comments — so such a notifier passes `renotifyIntervalMs: 0`
+// in its FailureNotifierConfig instead of reusing this constant.
 export const RENOTIFY_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-function isWithinRenotifyWindow(issue: GithubIssueOrPullRequest): boolean {
+function isWithinRenotifyWindow(
+  issue: GithubIssueOrPullRequest,
+  renotifyIntervalMs: number,
+): boolean {
   if (!issue.updated_at) {
     return false;
   }
@@ -100,7 +106,7 @@ function isWithinRenotifyWindow(issue: GithubIssueOrPullRequest): boolean {
   if (Number.isNaN(updatedAtMs)) {
     return false;
   }
-  return Date.now() - updatedAtMs < RENOTIFY_INTERVAL_MS;
+  return Date.now() - updatedAtMs < renotifyIntervalMs;
 }
 
 // The issues list endpoint returns pull requests alongside issues, and the
@@ -133,6 +139,10 @@ export type FailureNotifierConfig = {
   // Distinct per notifier so a grep for one Function's throttle log doesn't
   // also turn up the other's.
   throttledLogPrefix: string;
+  // How long a tracked issue's own updated_at suppresses a re-comment for —
+  // see the comment on RENOTIFY_INTERVAL_MS above for why this is
+  // per-notifier rather than a single shared constant.
+  renotifyIntervalMs: number;
 };
 
 // Pure factory: given anything that can list/create/comment on GitHub
@@ -155,7 +165,10 @@ export function createFailureNotifier(
       const existingIssue = openIssues.find((issue) =>
         isTrackedFailureIssue(issue, config.issueMarker),
       );
-      if (existingIssue && isWithinRenotifyWindow(existingIssue)) {
+      if (
+        existingIssue &&
+        isWithinRenotifyWindow(existingIssue, config.renotifyIntervalMs)
+      ) {
         // Otherwise a throttled run leaves zero trace anywhere: the handler
         // only logs on the underlying failure, not on this deliberate
         // no-op, so a real failure whose only visible effect was "notify
@@ -313,13 +326,16 @@ export function createFetchGithubIssuesClient(): GithubIssuesClient {
       );
       if (!hasAllRequestedLabels) {
         try {
-          await githubRequest(
+          const labelResponse = await githubRequest(
             `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${created.number}/labels`,
             {
               method: "POST",
               body: JSON.stringify({ labels: input.labels }),
             },
           );
+          // Never inspected, same as createComment's response below — drain
+          // it explicitly rather than leaving it unconsumed.
+          await labelResponse.body?.cancel();
         } catch (labelAttachError) {
           throw new Error(
             `GitHub API issue creation did not apply all requested labels (${input.labels.join(", ")}) to issue #${created.number}, and retrying the label attach also failed: ${labelAttachError instanceof Error ? labelAttachError.message : String(labelAttachError)}`,

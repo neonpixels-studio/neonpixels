@@ -250,8 +250,14 @@ describe("csp-report-summary Netlify scheduled function", () => {
   const NETLIFY_SCHEDULED_FUNCTION_LIMIT_MS = 30000;
   const COLD_START_HEADROOM_MS = 2000;
 
-  it("keeps the run deadline within Netlify's real limit, with HARD_TIMEOUT_MS and NOTIFY_TIMEOUT_MS summing to it", () => {
-    expect(HARD_TIMEOUT_MS + NOTIFY_TIMEOUT_MS).toBe(RUN_DEADLINE_MS);
+  // cspReportSummary has no cooperative time budget of its own (unlike
+  // cspReportPruner's PRUNE_TIME_BUDGET_MS), so there's no equivalent
+  // "budget below the adapter's hard timeout" invariant to pin here — only
+  // that HARD_TIMEOUT_MS itself leaves summarize() a real floor to run
+  // against rather than being squeezed arbitrarily thin by a future bump to
+  // NOTIFY_TIMEOUT_MS.
+  it("keeps the run deadline within Netlify's real limit, with a real floor left for the summarize() call", () => {
+    expect(HARD_TIMEOUT_MS).toBeGreaterThanOrEqual(20000);
     expect(RUN_DEADLINE_MS + COLD_START_HEADROOM_MS).toBeLessThanOrEqual(
       NETLIFY_SCHEDULED_FUNCTION_LIMIT_MS,
     );

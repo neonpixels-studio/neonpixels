@@ -83,6 +83,10 @@ export function createPruneFailureNotifier(
     issueMarker: PRUNE_FAILURE_ISSUE_MARKER,
     throttledLogPrefix: NOTIFY_THROTTLED_LOG_PREFIX,
     buildIssueBody,
+    // The pruner runs hourly, dense enough that a failure streak would pile
+    // up one comment per run without this — see RENOTIFY_INTERVAL_MS in
+    // githubFailureNotifier.ts.
+    renotifyIntervalMs: RENOTIFY_INTERVAL_MS,
   });
 }
 
