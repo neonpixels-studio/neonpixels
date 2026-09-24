@@ -15,7 +15,7 @@
 // Isolated behind GithubIssuesClient the same way cspReportStore.ts isolates
 // Blobs writes (BlobWriter) and cspReportPruner.ts isolates list/delete
 // (BlobPrunerClient): createPruneFailureNotifier takes anything shaped like
-// the three GitHub calls it needs, so the duplicate-guard logic is
+// the four GitHub calls it needs, so the duplicate-guard logic is
 // unit-tested against a fake client instead of the real GitHub API.
 
 // Named like the other log markers in this feature (PRUNE_FAILED_LOG_PREFIX
@@ -45,13 +45,22 @@ export type GithubIssueOrPullRequest = {
   number: number;
   body?: string;
   pull_request?: unknown;
-  // GitHub bumps this on every comment (not just edits), so it doubles as
-  // "when was this issue last touched" without a second API call to list
-  // comments. Used to throttle re-notification below.
-  updated_at?: string;
+  // Used as the re-notify fallback timestamp below: the notifier's own
+  // *first* notification for a failure streak is the moment it opened this
+  // issue, so before any of its own comments exist, throttling from here is
+  // correct. Once the notifier has posted a comment, that comment's
+  // created_at takes over — see resolveLastNotifiedAt.
+  created_at?: string;
 };
 
-// The three GitHub capabilities the notifier needs, so tests can inject a
+// A single comment on a tracked issue. Only the fields the duplicate-guard
+// needs to identify the notifier's own comments and time them.
+export type GithubComment = {
+  body?: string;
+  created_at?: string;
+};
+
+// The four GitHub capabilities the notifier needs, so tests can inject a
 // fake without mocking `fetch`/the GitHub API.
 export type GithubIssuesClient = {
   listOpenIssuesByLabel(_label: string): Promise<GithubIssueOrPullRequest[]>;
@@ -61,6 +70,10 @@ export type GithubIssuesClient = {
     body: string;
   }): Promise<void>;
   createComment(_issueNumber: number, _body: string): Promise<void>;
+  // Only called once a tracked issue is already found (the failure path) —
+  // see the re-notify throttle below. Not needed on the "open a fresh
+  // issue" path, so it stays off the hot path for a healthy prune run.
+  listComments(_issueNumber: number): Promise<GithubComment[]>;
 };
 
 // The issues list endpoint returns pull requests alongside issues, and the
@@ -126,31 +139,87 @@ function buildIssueBody(errorMessage: string): string {
   ].join("\n");
 }
 
+// Reuses the issue-body marker rather than a second constant: both mean the
+// same thing ("this notifier authored this"), just on different GitHub
+// objects (issue vs. comment). Carrying it into every "still failing"
+// comment is what lets resolveLastNotifiedAt below tell this notifier's own
+// comments apart from a human's "looking into this" reply when it lists
+// comments on the failure path.
+function buildStillFailingCommentBody(errorMessage: string): string {
+  return [
+    PRUNE_FAILURE_ISSUE_MARKER,
+    `Still failing. Latest error: ${sanitizeReportedError(errorMessage)}`,
+  ].join("\n");
+}
+
 // The pruner runs hourly; without throttling, a failure streak spanning even
 // a day would bury the original diagnosis under ~24 near-identical "still
-// failing" comments. Re-notify at most this often — GitHub bumps an issue's
-// updated_at on every comment (not just edits), so this needs no extra API
-// call to check. Trade-off: updated_at also moves on a human's own comment
-// (e.g. "looking into this"), which silences this notifier for the same
-// window even if the failure's error message changes in the meantime — a
-// deliberate choice to keep this at one API call per run rather than a
-// second `listComments` call to track this notifier's own last-comment time
-// specifically. If that gap matters in practice, track it via a
-// timestamped marker in each of this notifier's own comments instead.
+// failing" comments. Re-notify at most this often.
+//
+// This used to throttle off the issue's `updated_at`, which GitHub bumps on
+// *any* activity — a human comment, label change, or edit — not just this
+// notifier's own comments. That silenced re-notification for up to
+// RENOTIFY_INTERVAL_MS after unrelated human activity even while the
+// underlying failure kept changing (see #139). Instead this throttles off
+// the created_at of this notifier's own last comment (marked with
+// PRUNE_FAILURE_ISSUE_MARKER, same as the issue body — see
+// resolveLastNotifiedAt), found via one extra `listComments` call on the
+// failure path (an existing tracked issue is already found). That call is
+// deliberately confined to the failure path rather than made unconditional:
+// a healthy prune run never reaches here at all, and the common failure
+// case (first failure of a streak) opens a fresh issue instead of listing
+// comments on one.
 // Exported so notifyPruneFailure.test.ts can pin the boundary itself,
 // rather than only testing with values (e.g. "now" vs. 2020) that would
 // pass for any interval between roughly a second and several years.
 export const RENOTIFY_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-function isWithinRenotifyWindow(issue: GithubIssueOrPullRequest): boolean {
-  if (!issue.updated_at) {
+function isWithinRenotifyWindow(lastNotifiedAt: string | undefined): boolean {
+  if (!lastNotifiedAt) {
     return false;
   }
-  const updatedAtMs = Date.parse(issue.updated_at);
-  if (Number.isNaN(updatedAtMs)) {
+  const lastNotifiedAtMs = Date.parse(lastNotifiedAt);
+  if (Number.isNaN(lastNotifiedAtMs)) {
     return false;
   }
-  return Date.now() - updatedAtMs < RENOTIFY_INTERVAL_MS;
+  return Date.now() - lastNotifiedAtMs < RENOTIFY_INTERVAL_MS;
+}
+
+// A comment counts as this notifier's own only if it carries the same
+// marker the notifier stamps into every issue body and "still failing"
+// comment it writes — mirrors isTrackedPruneFailureIssue's reasoning above:
+// a human reply or a bot comment from something else entirely must not be
+// mistaken for a prior notification and used to compute the throttle.
+function isNotifierComment(comment: GithubComment): boolean {
+  return (comment.body ?? "").includes(PRUNE_FAILURE_ISSUE_MARKER);
+}
+
+// GitHub's per-issue comments endpoint returns oldest-first with no
+// sort/direction override, so only the first LIST_PAGE_SIZE comments are
+// ever inspected here. If a single failure streak somehow outlives 100 of
+// this notifier's own comments (at the RENOTIFY_INTERVAL_MS throttle, tens
+// of unresolved days) without a human closing the issue, this falls back to
+// treating the streak as never-notified and re-comments sooner than
+// strictly necessary — the safe failure mode (an extra "still failing"
+// comment) rather than the alternative (silently missing a real change in
+// the error).
+function resolveLastNotifiedAt(
+  issue: GithubIssueOrPullRequest,
+  comments: GithubComment[],
+): string | undefined {
+  const notifierCommentTimestamps = comments
+    .filter(isNotifierComment)
+    .map((comment) => comment.created_at)
+    .filter((createdAt): createdAt is string => Boolean(createdAt));
+  if (notifierCommentTimestamps.length === 0) {
+    // No comment from this notifier yet — the issue's own creation (which
+    // this notifier performed, and which already carries the marker) is the
+    // most recent notification.
+    return issue.created_at;
+  }
+  return notifierCommentTimestamps.reduce((latest, current) =>
+    Date.parse(current) > Date.parse(latest) ? current : latest,
+  );
 }
 
 export type PruneFailureNotifier = {
@@ -173,7 +242,17 @@ export function createPruneFailureNotifier(
       const openIssues =
         await client.listOpenIssuesByLabel(PRUNE_FAILURE_LABEL);
       const existingIssue = openIssues.find(isTrackedPruneFailureIssue);
-      if (existingIssue && isWithinRenotifyWindow(existingIssue)) {
+      if (!existingIssue) {
+        await client.createIssue({
+          title: PRUNE_FAILURE_ISSUE_TITLE,
+          labels: [PRUNE_FAILURE_LABEL],
+          body: buildIssueBody(errorMessage),
+        });
+        return;
+      }
+      const comments = await client.listComments(existingIssue.number);
+      const lastNotifiedAt = resolveLastNotifiedAt(existingIssue, comments);
+      if (isWithinRenotifyWindow(lastNotifiedAt)) {
         // Otherwise a throttled run leaves zero trace anywhere: the handler
         // only logs on prune *failure*, not on this deliberate no-op, so a
         // real failure whose only visible effect was "notify did nothing"
@@ -182,23 +261,15 @@ export function createPruneFailureNotifier(
           NOTIFY_THROTTLED_LOG_PREFIX,
           JSON.stringify({
             issue: existingIssue.number,
-            updatedAt: existingIssue.updated_at,
+            lastNotifiedAt,
           }),
         );
         return;
       }
-      if (existingIssue) {
-        await client.createComment(
-          existingIssue.number,
-          `Still failing. Latest error: ${sanitizeReportedError(errorMessage)}`,
-        );
-        return;
-      }
-      await client.createIssue({
-        title: PRUNE_FAILURE_ISSUE_TITLE,
-        labels: [PRUNE_FAILURE_LABEL],
-        body: buildIssueBody(errorMessage),
-      });
+      await client.createComment(
+        existingIssue.number,
+        buildStillFailingCommentBody(errorMessage),
+      );
     },
   };
 }
@@ -342,6 +413,17 @@ function createFetchGithubIssuesClient(): GithubIssuesClient {
       // Unlike createIssue, this response body is never inspected — drain it
       // explicitly rather than leaving it unconsumed.
       await response.body?.cancel();
+    },
+    async listComments(issueNumber) {
+      const response = await githubRequest(
+        `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issueNumber}/comments?per_page=${LIST_PAGE_SIZE}`,
+        { method: "GET" },
+      );
+      const payload = await parseJson(response, "comments list");
+      if (!Array.isArray(payload)) {
+        throw new Error("GitHub API comments list response was not an array");
+      }
+      return payload as GithubComment[];
     },
   };
 }
