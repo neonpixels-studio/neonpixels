@@ -14,6 +14,10 @@ import type { HeadConfig } from "vitepress";
 // here (the theme-CSS surface is covered separately by config.test.ts).
 
 const NETLIFY_CONFIG_PATH = resolve(process.cwd(), "netlify.toml");
+const CONSENT_BANNER_PATH = resolve(
+  process.cwd(),
+  ".vitepress/theme/components/ConsentBanner.vue",
+);
 
 // The site's own origin, so absolute self-hosted URLs (canonical, og:url, favicons
 // declared as full https URLs) count as local and are never treated as third-party.
@@ -544,5 +548,18 @@ describe("CSP and config head origin cross-check", () => {
     const gtagOrigin = new URL(GTAG_SCRIPT_URL).origin;
     expect(DOCUMENTED_RUNTIME_INJECTED_ORIGINS.has(gtagOrigin)).toBe(true);
     expect(originGranted(gtagOrigin, "script-src", cspDirectives)).toBe(true);
+  });
+
+  it("keeps the runtime-injection exception anchored to a real call site", () => {
+    // The exception excuses this origin on the theory that ConsentBanner.vue
+    // still injects gtag.js at runtime. If that wiring were ever deleted (the
+    // CSP grant left behind by accident), this is what would catch it — the
+    // reverse check above would otherwise stay green forever, since
+    // GTAG_SCRIPT_URL itself would happily survive as a dead export.
+    const consentBannerSource = readFileSync(CONSENT_BANNER_PATH, "utf8");
+    expect(consentBannerSource).toMatch(
+      /loadGoogleAnalytics.*from\s+["'].*analytics\/loadGoogleAnalytics["']/s,
+    );
+    expect(consentBannerSource).toMatch(/\bloadGoogleAnalytics\(/);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   CONSENT_CHOICES,
   CONSENT_STORAGE_KEY,
@@ -193,21 +193,52 @@ describe("getConsentStorage", () => {
 
   it("returns the real localStorage when it's usable", () => {
     const storage = getConsentStorage();
+    // Identity, not just behavior: a fallback that happens to read/write
+    // correctly would still pass a purely behavioral assertion here, so also
+    // pin that the happy path really is the live global, not a look-alike.
+    expect(storage).toBe(window.localStorage);
     storage.setItem(PROBE_KEY, "1");
     expect(localStorage.getItem(PROBE_KEY)).toBe("1");
   });
 
   it("falls back to an in-memory no-op storage when localStorage throws (e.g. Safari 'Block all cookies')", () => {
-    const originalSetItem = window.localStorage.setItem;
-    window.localStorage.setItem = () => {
-      throw new DOMException("blocked", "SecurityError");
+    // Shadowing individual methods on the real localStorage instance
+    // (`window.localStorage.setItem = ...`) doesn't reliably take in
+    // happy-dom's Storage implementation, so replace the whole global
+    // binding instead — `vi.stubGlobal` is what this codebase already uses
+    // for exactly this kind of global replacement (see
+    // csp/notifyPruneFailure.test.ts's `vi.stubGlobal("fetch", ...)`).
+    const blockedStorage: Storage = {
+      length: 0,
+      key: () => null,
+      getItem: () => {
+        throw new DOMException("blocked", "SecurityError");
+      },
+      setItem: () => {
+        throw new DOMException("blocked", "SecurityError");
+      },
+      removeItem: () => {
+        throw new DOMException("blocked", "SecurityError");
+      },
+      clear: () => {
+        throw new DOMException("blocked", "SecurityError");
+      },
     };
+    vi.stubGlobal("localStorage", blockedStorage);
     try {
       const storage = getConsentStorage();
-      expect(storage.getItem("anything")).toBeNull();
-      expect(() => storage.setItem("anything", "value")).not.toThrow();
+      // Both real localStorage and a working fallback would report null for
+      // an untouched key, so that alone can't prove the fallback fired.
+      // Pin identity (not the blocked Storage instance) and non-persistence
+      // (a write that would actually reach the blocked storage and throw)
+      // instead.
+      expect(storage).not.toBe(blockedStorage);
+      expect(() =>
+        storage.setItem(CONSENT_STORAGE_KEY, CONSENT_CHOICES.accepted),
+      ).not.toThrow();
+      expect(storage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
     } finally {
-      window.localStorage.setItem = originalSetItem;
+      vi.unstubAllGlobals();
     }
   });
 });

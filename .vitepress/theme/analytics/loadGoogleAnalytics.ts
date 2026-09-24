@@ -79,3 +79,25 @@ export function loadGoogleAnalytics(
   queueGtagBootstrapCommands(target.window.dataLayer, measurementId);
   appendGtagScriptTag(target, measurementId);
 }
+
+function gaDisableFlagName(measurementId: string) {
+  return `ga-disable-${measurementId}`;
+}
+
+// Google's documented runtime kill-switch (see "Disable analytics" in gtag.js
+// docs): once this flag is set, gtag.js stops sending hits for the given
+// measurement ID immediately. Used to revoke a choice that already loaded
+// gtag.js this session — a loaded script can't otherwise be un-run in-page,
+// and this needs no page reload the way removing the script tag would.
+// Takes a plain window-like object (not AnalyticsTarget) since the property
+// it sets is a dynamic, per-measurement-ID name with no fixed place in that
+// interface.
+export function disableGoogleAnalytics(
+  measurementId: string,
+  windowLike: Record<string, unknown> = window as unknown as Record<
+    string,
+    unknown
+  >,
+) {
+  windowLike[gaDisableFlagName(measurementId)] = true;
+}

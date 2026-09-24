@@ -37,9 +37,14 @@ function skipToContent(event: MouseEvent) {
   <a :href="`#${MAIN_CONTENT_ID}`" class="skip-link" @click="skipToContent">
     Skip to content
   </a>
+  <!-- Rendered right after the skip link (not after the page content below)
+       so a keyboard/screen-reader user reaches Accept/Decline as the second
+       tab stop instead of having to tab through the entire page first —
+       position: fixed keeps it pinned to the viewport regardless of DOM
+       order, so this only affects tab/reading order, not layout. -->
+  <ConsentBanner />
   <NotFound v-if="page.isNotFound" />
   <NeonPixelsPage v-else />
-  <ConsentBanner />
 </template>
 
 <style scoped>

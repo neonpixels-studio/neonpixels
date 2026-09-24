@@ -2,10 +2,11 @@
 // script loader (loadGoogleAnalytics.ts) and the UI (ConsentBanner.vue) so
 // each half is independently testable.
 
-// Both the legacy `"1"` (the only value the DNT spec ever defined) and the
-// deprecated `"yes"` some older browsers (IE10/11) shipped. Treated as a
-// signal string set rather than a single literal so a browser that used the
-// other spelling isn't silently ignored.
+// `"1"` is the only value the (now-abandoned) DNT spec ever defined for
+// `navigator.doNotTrack`, and the only one current evergreen browsers report.
+// `"yes"` is kept alongside it for older/embedded WebViews reported to use
+// that spelling — a set rather than a single literal costs nothing and can
+// only widen coverage, never produce a false positive from a real signal.
 const DO_NOT_TRACK_ENABLED_VALUES = new Set(["1", "yes"]);
 
 export const CONSENT_STORAGE_KEY = "np-analytics-consent";

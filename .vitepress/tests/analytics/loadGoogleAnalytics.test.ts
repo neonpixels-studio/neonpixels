@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  disableGoogleAnalytics,
   loadGoogleAnalytics,
   type AnalyticsTarget,
 } from "@theme/analytics/loadGoogleAnalytics";
@@ -99,5 +100,19 @@ describe("loadGoogleAnalytics", () => {
     loadGoogleAnalytics("G-TEST123", second.target);
     expect(first.appendedScripts).toHaveLength(1);
     expect(second.appendedScripts).toHaveLength(1);
+  });
+});
+
+describe("disableGoogleAnalytics", () => {
+  it("sets gtag.js's documented per-measurement-id kill switch on the given window", () => {
+    const fakeWindow: Record<string, unknown> = {};
+    disableGoogleAnalytics("G-TEST123", fakeWindow);
+    expect(fakeWindow["ga-disable-G-TEST123"]).toBe(true);
+  });
+
+  it("scopes the kill switch to the exact measurement id, leaving others untouched", () => {
+    const fakeWindow: Record<string, unknown> = {};
+    disableGoogleAnalytics("G-TEST123", fakeWindow);
+    expect(fakeWindow["ga-disable-G-OTHER456"]).toBeUndefined();
   });
 });

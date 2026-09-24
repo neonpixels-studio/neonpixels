@@ -4,14 +4,17 @@ import { WORDMARK_GRADIENT } from "../brand";
 import {
   CONSENT_CHOICES,
   getConsentStorage,
+  getStoredConsentChoice,
   setStoredConsentChoice,
   shouldLoadAnalytics,
   shouldPromptForConsent,
+  trackingSignalPresent,
   type ConsentChoice,
   type ConsentStorage,
 } from "../analytics/analyticsConsent";
 import {
   GA_MEASUREMENT_ID,
+  disableGoogleAnalytics,
   loadGoogleAnalytics,
 } from "../analytics/loadGoogleAnalytics";
 
@@ -23,29 +26,69 @@ import {
 // touching `navigator`/`localStorage` on the server.
 const isVisible = ref(false);
 
+// A small persistent control that lets a visitor re-open the banner and
+// change an already-recorded choice — consent withdrawal has to be at least
+// as easy as giving it. Only offered when there's an actual choice to change:
+// never while a DNT/GPC signal is present (the browser already answered the
+// question; nothing here would override it) and never before any choice has
+// been recorded (the main banner is already offering that decision).
+const canManageChoice = ref(false);
+
 // Assigned inside onMounted, never at setup() top level: getConsentStorage()
 // touches `window.localStorage`, and VitePress's SSG build runs this
 // component's setup() on the server, where no `window` exists at all. Safe to
-// read from recordChoice() below without an existence check — that function
-// is only reachable via a click on a rendered button, and the banner never
-// renders (isVisible only flips true) until after onMounted has run.
+// read from recordChoice()/reopenBanner() below without an existence check —
+// both are only reachable via a click on a rendered button, and nothing here
+// renders until after onMounted has run.
 let consentStorage: ConsentStorage;
+
+// Whether gtag.js has actually loaded this session, so Decline can tell
+// "revoke an already-active choice" (needs disableGoogleAnalytics — a loaded
+// script can't be un-run) apart from "decline for the first time" (nothing
+// loaded yet).
+let analyticsIsActive = false;
 
 onMounted(() => {
   consentStorage = getConsentStorage();
   if (shouldLoadAnalytics(navigator, consentStorage)) {
     loadGoogleAnalytics(GA_MEASUREMENT_ID);
+    analyticsIsActive = true;
+    canManageChoice.value = true;
     return;
   }
   isVisible.value = shouldPromptForConsent(navigator, consentStorage);
+  canManageChoice.value =
+    !isVisible.value &&
+    !trackingSignalPresent(navigator) &&
+    getStoredConsentChoice(consentStorage) !== null;
 });
 
 function recordChoice(choice: ConsentChoice) {
   setStoredConsentChoice(consentStorage, choice);
   isVisible.value = false;
-  if (choice === CONSENT_CHOICES.accepted) {
-    loadGoogleAnalytics(GA_MEASUREMENT_ID);
+  canManageChoice.value = !trackingSignalPresent(navigator);
+
+  if (choice === CONSENT_CHOICES.declined) {
+    if (analyticsIsActive) {
+      disableGoogleAnalytics(GA_MEASUREMENT_ID);
+      analyticsIsActive = false;
+    }
+    return;
   }
+
+  // Defense in depth: Accept is only ever reachable through this banner, and
+  // the banner is never shown while a DNT/GPC signal is present — but this
+  // must never honor an Accept click if that ever stops being true.
+  if (trackingSignalPresent(navigator)) {
+    return;
+  }
+  loadGoogleAnalytics(GA_MEASUREMENT_ID);
+  analyticsIsActive = true;
+}
+
+function reopenBanner() {
+  isVisible.value = true;
+  canManageChoice.value = false;
 }
 </script>
 
@@ -54,6 +97,7 @@ function recordChoice(choice: ConsentChoice) {
     v-if="isVisible"
     role="region"
     aria-label="Analytics consent"
+    aria-live="polite"
     class="bg-panel border-border text-fg fixed inset-x-0 bottom-0 z-40 flex flex-wrap items-center justify-between gap-4 border-t px-5 py-4 font-mono sm:px-8"
   >
     <p class="text-fg-muted m-0 max-w-[560px] text-[13px] leading-[1.6]">
@@ -78,4 +122,12 @@ function recordChoice(choice: ConsentChoice) {
       </button>
     </div>
   </div>
+  <button
+    v-else-if="canManageChoice"
+    type="button"
+    class="text-fg-subtle border-border bg-panel fixed bottom-3 left-3 z-40 rounded-none border px-3 py-1.5 font-mono text-[11px]"
+    @click="reopenBanner"
+  >
+    Analytics choice
+  </button>
 </template>
