@@ -713,4 +713,95 @@ describe("createCspReportSummary", () => {
     expect(summary.rollout.count).toBe(0);
     expect(summary.rollout.stopped).toBe(false);
   });
+
+  it("prioritizes the newest keys when fetchAll's own budget forces a truncated read", async () => {
+    // Keys are sortable by a leading timestamp (mirrors the real
+    // `<sanitized receivedAt>-<tag>-<uuid>.json` shape from
+    // cspReportStore.ts) and are deliberately handed to the fake client
+    // oldest-first, the order list() is not documented to return (the
+    // pruner sorts its own unsortedKeys rather than trusting it) — so this
+    // only passes if the run sorts newest-first before truncating, not
+    // whatever order happened to arrive from list(). The rollout signal
+    // this module exists to produce is about *recent* activity, so a
+    // truncated run must drop the oldest evidence, not the newest.
+    const keyCount = FETCH_BATCH_SIZE + 5;
+    const keys = Array.from({ length: keyCount }, (_, index) => {
+      const timestamp = new Date(NOW.getTime() - (keyCount - index) * 1000)
+        .toISOString()
+        .replace(/[:.]/g, "-");
+      return `${timestamp}-key-${index}`;
+    });
+    const newestKeys = keys.slice(keys.length - FETCH_BATCH_SIZE);
+    const oldestKeys = keys.slice(0, keys.length - FETCH_BATCH_SIZE);
+    const blobs = Object.fromEntries(keys.map((key) => [key, violation()]));
+    const client = fakeClient([keys], blobs);
+    let getCalls = 0;
+    client.get.mockImplementation(async (key: string) => {
+      getCalls += 1;
+      if (getCalls === FETCH_BATCH_SIZE) {
+        vi.setSystemTime(new Date(NOW.getTime() + SUMMARY_TIME_BUDGET_MS + 1));
+      }
+      return blobs[key];
+    });
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.fetchComplete).toBe(false);
+    expect(summary.totalFetched).toBe(FETCH_BATCH_SIZE);
+    for (const key of newestKeys) {
+      expect(client.get).toHaveBeenCalledWith(key, expect.anything());
+    }
+    for (const key of oldestKeys) {
+      expect(client.get).not.toHaveBeenCalledWith(key, expect.anything());
+    }
+  });
+
+  it("reports both listComplete: false and fetchComplete: false when an oversized store trips both budgets in the same run", async () => {
+    // The realistic shape for a store consistently too large to finish in
+    // one run: the list pass gets cut short by LIST_TIME_BUDGET_MS, and the
+    // keys already committed by then are still enough on their own to also
+    // trip fetchAll's SUMMARY_TIME_BUDGET_MS before every one of them is
+    // attempted — the fullest csp-report-summary-incomplete payload the
+    // adapter can log.
+    const page1Keys = Array.from(
+      { length: FETCH_BATCH_SIZE },
+      (_, index) => `page1-key-${index}`,
+    );
+    const page2Keys = ["page2-key-0", "page2-key-1", "page2-key-2"];
+    const probePageKey = "key-peeked";
+    const committedKeys = [...page1Keys, ...page2Keys];
+    const blobs = Object.fromEntries(
+      [...committedKeys, probePageKey].map((key) => [key, violation()]),
+    );
+    let getCalls = 0;
+    const client: BlobSummaryClient & { get: ReturnType<typeof vi.fn> } = {
+      get: vi.fn(async (key: string) => {
+        getCalls += 1;
+        if (getCalls === FETCH_BATCH_SIZE) {
+          vi.setSystemTime(
+            new Date(NOW.getTime() + SUMMARY_TIME_BUDGET_MS + 1),
+          );
+        }
+        return blobs[key];
+      }),
+      async *list() {
+        yield { blobs: page1Keys.map((key) => ({ key })) };
+        vi.setSystemTime(new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1));
+        yield { blobs: page2Keys.map((key) => ({ key })) };
+        yield { blobs: [{ key: probePageKey }] };
+      },
+    };
+
+    const summary = await createCspReportSummary(client).summarize();
+
+    expect(summary.listComplete).toBe(false);
+    expect(summary.fetchComplete).toBe(false);
+    expect(summary.complete).toBe(false);
+    expect(summary.totalListed).toBe(committedKeys.length);
+    expect(summary.totalFetched).toBe(FETCH_BATCH_SIZE);
+    expect(client.get).not.toHaveBeenCalledWith(
+      probePageKey,
+      expect.anything(),
+    );
+  });
 });

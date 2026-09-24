@@ -244,23 +244,26 @@ behind a minimal `list`/`get` seam (`BlobSummaryClient`, mirroring
 `BlobPrunerClient`), so the aggregation is unit-tested with a fake client
 rather than the real Blobs store; a `get()` failure or an unrecognized blob
 shape is counted and logged (`csp-report-summary-fetch-failed` /
-`csp-report-summary-invalid-entry`) rather than aborting the whole run — a key
-the pruner deleted mid-walk is tracked separately (`missingEntries`, never
-logged since a vanished key isn't evidence of a corrupted blob, but still
-part of the fail-closed rollout gate above). Each run logs its outcome on two
-lines: `csp-report-summarized` carries the rollout signal and totals, and
-`csp-report-summary-breakdown` carries the `byDirective`/`byBlockedUri`
+`csp-report-summary-invalid-entry`) rather than aborting the whole run, and a
+rejected `list()` page degrades the same way (`csp-report-summary-list-failed`)
+— a key the pruner deleted mid-walk is tracked separately (`missingEntries`,
+never logged since a vanished key isn't evidence of a corrupted blob, but
+still part of the fail-closed rollout gate above). Each run logs its outcome
+on two lines: `csp-report-summarized` carries the rollout signal and totals,
+and `csp-report-summary-breakdown` carries the `byDirective`/`byBlockedUri`
 counts (capped to the top 20 each) — split and capped because `blockedUri` is
 attacker-influenced free text arriving through a public endpoint, so an
 unbounded breakdown could otherwise grow into a multi-hundred-KB single log
 line and risk the rollout signal itself being truncated. A run cut short by
-its own time budget still logs those two lines with real (if partial) data
-and a 200, plus a separate `csp-report-summary-incomplete` warning so a store
-consistently too large to finish in one run has its own greppable, alertable
-signal — unlike the hourly pruner's self-correcting next run, there's no
-other run coming to surface the problem on its own. A run that errors, hits
-a genuine hang, or times out past its hard timeout logs
-`csp-report-summary-failed` instead, mirroring
+its own time budget — whether by the list/fetch deadlines running out or a
+`list()`/`get()` call failing outright — still logs those two lines with real
+(if partial) data and a 200, plus a separate `csp-report-summary-incomplete`
+warning so a store consistently too large to finish in one run has its own
+greppable, alertable signal — unlike the hourly pruner's self-correcting next
+run, there's no other run coming to surface the problem on its own. Only a
+genuine hang past the hard timeout, or a failure outside the list/fetch seams
+entirely (e.g. `getStore` itself throwing), still logs
+`csp-report-summary-failed` and a 500, mirroring
 `csp-report-pruned`/`csp-report-prune-failed` above.
 
 ## Git hooks

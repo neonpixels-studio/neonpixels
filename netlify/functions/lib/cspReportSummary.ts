@@ -56,7 +56,10 @@ export type CspReportSummary = {
   // False when fetchAll was cut short by SUMMARY_TIME_BUDGET_MS before
   // attempting every key listAllKeys handed it.
   fetchComplete: boolean;
-  // Every key list() returned, regardless of whether fetchAll got to it.
+  // Every key this run committed to from list() — a page pulled past the
+  // list deadline purely as a completeness probe (see listAllKeys) is
+  // discarded rather than kept, so it is not counted here even though
+  // list() did return it.
   totalListed: number;
   // Keys fetchAll actually attempted — the real denominator for
   // fetchFailures/missingEntries/invalidEntries/totalViolations below. Can
@@ -441,11 +444,28 @@ type FetchAllResult = {
   complete: boolean;
 };
 
+// cspReportStore.ts's violationKey prefixes every key with a sanitized ISO
+// receivedAt (see RECEIVED_AT_PREFIX_LENGTH there), so a plain descending
+// string sort orders keys newest-first without parsing anything — the same
+// property cspReportPruner.ts relies on for its own oldest-first sort
+// (unsortedKeys.sort() in createCspReportPruner), just reversed. Netlify
+// Blobs' list() order is not documented as sorted (the pruner sorts its own
+// unsortedKeys rather than trusting it), so this is the only thing standing
+// between a truncated fetchAll and reading whatever order list() happened
+// to return.
+function sortNewestFirst(keys: string[]): string[] {
+  return [...keys].sort().reverse();
+}
+
 // Checks the deadline in the loop condition (mirrors deleteKeys in
 // cspReportPruner.ts) so stopping early and finishing normally are the same
 // exit, not two separate return points; checked once per batch boundary,
 // not within a batch, since the concurrent Promise.all already in flight
-// always finishes.
+// always finishes. Callers must pass keys newest-first (see
+// sortNewestFirst): a fetch pass cut short by SUMMARY_TIME_BUDGET_MS must
+// drop the oldest, least decision-relevant evidence, not whatever list()
+// happened to return last — the rollout signal this whole module exists to
+// produce is specifically about *recent* script-src activity.
 async function fetchAll(
   client: BlobSummaryClient,
   keys: string[],
@@ -486,7 +506,7 @@ export function createCspReportSummary(
       );
       const { outcomes, complete: fetchComplete } = await fetchAll(
         client,
-        keys,
+        sortNewestFirst(keys),
         fetchDeadlineMs,
       );
       const complete = listComplete && fetchComplete;

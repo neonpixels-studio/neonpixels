@@ -212,6 +212,19 @@ describe("csp-report-summary Netlify scheduled function", () => {
     );
   });
 
+  // Pins the other half of the ordering chain: LIST_TIME_BUDGET_MS must stay
+  // strictly under SUMMARY_TIME_BUDGET_MS, the combined budget it's carved
+  // out of, so fetchAll is never left with zero or negative time regardless
+  // of how listAllKeys spends its own share.
+  it("keeps cspReportSummary's list-pass budget under its combined list+fetch budget", async () => {
+    const { LIST_TIME_BUDGET_MS, SUMMARY_TIME_BUDGET_MS } =
+      await vi.importActual<
+        typeof import("../../../netlify/functions/lib/cspReportSummary")
+      >("../../../netlify/functions/lib/cspReportSummary");
+
+    expect(LIST_TIME_BUDGET_MS).toBeLessThan(SUMMARY_TIME_BUDGET_MS);
+  });
+
   it("warns with an incomplete marker naming which pass was cut short, but still replies 200 with real partial counts", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
