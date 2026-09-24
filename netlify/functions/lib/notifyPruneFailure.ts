@@ -145,7 +145,11 @@ function buildIssueBody(errorMessage: string): string {
 // comment is what lets resolveLastNotifiedAt below tell this notifier's own
 // comments apart from a human's "looking into this" reply when it lists
 // comments on the failure path.
-function buildStillFailingCommentBody(errorMessage: string): string {
+// Exported so notifyPruneFailure.test.ts can build the same shape a real
+// notifier comment has (marker included) instead of duplicating the format
+// inline, which would let the marker silently drift out of the comment body
+// while every test still passes.
+export function buildStillFailingCommentBody(errorMessage: string): string {
   return [
     PRUNE_FAILURE_ISSUE_MARKER,
     `Still failing. Latest error: ${sanitizeReportedError(errorMessage)}`,
@@ -195,31 +199,28 @@ function isNotifierComment(comment: GithubComment): boolean {
 }
 
 // GitHub's per-issue comments endpoint returns oldest-first with no
-// sort/direction override, so only the first LIST_PAGE_SIZE comments are
-// ever inspected here. If a single failure streak somehow outlives 100 of
-// this notifier's own comments (at the RENOTIFY_INTERVAL_MS throttle, tens
-// of unresolved days) without a human closing the issue, this falls back to
-// treating the streak as never-notified and re-comments sooner than
-// strictly necessary — the safe failure mode (an extra "still failing"
-// comment) rather than the alternative (silently missing a real change in
-// the error).
+// sort/direction override — fetching only page 1 (LIST_PAGE_SIZE) with no
+// further filter would let a busy issue's oldest comments permanently
+// occupy page 1, so a genuinely recent notifier comment could never be
+// seen and the throttle would look perpetually stale. `listComments` scopes
+// the request with `since` to just the throttle window instead (see the
+// fetch adapter below), so only comments recent enough to matter are ever
+// fetched — the "which page are they on" question doesn't arise.
 function resolveLastNotifiedAt(
   issue: GithubIssueOrPullRequest,
   comments: GithubComment[],
 ): string | undefined {
-  const notifierCommentTimestamps = comments
+  const notifierCommentTimestampsMs = comments
     .filter(isNotifierComment)
-    .map((comment) => comment.created_at)
-    .filter((createdAt): createdAt is string => Boolean(createdAt));
-  if (notifierCommentTimestamps.length === 0) {
-    // No comment from this notifier yet — the issue's own creation (which
-    // this notifier performed, and which already carries the marker) is the
-    // most recent notification.
+    .map((comment) => Date.parse(comment.created_at ?? ""))
+    .filter((timestampMs) => !Number.isNaN(timestampMs));
+  if (notifierCommentTimestampsMs.length === 0) {
+    // No (parseable) comment from this notifier yet — the issue's own
+    // creation (which this notifier performed, and which already carries
+    // the marker) is the most recent notification.
     return issue.created_at;
   }
-  return notifierCommentTimestamps.reduce((latest, current) =>
-    Date.parse(current) > Date.parse(latest) ? current : latest,
-  );
+  return new Date(Math.max(...notifierCommentTimestampsMs)).toISOString();
 }
 
 export type PruneFailureNotifier = {
@@ -415,8 +416,16 @@ function createFetchGithubIssuesClient(): GithubIssuesClient {
       await response.body?.cancel();
     },
     async listComments(issueNumber) {
+      // Scoped to the throttle window via `since` rather than relying on
+      // page-1 ordering: GitHub returns issue comments oldest-first with no
+      // sort/direction override, so an unscoped page 1 on a busy issue could
+      // permanently miss a genuinely recent comment once the issue passes
+      // LIST_PAGE_SIZE comments total. `since` filters server-side instead,
+      // so only comments that could possibly matter for the throttle are
+      // ever fetched.
+      const since = new Date(Date.now() - RENOTIFY_INTERVAL_MS).toISOString();
       const response = await githubRequest(
-        `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issueNumber}/comments?per_page=${LIST_PAGE_SIZE}`,
+        `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issueNumber}/comments?per_page=${LIST_PAGE_SIZE}&since=${encodeURIComponent(since)}`,
         { method: "GET" },
       );
       const payload = await parseJson(response, "comments list");

@@ -4,6 +4,7 @@ import {
   createPruneFailureNotifier,
   getPruneFailureNotifier,
   sanitizeReportedError,
+  buildStillFailingCommentBody,
   GITHUB_TOKEN_ENV_VAR,
   PRUNE_FAILURE_LABEL,
   PRUNE_FAILURE_ISSUE_TITLE,
@@ -77,9 +78,13 @@ function trackedIssue(
 // A comment authored by this notifier itself — carries the same marker as a
 // tracked issue's body. Used to prove the re-notify throttle now keys off
 // this timestamp rather than any other activity on the issue.
+// Built from the real production body-builder rather than a hand-written
+// literal, so this stays in lockstep with what the notifier actually posts
+// — a hand-written marker here would keep passing even if
+// buildStillFailingCommentBody stopped stamping the marker in production.
 function notifierComment(createdAt: string): GithubComment {
   return {
-    body: `${PRUNE_FAILURE_ISSUE_MARKER}\nStill failing. Latest error: boom`,
+    body: buildStillFailingCommentBody("boom"),
     created_at: createdAt,
   };
 }
@@ -130,6 +135,13 @@ describe("createPruneFailureNotifier", () => {
     const [issueNumber, body] = client.createComment.mock.calls[0];
     expect(issueNumber).toBe(7);
     expect(body).toContain("timeout exceeded");
+    // Load-bearing for the throttle fix: resolveLastNotifiedAt can only find
+    // this notifier's own comments on a later run if every comment it posts
+    // carries the same marker the issue body does. Without this, the
+    // throttle would silently never engage in production while every other
+    // test here (which builds comments from buildStillFailingCommentBody
+    // directly, not through notify()) would still pass.
+    expect(body).toContain(PRUNE_FAILURE_ISSUE_MARKER);
   });
 
   // The issues list endpoint returns pull requests alongside issues. A PR
@@ -364,6 +376,28 @@ describe("createPruneFailureNotifier", () => {
         notifierComment(
           new Date(Date.now() - JUST_OUTSIDE_WINDOW_MS).toISOString(),
         ),
+        notifierComment(
+          new Date(Date.now() - JUST_INSIDE_WINDOW_MS).toISOString(),
+        ),
+      ],
+    });
+    const notifier = createPruneFailureNotifier(client);
+
+    await notifier.notify("blobs unavailable");
+
+    expect(client.createComment).not.toHaveBeenCalled();
+    consoleLogSpy.mockRestore();
+  });
+
+  // Guards resolveLastNotifiedAt's reduce: an unparseable created_at on one
+  // notifier comment must not poison the comparison and hide a separate,
+  // genuinely recent, valid notifier comment behind it.
+  it("ignores a notifier comment with an unparseable created_at and still throttles off a valid recent one", async () => {
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const client = buildGithubClientStub({
+      existingIssues: [trackedIssue(7, "2020-01-01T00:00:00.000Z")],
+      comments: [
+        { ...notifierComment("not-a-real-date") },
         notifierComment(
           new Date(Date.now() - JUST_INSIDE_WINDOW_MS).toISOString(),
         ),
@@ -696,5 +730,98 @@ describe("getPruneFailureNotifier", () => {
     await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
       "GitHub API issues list response was not an array",
     );
+  });
+
+  // The equivalent malformed-response checks above only exercise the issues
+  // list branch — a tracked issue must already resolve successfully to
+  // reach the listComments branch these two cover.
+  it("throws a descriptive error when the comments list response is valid JSON but not an array", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 7,
+              body: PRUNE_FAILURE_ISSUE_MARKER,
+              created_at: "2020-01-01T00:00:00.000Z",
+            },
+          ]),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "Bad credentials" }), {
+          status: 200,
+        }),
+      );
+    const notifier = getPruneFailureNotifier();
+
+    await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
+      "GitHub API comments list response was not an array",
+    );
+  });
+
+  it("throws a descriptive error when the comments list response isn't valid JSON", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 7,
+              body: PRUNE_FAILURE_ISSUE_MARKER,
+              created_at: "2020-01-01T00:00:00.000Z",
+            },
+          ]),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response("<html>not json</html>", { status: 200 }),
+      );
+    const notifier = getPruneFailureNotifier();
+
+    await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
+      "GitHub API comments list response was not valid JSON",
+    );
+  });
+
+  // Confirms the pagination fix: listComments must scope the request to the
+  // throttle window via `since` rather than trusting an unfiltered page 1,
+  // which on a busy issue could permanently hide a genuinely recent comment
+  // behind older ones (GitHub returns issue comments oldest-first).
+  it("scopes the comments list request to the re-notify window via since", async () => {
+    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 7,
+              body: PRUNE_FAILURE_ISSUE_MARKER,
+              created_at: "2020-01-01T00:00:00.000Z",
+            },
+          ]),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 201 }));
+    const notifier = getPruneFailureNotifier();
+    const beforeCall = Date.now();
+
+    await notifier.notify("blobs unavailable");
+
+    const [listCommentsUrl] = vi.mocked(fetch).mock.calls[1];
+    const sinceParam = new URL(String(listCommentsUrl)).searchParams.get(
+      "since",
+    );
+    expect(sinceParam).not.toBeNull();
+    const sinceMs = Date.parse(sinceParam as string);
+    const expectedSinceMs = beforeCall - RENOTIFY_INTERVAL_MS;
+    // Allow a small window for test execution time rather than asserting
+    // exact equality against a value computed before the call ran.
+    expect(Math.abs(sinceMs - expectedSinceMs)).toBeLessThan(5000);
   });
 });
