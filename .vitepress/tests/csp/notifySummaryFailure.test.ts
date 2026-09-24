@@ -1,24 +1,26 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 
 import {
-  createPruneFailureNotifier,
-  getPruneFailureNotifier,
+  createSummaryFailureNotifier,
+  getSummaryFailureNotifier,
   sanitizeReportedError,
-  GITHUB_TOKEN_ENV_VAR,
-  PRUNE_FAILURE_LABEL,
-  PRUNE_FAILURE_ISSUE_TITLE,
-  PRUNE_FAILURE_ISSUE_MARKER,
-  RENOTIFY_INTERVAL_MS,
+  SUMMARY_FAILURE_LABEL,
+  SUMMARY_FAILURE_ISSUE_TITLE,
+  SUMMARY_FAILURE_ISSUE_MARKER,
   NOTIFY_THROTTLED_LOG_PREFIX,
   type GithubIssueOrPullRequest,
   type GithubIssuesClient,
-} from "../../../netlify/functions/lib/notifyPruneFailure";
+} from "../../../netlify/functions/lib/notifySummaryFailure";
+import {
+  GITHUB_TOKEN_ENV_VAR,
+  RENOTIFY_INTERVAL_MS,
+} from "../../../netlify/functions/lib/githubFailureNotifier";
 
-// createPruneFailureNotifier's duplicate-guard logic mirrors
-// notify-audit-failure.cjs (see notifyAuditFailure.test.ts) — this file
-// exercises the same behaviors against a fake GithubIssuesClient instead of
-// a stubbed Octokit `github` object, since this notifier talks to the
-// GitHub REST API over `fetch` rather than through actions/github-script.
+// createSummaryFailureNotifier's duplicate-guard logic is the same
+// createFailureNotifier factory the prune notifier uses (see
+// githubFailureNotifier.ts and notifyPruneFailure.test.ts) — this file
+// exercises it configured for a summary failure instead, against a fake
+// GithubIssuesClient.
 
 type GithubStubOptions = {
   existingIssues?: GithubIssueOrPullRequest[];
@@ -57,41 +59,41 @@ function trackedIssue(
 ): GithubIssueOrPullRequest {
   return {
     number,
-    body: `${PRUNE_FAILURE_ISSUE_MARKER}\nOriginal failure body.`,
+    body: `${SUMMARY_FAILURE_ISSUE_MARKER}\nOriginal failure body.`,
     pull_request: undefined,
     updated_at: updatedAt,
   };
 }
 
-describe("createPruneFailureNotifier", () => {
-  it("creates an issue when no open prune-failure issue exists", async () => {
+describe("createSummaryFailureNotifier", () => {
+  it("creates an issue when no open summary-failure issue exists", async () => {
     const client = buildGithubClientStub({ existingIssues: [] });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await notifier.notify("blobs unavailable");
 
     expect(client.createIssue).toHaveBeenCalledTimes(1);
     const [createArgs] = client.createIssue.mock.calls[0];
-    expect(createArgs.title).toBe(PRUNE_FAILURE_ISSUE_TITLE);
-    expect(createArgs.labels).toEqual([PRUNE_FAILURE_LABEL]);
-    expect(createArgs.body).toContain(PRUNE_FAILURE_ISSUE_MARKER);
+    expect(createArgs.title).toBe(SUMMARY_FAILURE_ISSUE_TITLE);
+    expect(createArgs.labels).toEqual([SUMMARY_FAILURE_LABEL]);
+    expect(createArgs.body).toContain(SUMMARY_FAILURE_ISSUE_MARKER);
     expect(createArgs.body).toContain("blobs unavailable");
   });
 
-  it("looks up existing issues by the prune-failure label", async () => {
+  it("looks up existing issues by the summary-failure label", async () => {
     const client = buildGithubClientStub({ existingIssues: [] });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await notifier.notify("blobs unavailable");
 
     expect(client.listOpenIssuesByLabel).toHaveBeenCalledWith(
-      PRUNE_FAILURE_LABEL,
+      SUMMARY_FAILURE_LABEL,
     );
   });
 
-  it("comments on an existing open prune-failure issue instead of opening a duplicate", async () => {
+  it("comments on an existing open summary-failure issue instead of opening a duplicate", async () => {
     const client = buildGithubClientStub({ existingIssues: [trackedIssue(7)] });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await notifier.notify("timeout exceeded");
 
@@ -103,16 +105,16 @@ describe("createPruneFailureNotifier", () => {
   });
 
   // The issues list endpoint returns pull requests alongside issues. A PR
-  // that happens to carry the prune-failure label (e.g. tagged for unrelated
-  // triage) must not be mistaken for an existing notification and
+  // that happens to carry the summary-failure label (e.g. tagged for
+  // unrelated triage) must not be mistaken for an existing notification and
   // permanently suppress real ones.
-  it("ignores pull requests carrying the prune-failure label", async () => {
+  it("ignores pull requests carrying the summary-failure label", async () => {
     const client = buildGithubClientStub({
       existingIssues: [
-        { number: 3, body: PRUNE_FAILURE_ISSUE_MARKER, pull_request: {} },
+        { number: 3, body: SUMMARY_FAILURE_ISSUE_MARKER, pull_request: {} },
       ],
     });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await notifier.notify("blobs unavailable");
 
@@ -128,7 +130,7 @@ describe("createPruneFailureNotifier", () => {
         { number: 5, body: "Unrelated issue.", pull_request: undefined },
       ],
     });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await notifier.notify("blobs unavailable");
 
@@ -139,7 +141,7 @@ describe("createPruneFailureNotifier", () => {
     const client = buildGithubClientStub({
       existingIssues: [{ number: 6, pull_request: undefined }],
     });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await expect(notifier.notify("blobs unavailable")).resolves.toBeUndefined();
     expect(client.createIssue).toHaveBeenCalledTimes(1);
@@ -148,11 +150,11 @@ describe("createPruneFailureNotifier", () => {
   it("creates an issue when only a pull request matches but no real issue does", async () => {
     const client = buildGithubClientStub({
       existingIssues: [
-        { number: 3, body: PRUNE_FAILURE_ISSUE_MARKER, pull_request: {} },
+        { number: 3, body: SUMMARY_FAILURE_ISSUE_MARKER, pull_request: {} },
         trackedIssue(8),
       ],
     });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await notifier.notify("blobs unavailable");
 
@@ -164,13 +166,13 @@ describe("createPruneFailureNotifier", () => {
   // Fail-loud: a broken notifier (bad token, disabled issues, transient API
   // error) should surface to the caller instead of being swallowed here —
   // the Netlify Function's own catch block is what decides how to log a
-  // failure of the notifier itself (see cspReportPruneFunction.test.ts).
+  // failure of the notifier itself (see cspReportSummaryFunction.test.ts).
   it("propagates an error from the duplicate check instead of swallowing it", async () => {
     const client = buildGithubClientStub({
       listOpenIssuesByLabelImpl: () =>
         Promise.reject(new Error("API unavailable")),
     });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
       "API unavailable",
@@ -183,7 +185,7 @@ describe("createPruneFailureNotifier", () => {
       existingIssues: [],
       createIssueImpl: () => Promise.reject(new Error("issues disabled")),
     });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
       "issues disabled",
@@ -192,21 +194,21 @@ describe("createPruneFailureNotifier", () => {
 
   // Symmetric with the issue-creation case above: a locked/archived tracked
   // issue rejecting the comment call must reject out of notify() too, so
-  // the handler logs csp-report-prune-notify-failed rather than treating a
+  // the handler logs csp-report-summary-notify-failed rather than treating a
   // failed comment as a delivered notification.
   it("propagates an error from commenting instead of swallowing it", async () => {
     const client = buildGithubClientStub({
       existingIssues: [trackedIssue(7)],
     });
     client.createComment.mockRejectedValueOnce(new Error("issue locked"));
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
       "issue locked",
     );
   });
 
-  // The pruner runs hourly; without a throttle, a multi-hour failure streak
+  // The summary run is daily; without a throttle, a multi-day failure streak
   // would pile up one near-identical "still failing" comment per run and
   // bury the original diagnosis. Pinned against RENOTIFY_INTERVAL_MS itself
   // (rather than "now" vs. a fixed 2020 date) so the assertion actually
@@ -225,14 +227,14 @@ describe("createPruneFailureNotifier", () => {
         ),
       ],
     });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await notifier.notify("blobs unavailable");
 
     expect(client.createComment).not.toHaveBeenCalled();
     expect(client.createIssue).not.toHaveBeenCalled();
     // Without this, the throttled path is silent: the handler only logs on
-    // prune failure, so a deliberate no-op and a silently-broken notifier
+    // summary failure, so a deliberate no-op and a silently-broken notifier
     // would otherwise be indistinguishable in the logs.
     expect(consoleLogSpy).toHaveBeenCalledWith(
       NOTIFY_THROTTLED_LOG_PREFIX,
@@ -250,7 +252,7 @@ describe("createPruneFailureNotifier", () => {
         ),
       ],
     });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await notifier.notify("blobs unavailable");
 
@@ -262,12 +264,12 @@ describe("createPruneFailureNotifier", () => {
       existingIssues: [
         {
           number: 7,
-          body: PRUNE_FAILURE_ISSUE_MARKER,
+          body: SUMMARY_FAILURE_ISSUE_MARKER,
           pull_request: undefined,
         },
       ],
     });
-    const notifier = createPruneFailureNotifier(client);
+    const notifier = createSummaryFailureNotifier(client);
 
     await notifier.notify("blobs unavailable");
 
@@ -275,60 +277,7 @@ describe("createPruneFailureNotifier", () => {
   });
 });
 
-describe("sanitizeReportedError", () => {
-  it("passes short, plain messages through unchanged", () => {
-    expect(sanitizeReportedError("blobs unavailable")).toBe(
-      "blobs unavailable",
-    );
-  });
-
-  it("redacts URLs, which can carry request context or credentials in a query string", () => {
-    expect(
-      sanitizeReportedError(
-        "request to https://blobs.example.com/store?token=secret failed",
-      ),
-    ).toBe("request to [url redacted] failed");
-  });
-
-  it("truncates a message longer than the reported-error cap", () => {
-    const longMessage = "x".repeat(1000);
-
-    const sanitized = sanitizeReportedError(longMessage);
-
-    expect(sanitized.length).toBeLessThan(600);
-    expect(sanitized).toMatch(/… \(truncated\)$/);
-  });
-
-  // A leaked credential is not always inside a URL (e.g. echoed from a
-  // header), so this is a second, independent redaction pass rather than
-  // relying on the URL pattern above to also catch it.
-  it("redacts a bearer-style credential with no URL present", () => {
-    expect(
-      sanitizeReportedError(
-        "Netlify Blobs: request rejected, sent header authorization: Bearer nfp_9x7k2m failed",
-      ),
-    ).not.toContain("nfp_9x7k2m");
-  });
-
-  it("redacts a GitHub-style prefixed token", () => {
-    expect(sanitizeReportedError("auth failed for ghp_abcdefghijklmnop")).toBe(
-      "auth failed for [secret redacted]",
-    );
-  });
-
-  // The secret pattern requires a credential-shaped (12+ char) run after
-  // "token"/"bearer" specifically so ordinary English isn't mistaken for a
-  // credential and redacted into an uninformative issue body — this is the
-  // single most likely real prune failure message (an expired/invalid PAT).
-  it("does not redact ordinary English containing the word token or bearer", () => {
-    expect(sanitizeReportedError("token expired")).toBe("token expired");
-    expect(sanitizeReportedError("auth token is invalid")).toBe(
-      "auth token is invalid",
-    );
-  });
-});
-
-describe("getPruneFailureNotifier", () => {
+describe("getSummaryFailureNotifier", () => {
   const ORIGINAL_TOKEN = process.env[GITHUB_TOKEN_ENV_VAR];
 
   beforeEach(() => {
@@ -346,7 +295,7 @@ describe("getPruneFailureNotifier", () => {
 
   it("rejects instead of calling GitHub when the token env var is unset", async () => {
     delete process.env[GITHUB_TOKEN_ENV_VAR];
-    const notifier = getPruneFailureNotifier();
+    const notifier = getSummaryFailureNotifier();
 
     await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
       `${GITHUB_TOKEN_ENV_VAR} is not set`,
@@ -359,12 +308,12 @@ describe("getPruneFailureNotifier", () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(
         new Response(
-          JSON.stringify([{ number: 7, body: PRUNE_FAILURE_ISSUE_MARKER }]),
+          JSON.stringify([{ number: 7, body: SUMMARY_FAILURE_ISSUE_MARKER }]),
           { status: 200 },
         ),
       )
       .mockResolvedValueOnce(new Response(null, { status: 201 }));
-    const notifier = getPruneFailureNotifier();
+    const notifier = getSummaryFailureNotifier();
 
     await notifier.notify("blobs unavailable");
 
@@ -379,7 +328,7 @@ describe("getPruneFailureNotifier", () => {
     // if state/labels/per_page were dropped.
     expect(listUrlString).toContain("state=open");
     expect(listUrlString).toContain(
-      `labels=${encodeURIComponent(PRUNE_FAILURE_LABEL)}`,
+      `labels=${encodeURIComponent(SUMMARY_FAILURE_LABEL)}`,
     );
     expect(listUrlString).toContain("per_page=100");
     expect((listInit?.headers as Record<string, string>).Authorization).toBe(
@@ -406,12 +355,12 @@ describe("getPruneFailureNotifier", () => {
         new Response(
           JSON.stringify({
             number: 42,
-            labels: [{ name: PRUNE_FAILURE_LABEL }],
+            labels: [{ name: SUMMARY_FAILURE_LABEL }],
           }),
           { status: 201 },
         ),
       );
-    const notifier = getPruneFailureNotifier();
+    const notifier = getSummaryFailureNotifier();
 
     await notifier.notify("blobs unavailable");
 
@@ -423,9 +372,9 @@ describe("getPruneFailureNotifier", () => {
     expect(createInit?.method).toBe("POST");
     const createBody = JSON.parse(createInit?.body as string);
     expect(createBody).toEqual({
-      title: PRUNE_FAILURE_ISSUE_TITLE,
-      labels: [PRUNE_FAILURE_LABEL],
-      body: expect.stringContaining(PRUNE_FAILURE_ISSUE_MARKER),
+      title: SUMMARY_FAILURE_ISSUE_TITLE,
+      labels: [SUMMARY_FAILURE_LABEL],
+      body: expect.stringContaining(SUMMARY_FAILURE_ISSUE_MARKER),
     });
     expect((createInit?.headers as Record<string, string>).Authorization).toBe(
       "Bearer test-token",
@@ -449,7 +398,7 @@ describe("getPruneFailureNotifier", () => {
         }),
       )
       .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
-    const notifier = getPruneFailureNotifier();
+    const notifier = getSummaryFailureNotifier();
 
     await expect(notifier.notify("blobs unavailable")).resolves.toBeUndefined();
 
@@ -460,7 +409,7 @@ describe("getPruneFailureNotifier", () => {
     );
     expect(labelInit?.method).toBe("POST");
     expect(JSON.parse(labelInit?.body as string)).toEqual({
-      labels: [PRUNE_FAILURE_LABEL],
+      labels: [SUMMARY_FAILURE_LABEL],
     });
   });
 
@@ -474,7 +423,7 @@ describe("getPruneFailureNotifier", () => {
         }),
       )
       .mockResolvedValueOnce(new Response("not found", { status: 404 }));
-    const notifier = getPruneFailureNotifier();
+    const notifier = getSummaryFailureNotifier();
 
     await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
       /did not apply all requested labels .* to issue #42.*label attach also failed/,
@@ -486,56 +435,18 @@ describe("getPruneFailureNotifier", () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response("bad credentials", { status: 401 }),
     );
-    const notifier = getPruneFailureNotifier();
+    const notifier = getSummaryFailureNotifier();
 
     await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
       /GitHub API GET .* failed: 401/,
     );
   });
+});
 
-  it("truncates a large non-OK error body instead of dumping it whole into the thrown message", async () => {
-    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
-    vi.mocked(fetch).mockResolvedValue(
-      new Response("x".repeat(10000), { status: 502 }),
-    );
-    const notifier = getPruneFailureNotifier();
-
-    const error = await notifier
-      .notify("blobs unavailable")
-      .catch((caught: Error) => caught);
-
-    expect(error).toBeInstanceOf(Error);
-    // The message is "GitHub API GET <path> failed: 502 " (prefix overhead)
-    // plus the capped body — well under the raw 10000-character response.
-    expect((error as Error).message.length).toBeLessThan(700);
-  });
-
-  // A 200 with a body that isn't valid JSON (e.g. an HTML error page from a
-  // proxy in front of the real API) must surface as a clear "GitHub API"
-  // error, not a raw, unattributed SyntaxError from response.json() itself.
-  it("throws a descriptive error when a 200 response isn't valid JSON", async () => {
-    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
-    vi.mocked(fetch).mockResolvedValue(
-      new Response("<html>not json</html>", { status: 200 }),
-    );
-    const notifier = getPruneFailureNotifier();
-
-    await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
-      "GitHub API issues list response was not valid JSON",
-    );
-  });
-
-  it("throws a descriptive error when the issues list response is valid JSON but not an array", async () => {
-    process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ message: "Bad credentials" }), {
-        status: 200,
-      }),
-    );
-    const notifier = getPruneFailureNotifier();
-
-    await expect(notifier.notify("blobs unavailable")).rejects.toThrow(
-      "GitHub API issues list response was not an array",
+describe("sanitizeReportedError (re-exported from githubFailureNotifier)", () => {
+  it("passes short, plain messages through unchanged", () => {
+    expect(sanitizeReportedError("blobs unavailable")).toBe(
+      "blobs unavailable",
     );
   });
 });

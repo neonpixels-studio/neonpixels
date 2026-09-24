@@ -2,6 +2,7 @@ import {
   getCspReportSummary,
   type CspReportSummary,
 } from "./lib/cspReportSummary";
+import { getSummaryFailureNotifier } from "./lib/notifySummaryFailure";
 import { withTimeout } from "./lib/withTimeout";
 
 // Netlify scheduled Function (v2) that reads and aggregates the csp-reports
@@ -46,6 +47,13 @@ const SUMMARY_BREAKDOWN_LOG_PREFIX = "csp-report-summary-breakdown";
 // the read/aggregation path, not a write or a delete — so the three failure
 // modes don't get conflated when grepping the logs.
 const SUMMARY_FAILED_LOG_PREFIX = "csp-report-summary-failed";
+// Logged when the failure-notification path itself breaks (missing/invalid
+// PRUNE_FAILURE_GITHUB_TOKEN, GitHub API outage, etc.). This must never
+// crash the handler or change its response — the underlying summary failure
+// (SUMMARY_FAILED_LOG_PREFIX, logged above it) is the real signal, and is
+// already written by the time this can fail. Mirrors
+// NOTIFY_FAILED_LOG_PREFIX in csp-report-prune.ts — see #123, #137.
+const NOTIFY_FAILED_LOG_PREFIX = "csp-report-summary-notify-failed";
 
 // Enough to see the loudest offenders without risking the same unbounded-line
 // problem the breakdowns are split out to avoid; the full counts are still
@@ -76,15 +84,61 @@ function logSummary(summary: CspReportSummary): void {
   );
 }
 
+// Netlify scheduled Functions have a hard 30s execution limit. The summary
+// budget and the notify budget below are sequential, not independent —
+// notify only ever runs after summarize() has already failed — so they must
+// share one combined ceiling under 30s rather than each separately assuming
+// the full window. Mirrors RUN_DEADLINE_MS/HARD_TIMEOUT_MS/NOTIFY_TIMEOUT_MS
+// in csp-report-prune.ts: RUN_DEADLINE_MS is the combined ceiling (2s
+// headroom for cold start and the final in-flight batch); HARD_TIMEOUT_MS is
+// what's left for summarize() once NOTIFY_TIMEOUT_MS is reserved for the
+// notify call that might follow it.
+export const RUN_DEADLINE_MS = 28000;
+
+// A short, separate budget for the GitHub notification call: this only runs
+// after summarize() has already failed (possibly after consuming all of
+// HARD_TIMEOUT_MS itself), so it must not be able to push the combined run
+// past RUN_DEADLINE_MS. A timeout here is caught and logged the same as any
+// other notify failure — the next daily run's own failure (if the issue
+// persists) gets another chance to notify.
+export const NOTIFY_TIMEOUT_MS = 5000;
+
 // cspReportSummary has no cooperative time budget of its own — a run's cost
 // scales with store size the same way pruning's does, but summarizing does a
 // get() per key on top of the list pass, so a large store is more likely to
-// run long. This hard timeout is the backstop (mirrors HARD_TIMEOUT_MS in
-// csp-report-prune.ts): it always wins the race against Netlify's real 30s
-// scheduled-Function limit, so a hang still produces a logged
-// csp-report-summary-failed marker instead of the run being silently killed
-// with nothing written to the logs.
-export const HARD_TIMEOUT_MS = 28000;
+// run long. This hard timeout is the backstop: it always wins the race
+// against Netlify's real 30s scheduled-Function limit (even after reserving
+// NOTIFY_TIMEOUT_MS for the notify call that follows a failure), so a hang
+// still produces a logged csp-report-summary-failed marker instead of the
+// run being silently killed with nothing written to the logs.
+export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - NOTIFY_TIMEOUT_MS;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// Best-effort: a broken notifier (bad/missing PRUNE_FAILURE_GITHUB_TOKEN,
+// GitHub API outage, hang past NOTIFY_TIMEOUT_MS) must not crash the handler
+// or turn the real 500 (the summary failure this reports) into an unhandled
+// exception — see NOTIFY_FAILED_LOG_PREFIX above. A single flat try/catch
+// (no nested control flow inside the handler's own catch block), mirroring
+// notifyPruneFailureQuietly in csp-report-prune.ts.
+async function notifySummaryFailureQuietly(
+  summaryErrorMessage: string,
+): Promise<void> {
+  try {
+    await withTimeout(
+      getSummaryFailureNotifier().notify(summaryErrorMessage),
+      NOTIFY_TIMEOUT_MS,
+      "csp report summary failure notify",
+    );
+  } catch (notifyError) {
+    console.warn(
+      NOTIFY_FAILED_LOG_PREFIX,
+      JSON.stringify({ message: errorMessage(notifyError) }),
+    );
+  }
+}
 
 export default async (_request: Request): Promise<Response> => {
   try {
@@ -96,12 +150,9 @@ export default async (_request: Request): Promise<Response> => {
     logSummary(summary);
     return new Response(null, { status: HTTP_OK });
   } catch (error) {
-    console.warn(
-      SUMMARY_FAILED_LOG_PREFIX,
-      JSON.stringify({
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    const message = errorMessage(error);
+    console.warn(SUMMARY_FAILED_LOG_PREFIX, JSON.stringify({ message }));
+    await notifySummaryFailureQuietly(message);
     return new Response(null, { status: HTTP_INTERNAL_SERVER_ERROR });
   }
 };

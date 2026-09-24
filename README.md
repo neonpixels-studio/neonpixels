@@ -218,7 +218,24 @@ attacker-influenced free text arriving through a public endpoint, so an
 unbounded breakdown could otherwise grow into a multi-hundred-KB single log
 line and risk the rollout signal itself being truncated. A run that errors or
 times out logs `csp-report-summary-failed` instead, mirroring
-`csp-report-pruned`/`csp-report-prune-failed` above.
+`csp-report-pruned`/`csp-report-prune-failed` above. On a failed run, the
+handler also opens (or comments on, if one's already open) a GitHub issue
+labeled `csp-summary-failure`, via
+[`netlify/functions/lib/notifySummaryFailure.ts`](netlify/functions/lib/notifySummaryFailure.ts)
+(see issue #137) — the same duplicate-guard notification the pruner gets
+(above), since a silently-broken summary run would otherwise mean nobody is
+ever told the `script-src` rollout signal has gone stale. The generic
+list/comment/create mechanics (fetch adapter, error redaction, re-notify
+throttling) are shared with the prune notifier via
+[`netlify/functions/lib/githubFailureNotifier.ts`](netlify/functions/lib/githubFailureNotifier.ts)
+— each notifier supplies only its own label/title/body-marker — and reuse the
+same `PRUNE_FAILURE_GITHUB_TOKEN` Netlify site environment variable, since its
+actual scope (a fine-grained PAT with Issues: write on this repo) was never
+prune-specific. **Setup:** the `csp-summary-failure` label must already exist
+on the repo before the first failure — create it once
+(`gh label create csp-summary-failure --color B60205 --description "The scheduled csp-report-summary Function failed"`)
+— since this notifier only applies the label to issues it creates, it never
+creates the label itself.
 
 ## Git hooks
 
