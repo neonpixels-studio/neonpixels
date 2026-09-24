@@ -22,11 +22,19 @@ import {
 // createPruneFailureNotifier configures, and that getPruneFailureNotifier()
 // wires them through to the real adapter. See #123, #137.
 
-function trackedIssue(number: number, updatedAt: string) {
-  return trackedIssueWithMarker(PRUNE_FAILURE_ISSUE_MARKER, number, updatedAt);
+function trackedIssue(number: number, createdAt: string) {
+  return trackedIssueWithMarker(PRUNE_FAILURE_ISSUE_MARKER, number, createdAt);
 }
 
 describe("createPruneFailureNotifier", () => {
+  // A test that stubs console.log and then fails its own assertion before
+  // reaching a manual mockRestore() would otherwise leave console.log
+  // stubbed for every subsequent test in this file — restoring here runs
+  // regardless of how the test ends.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("opens an issue labeled/titled/marked for a prune failure, with the error in the body", async () => {
     const client = buildGithubClientStub();
     const notifier = createPruneFailureNotifier(client);
@@ -45,7 +53,7 @@ describe("createPruneFailureNotifier", () => {
     expect(createArgs.body).toContain("blobs unavailable");
   });
 
-  it("logs the configured throttle prefix when a tracked issue was updated inside the re-notify window", async () => {
+  it("logs the configured throttle prefix when a tracked issue was created inside the re-notify window", async () => {
     // The pruner runs hourly — dense enough that RENOTIFY_INTERVAL_MS
     // actually suppresses a same-streak comment (unlike the summary
     // notifier, which passes renotifyIntervalMs: 0 — see
@@ -66,7 +74,6 @@ describe("createPruneFailureNotifier", () => {
       NOTIFY_THROTTLED_LOG_PREFIX,
       expect.stringContaining('"issue":7'),
     );
-    consoleLogSpy.mockRestore();
   });
 });
 

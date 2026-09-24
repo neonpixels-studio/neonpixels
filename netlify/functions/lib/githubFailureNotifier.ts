@@ -243,6 +243,56 @@ export type FailureNotifierConfig = {
   renotifyIntervalMs: number;
 };
 
+// Isolates the whole throttle decision (including its own `listComments`
+// call and throttled-path logging) so notify() below stays a flat
+// list/decide/act sequence instead of nesting the throttle check inside the
+// "existing issue" branch.
+//
+// A notifier that disables the throttle (renotifyIntervalMs: 0, e.g. the
+// daily summary notifier) always returns false — skipping the
+// `listComments` call and its bookkeeping entirely rather than paying for a
+// lookup whose result can never matter.
+async function isRenotifyThrottled(
+  client: GithubIssuesClient,
+  config: FailureNotifierConfig,
+  existingIssue: GithubIssueOrPullRequest,
+): Promise<boolean> {
+  if (config.renotifyIntervalMs <= 0) {
+    return false;
+  }
+  // Computed here (domain policy — the throttle window) rather than inside
+  // the adapter, so a fake GithubIssuesClient in tests can observe and honor
+  // the same window the real one does instead of the adapter silently
+  // deciding it out of the fake's reach.
+  const sinceIso = new Date(
+    Date.now() - config.renotifyIntervalMs,
+  ).toISOString();
+  const comments = await client.listComments(existingIssue.number, sinceIso);
+  const lastNotifiedAtMs = resolveLastNotifiedAt(
+    existingIssue,
+    comments,
+    config.issueMarker,
+  );
+  if (lastNotifiedAtMs === undefined) {
+    return false;
+  }
+  if (!isWithinRenotifyWindow(lastNotifiedAtMs, config.renotifyIntervalMs)) {
+    return false;
+  }
+  // Otherwise a throttled run leaves zero trace anywhere: the caller only
+  // logs on the underlying failure, not on this deliberate no-op, so a real
+  // failure whose only visible effect was "notify did nothing" would be
+  // indistinguishable from a notifier that silently broke.
+  console.log(
+    config.throttledLogPrefix,
+    JSON.stringify({
+      issue: existingIssue.number,
+      lastNotifiedAt: new Date(lastNotifiedAtMs).toISOString(),
+    }),
+  );
+  return true;
+}
+
 // Pure factory: given anything that can list/create/comment on GitHub
 // issues, returns a notifier with the same one-open-issue-per-failure-streak
 // behavior as notify-audit-failure.cjs. Left unguarded (no try/catch)
@@ -271,45 +321,8 @@ export function createFailureNotifier(
         });
         return;
       }
-      // A notifier that disables the throttle (renotifyIntervalMs: 0, e.g.
-      // the daily summary notifier) always comments — skipping the
-      // `listComments` call and its throttle bookkeeping entirely rather
-      // than paying for a lookup whose result can never matter.
-      if (config.renotifyIntervalMs > 0) {
-        // Computed here (domain policy — the throttle window) rather than
-        // inside the adapter, so a fake GithubIssuesClient in tests can
-        // observe and honor the same window the real one does instead of
-        // the adapter silently deciding it out of the fake's reach.
-        const sinceIso = new Date(
-          Date.now() - config.renotifyIntervalMs,
-        ).toISOString();
-        const comments = await client.listComments(
-          existingIssue.number,
-          sinceIso,
-        );
-        const lastNotifiedAtMs = resolveLastNotifiedAt(
-          existingIssue,
-          comments,
-          config.issueMarker,
-        );
-        if (
-          lastNotifiedAtMs !== undefined &&
-          isWithinRenotifyWindow(lastNotifiedAtMs, config.renotifyIntervalMs)
-        ) {
-          // Otherwise a throttled run leaves zero trace anywhere: the
-          // caller only logs on the underlying failure, not on this
-          // deliberate no-op, so a real failure whose only visible effect
-          // was "notify did nothing" would be indistinguishable from a
-          // notifier that silently broke.
-          console.log(
-            config.throttledLogPrefix,
-            JSON.stringify({
-              issue: existingIssue.number,
-              lastNotifiedAt: new Date(lastNotifiedAtMs).toISOString(),
-            }),
-          );
-          return;
-        }
+      if (await isRenotifyThrottled(client, config, existingIssue)) {
+        return;
       }
       await client.createComment(
         existingIssue.number,

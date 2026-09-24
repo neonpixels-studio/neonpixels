@@ -108,6 +108,41 @@ describe("createFailureNotifier", () => {
     const [issueNumber, body] = client.createComment.mock.calls[0];
     expect(issueNumber).toBe(7);
     expect(body).toContain("timeout exceeded");
+    // Load-bearing for the throttle: resolveLastNotifiedAt can only find a
+    // notifier's own comments on a later run if every comment it posts
+    // carries the configured marker as isNotifierComment expects (a
+    // startsWith check, not just includes — see isNotifierComment's own
+    // comment in githubFailureNotifier.ts). Without this assertion, the
+    // throttle could silently never engage in production (e.g. the marker
+    // getting appended instead of prepended) while every other test here —
+    // which builds comments via buildStillFailingCommentBody directly, not
+    // through notify() — would still pass.
+    expect(body.startsWith(TEST_ISSUE_MARKER)).toBe(true);
+  });
+
+  // Round-trips a comment notify() actually posts back through notify()
+  // itself, rather than only through hand-built fixtures — proving the
+  // throttle engages against notify()'s own real output, not just against
+  // buildStillFailingCommentBody called directly (every throttle test below
+  // does the latter).
+  it("throttles a second failure against the comment notify() itself just posted", async () => {
+    const trackedIssueFixture = trackedIssue(7, "2020-01-01T00:00:00.000Z");
+    const postedComments: GithubComment[] = [];
+    const client = buildGithubClientStub({
+      existingIssues: [trackedIssueFixture],
+      listCommentsImpl: async () => postedComments,
+    });
+    client.createComment.mockImplementation(
+      async (_issueNumber: number, body: string) => {
+        postedComments.push({ body, created_at: new Date().toISOString() });
+      },
+    );
+    const notifier = createFailureNotifier(client, testConfig());
+
+    await notifier.notify("first failure");
+    await notifier.notify("second failure");
+
+    expect(client.createComment).toHaveBeenCalledTimes(1);
   });
 
   // The issues list endpoint returns pull requests alongside issues. A PR

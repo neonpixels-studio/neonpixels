@@ -24,11 +24,11 @@ import {
 // and that getSummaryFailureNotifier() wires them through to the real
 // adapter. See #137.
 
-function trackedIssue(number: number, updatedAt: string) {
+function trackedIssue(number: number, createdAt: string) {
   return trackedIssueWithMarker(
     SUMMARY_FAILURE_ISSUE_MARKER,
     number,
-    updatedAt,
+    createdAt,
   );
 }
 
@@ -60,12 +60,12 @@ describe("createSummaryFailureNotifier", () => {
   // cadence is already sparser than any meaningful throttle window —
   // consecutive runs are 24h apart regardless. It passes
   // renotifyIntervalMs: 0 so every failed run comments/creates rather than
-  // risking a human's unrelated issue touch (bumping updated_at) silencing
-  // a whole day's failure for no throttling benefit. The throttle mechanics
-  // themselves (including the renotifyIntervalMs: 0 branch) are covered
-  // generically in githubFailureNotifier.test.ts; this only pins that
+  // risking a human's unrelated issue touch silencing a whole day's failure
+  // for no throttling benefit. The throttle mechanics themselves (including
+  // the renotifyIntervalMs: 0 branch) are covered generically in
+  // githubFailureNotifier.test.ts; this only pins that
   // createSummaryFailureNotifier is wired to disable it.
-  it("comments even when a tracked issue was updated a second ago, since the daily cadence disables the throttle", async () => {
+  it("comments even when a tracked issue was created a second ago, since the daily cadence disables the throttle", async () => {
     const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const client = buildGithubClientStub({
       existingIssues: [
