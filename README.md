@@ -209,12 +209,27 @@ tagged reports first under count-cap pressure, the `byDirective`/`byBlockedUri`
 breakdowns (not the rollout signal itself) can skew toward `script-src` during
 and after a sustained flood — treat them as unreliable totals for non-
 `script-src` directives in that case; the rollout signal, the property #135
-cares about, is unaffected. The signal fails closed: it only reports
-`stopped: true` once nothing belongs to `script-src` **and** nothing went
-unread — no failed fetch, no key the pruner's count-cap pass evicted mid-walk
-(`fetchFailures`/`missingEntries`/`invalidEntries` all 0), since any of those
-could have been hiding a script-src violation this run simply lost the race
-to see. It is deliberately _not_ gated on the store being non-empty, though —
+cares about, is unaffected. Reading the store scales with its size the same
+way pruning does, so the list and fetch passes each carry their own
+cooperative time budget (`LIST_TIME_BUDGET_MS`/`SUMMARY_TIME_BUDGET_MS` in
+`lib/cspReportSummary.ts`, split the same way the pruner splits its budget
+across list/delete) — a store too large to read in one run still returns a
+real, partial summary (`complete: false`) instead of the whole run being
+discarded. A truncated fetch pass reads the listed keys newest-first (not
+whatever order `list()` happened to return), so it's the oldest evidence
+that gets dropped, not the most recent — but that ordering only applies to
+keys the list pass itself managed to retain; when `listComplete` is false
+too, `rollout.mostRecent` and the two breakdowns above are not reliably "the
+newest" (`rollout.stopped` is unaffected, since it already fails closed on
+`complete` regardless). The signal fails closed: it only reports
+`stopped: true` once
+nothing belongs to `script-src` **and** nothing went unread **and** the run
+itself was complete — no failed fetch, no key the pruner's count-cap pass
+evicted mid-walk, no key the time budget never got to
+(`fetchFailures`/`missingEntries`/`invalidEntries` all 0 and `complete:
+true`), since any of those could have been hiding a script-src violation
+this run simply lost the race to see. It is deliberately _not_ gated on the
+store being non-empty, though —
 an empty store read cleanly is the designed end state of a successful
 rollout, not a fault, and treating it as "can't tell" would make `stopped`
 permanently unreachable once retention (`CSP_REPORT_RETENTION_DAYS`) rolls
@@ -236,17 +251,26 @@ behind a minimal `list`/`get` seam (`BlobSummaryClient`, mirroring
 `BlobPrunerClient`), so the aggregation is unit-tested with a fake client
 rather than the real Blobs store; a `get()` failure or an unrecognized blob
 shape is counted and logged (`csp-report-summary-fetch-failed` /
-`csp-report-summary-invalid-entry`) rather than aborting the whole run — a key
-the pruner deleted mid-walk is tracked separately (`missingEntries`, never
-logged since a vanished key isn't evidence of a corrupted blob, but still
-part of the fail-closed rollout gate above). Each run logs its outcome on two
-lines: `csp-report-summarized` carries the rollout signal and totals, and
-`csp-report-summary-breakdown` carries the `byDirective`/`byBlockedUri`
+`csp-report-summary-invalid-entry`) rather than aborting the whole run, and a
+rejected `list()` page degrades the same way (`csp-report-summary-list-failed`)
+— a key the pruner deleted mid-walk is tracked separately (`missingEntries`,
+never logged since a vanished key isn't evidence of a corrupted blob, but
+still part of the fail-closed rollout gate above). Each run logs its outcome
+on two lines: `csp-report-summarized` carries the rollout signal and totals,
+and `csp-report-summary-breakdown` carries the `byDirective`/`byBlockedUri`
 counts (capped to the top 20 each) — split and capped because `blockedUri` is
 attacker-influenced free text arriving through a public endpoint, so an
 unbounded breakdown could otherwise grow into a multi-hundred-KB single log
-line and risk the rollout signal itself being truncated. A run that errors or
-times out logs `csp-report-summary-failed` instead, mirroring
+line and risk the rollout signal itself being truncated. A run cut short by
+its own time budget — whether by the list/fetch deadlines running out or a
+`list()`/`get()` call failing outright — still logs those two lines with real
+(if partial) data and a 200, plus a separate `csp-report-summary-incomplete`
+warning so a store consistently too large to finish in one run has its own
+greppable, alertable signal — unlike the hourly pruner's self-correcting next
+run, there's no other run coming to surface the problem on its own. Only a
+genuine hang past the hard timeout, or a failure outside the list/fetch seams
+entirely (e.g. `getStore` itself throwing), still logs
+`csp-report-summary-failed` and a 500, mirroring
 `csp-report-pruned`/`csp-report-prune-failed` above. On a failed run, the
 handler also opens (or comments on, if one's already open) a GitHub issue
 labeled `csp-summary-failure`, via

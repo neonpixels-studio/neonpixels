@@ -37,7 +37,11 @@ const SUMMARY_FAILED_LOG_PREFIX = "csp-report-summary-failed";
 const NOTIFY_FAILED_LOG_PREFIX = "csp-report-summary-notify-failed";
 
 const EMPTY_SUMMARY = {
+  complete: true,
+  listComplete: true,
+  fetchComplete: true,
   totalListed: 0,
+  totalFetched: 0,
   totalViolations: 0,
   byDirective: [],
   byBlockedUri: [],
@@ -89,9 +93,11 @@ describe("csp-report-summary Netlify scheduled function", () => {
 
   it("summarizes the store, replies 200, and logs the decision-relevant fields and breakdowns as separate lines", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const summary = {
       ...EMPTY_SUMMARY,
       totalListed: 2,
+      totalFetched: 2,
       totalViolations: 2,
       byDirective: [{ directive: "style-src", count: 2 }],
       byBlockedUri: [{ blockedUri: "inline", count: 2 }],
@@ -101,6 +107,11 @@ describe("csp-report-summary Netlify scheduled function", () => {
     const response = await cspReportSummaryHandler(scheduledRequest());
 
     expect(response.status).toBe(200);
+    // warnIfIncomplete must stay silent on a complete run — otherwise every
+    // healthy daily run would also raise the csp-report-summary-incomplete
+    // alert this suite adds below, turning it into permanent noise instead
+    // of a signal.
+    expect(warn).not.toHaveBeenCalled();
     // The rollout signal and totals are logged on their own line — the
     // output the whole Function exists to produce — so they're never at
     // risk of truncation from a large byBlockedUri breakdown (see the next
@@ -110,7 +121,9 @@ describe("csp-report-summary Netlify scheduled function", () => {
       SUMMARIZED_LOG_PREFIX,
       JSON.stringify({
         rollout: summary.rollout,
+        complete: summary.complete,
         totalListed: summary.totalListed,
+        totalFetched: summary.totalFetched,
         totalViolations: summary.totalViolations,
         fetchFailures: summary.fetchFailures,
         missingEntries: summary.missingEntries,
@@ -202,11 +215,16 @@ describe("csp-report-summary Netlify scheduled function", () => {
   });
 
   it("logs a failure marker and replies 500 when the summary run hangs past the hard timeout", async () => {
-    // cspReportSummary has no cooperative time budget of its own; this
-    // proves the handler's own hard timeout is the backstop for a call that
-    // hangs longer than that, e.g. a stalled Blobs request — otherwise
-    // Netlify would kill the run at its 30s limit with no
-    // csp-report-summary-failed marker ever written.
+    // cspReportSummary's own fetchAll pass only checks its cooperative time
+    // budget between batches (see SUMMARY_TIME_BUDGET_MS), so a call that
+    // hangs inside a single batch (e.g. a stalled Blobs request) is never
+    // caught by that check. This proves the handler's own hard timeout is
+    // the backstop for exactly that case — otherwise Netlify would kill the
+    // run at its 30s limit with no csp-report-summary-failed marker ever
+    // written. summarize() is mocked in this file (see the top-level
+    // vi.mock), so this exercises the handler's timeout in isolation from
+    // fetchAll's own budget, which is covered directly in
+    // cspReportSummary.test.ts.
     vi.useFakeTimers();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     summarizeMock.mockImplementationOnce(() => new Promise(() => {}));
@@ -219,6 +237,74 @@ describe("csp-report-summary Netlify scheduled function", () => {
     expect(warn.mock.calls[0][0]).toBe(SUMMARY_FAILED_LOG_PREFIX);
     const logged = JSON.parse(warn.mock.calls[0][1] as string);
     expect(logged.message).toMatch(/exceeded/);
+  });
+
+  // Pins the SUMMARY_TIME_BUDGET_MS < HARD_TIMEOUT_MS ordering documented in
+  // lib/cspReportSummary.ts (mirrors cspReportPruneFunction.test.ts's
+  // PRUNE_TIME_BUDGET_MS assertion). Without it, lowering HARD_TIMEOUT_MS
+  // (e.g. to make room for a bigger NOTIFY_TIMEOUT_MS) could drop it below
+  // the cooperative budget, turning every normal partial run into a false
+  // failure alarm. Uses vi.importActual so this one constant doesn't pull the
+  // real `@netlify/blobs`-touching module into the rest of this file's mocks.
+  it("keeps cspReportSummary's own list+fetch time budget below the handler's hard timeout", async () => {
+    const { SUMMARY_TIME_BUDGET_MS } = await vi.importActual<
+      typeof import("../../../netlify/functions/lib/cspReportSummary")
+    >("../../../netlify/functions/lib/cspReportSummary");
+
+    expect(SUMMARY_TIME_BUDGET_MS).toBeLessThan(HARD_TIMEOUT_MS);
+  });
+
+  // Pins the other half of the ordering chain: fetchAll must be left with a
+  // real, usable share of SUMMARY_TIME_BUDGET_MS once listAllKeys has spent
+  // LIST_TIME_BUDGET_MS, not just a share that is merely non-negative.
+  // `LIST_TIME_BUDGET_MS = Math.floor(SUMMARY_TIME_BUDGET_MS / 2)` already
+  // guarantees `LIST_TIME_BUDGET_MS < SUMMARY_TIME_BUDGET_MS` for any
+  // positive value, so asserting that ordering alone would pin nothing the
+  // derivation doesn't already guarantee — this asserts the actual gap
+  // fetchAll depends on.
+  it("leaves fetchAll at least 8s of its own budget once listAllKeys has spent its share", async () => {
+    const { LIST_TIME_BUDGET_MS, SUMMARY_TIME_BUDGET_MS } =
+      await vi.importActual<
+        typeof import("../../../netlify/functions/lib/cspReportSummary")
+      >("../../../netlify/functions/lib/cspReportSummary");
+
+    expect(SUMMARY_TIME_BUDGET_MS - LIST_TIME_BUDGET_MS).toBeGreaterThanOrEqual(
+      8000,
+    );
+  });
+
+  it("warns with an incomplete marker naming which pass was cut short, but still replies 200 with real partial counts", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const summary = {
+      ...EMPTY_SUMMARY,
+      complete: false,
+      listComplete: true,
+      fetchComplete: false,
+      totalListed: 30,
+      totalFetched: 25,
+      totalViolations: 25,
+    };
+    summarizeMock.mockResolvedValueOnce(summary);
+
+    const response = await cspReportSummaryHandler(scheduledRequest());
+
+    expect(response.status).toBe(200);
+    expect(warn).toHaveBeenCalledWith(
+      "csp-report-summary-incomplete",
+      JSON.stringify({
+        listComplete: true,
+        fetchComplete: false,
+        totalListed: 30,
+        totalFetched: 25,
+      }),
+    );
+    // The normal summarized/breakdown lines still log too — an incomplete
+    // run is a real, partial result, not a failure.
+    expect(log).toHaveBeenCalledWith(
+      SUMMARIZED_LOG_PREFIX,
+      expect.stringContaining('"complete":false'),
+    );
   });
 
   it("gives up on a hanging notifier and still replies 500", async () => {
@@ -250,12 +336,10 @@ describe("csp-report-summary Netlify scheduled function", () => {
   const NETLIFY_SCHEDULED_FUNCTION_LIMIT_MS = 30000;
   const COLD_START_HEADROOM_MS = 2000;
 
-  // cspReportSummary has no cooperative time budget of its own (unlike
-  // cspReportPruner's PRUNE_TIME_BUDGET_MS), so there's no equivalent
-  // "budget below the adapter's hard timeout" invariant to pin here — only
-  // that HARD_TIMEOUT_MS itself leaves summarize() a real floor to run
-  // against rather than being squeezed arbitrarily thin by a future bump to
-  // NOTIFY_TIMEOUT_MS.
+  // The cooperative-budget half of the ordering chain (SUMMARY_TIME_BUDGET_MS
+  // vs. HARD_TIMEOUT_MS) is pinned by the margin tests above; this pins
+  // HARD_TIMEOUT_MS itself to a real floor so a future bump to
+  // NOTIFY_TIMEOUT_MS can't squeeze summarize() arbitrarily thin.
   it("keeps the run deadline within Netlify's real limit, with a real floor left for the summarize() call", () => {
     expect(HARD_TIMEOUT_MS).toBeGreaterThanOrEqual(20000);
     expect(RUN_DEADLINE_MS + COLD_START_HEADROOM_MS).toBeLessThanOrEqual(
