@@ -271,7 +271,30 @@ run, there's no other run coming to surface the problem on its own. Only a
 genuine hang past the hard timeout, or a failure outside the list/fetch seams
 entirely (e.g. `getStore` itself throwing), still logs
 `csp-report-summary-failed` and a 500, mirroring
-`csp-report-pruned`/`csp-report-prune-failed` above.
+`csp-report-pruned`/`csp-report-prune-failed` above. On a failed run, the
+handler also opens (or comments on, if one's already open) a GitHub issue
+labeled `csp-summary-failure`, via
+[`netlify/functions/lib/notifySummaryFailure.ts`](netlify/functions/lib/notifySummaryFailure.ts)
+(see issue #137) — the same duplicate-guard notification the pruner gets
+(above), since a silently-broken summary run would otherwise mean nobody is
+ever told the `script-src` rollout signal has gone stale. The generic
+list/comment/create mechanics (fetch adapter, error redaction, re-notify
+throttling) are shared with the prune notifier via
+[`netlify/functions/lib/githubFailureNotifier.ts`](netlify/functions/lib/githubFailureNotifier.ts)
+— each notifier supplies only its own label/title/body-marker. Unlike the
+hourly prune notifier, the summary notifier disables the re-notify throttle
+(`renotifyIntervalMs: 0`): its `@daily` cadence is already sparser than any
+useful throttle window, so every failed run comments/opens rather than
+risking a whole day's failure going unreported. They reuse the same
+`PRUNE_FAILURE_GITHUB_TOKEN` Netlify site environment variable, since its
+actual scope (a fine-grained PAT with Issues: write on this repo) was never
+prune-specific; a missing/invalid token here is caught and logged as a
+`csp-report-summary-notify-failed` marker, mirroring
+`csp-report-prune-notify-failed` above. **Setup:** the `csp-summary-failure` label must already exist
+on the repo before the first failure — create it once
+(`gh label create csp-summary-failure --color B60205 --description "The scheduled csp-report-summary Function failed"`)
+— since this notifier only applies the label to issues it creates, it never
+creates the label itself.
 
 ## Git hooks
 

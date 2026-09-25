@@ -444,11 +444,12 @@ export const FETCH_BATCH_SIZE = 25;
 
 // The run's combined list+fetch budget (mirrors PRUNE_TIME_BUDGET_MS in
 // cspReportPruner.ts), split in half so a slow list() walk can't starve
-// fetchAll of its share. Kept 8000ms under the adapter's HARD_TIMEOUT_MS
-// (../csp-report-summary.ts) — same gap as the pruner's own budget vs. its
-// hard timeout — so whatever batch is in flight when this trips has real
-// room to finish before the hard timeout would instead discard the whole
-// run (margin asserted in cspReportSummaryFunction.test.ts).
+// fetchAll of its share. Kept under the adapter's HARD_TIMEOUT_MS
+// (../csp-report-summary.ts, 3000ms under once NOTIFY_TIMEOUT_MS is
+// reserved) — same gap as the pruner's own budget vs. its hard timeout — so
+// whatever batch is in flight when this trips has room to finish before the
+// hard timeout would instead discard the whole run (ordering asserted in
+// cspReportSummaryFunction.test.ts).
 export const SUMMARY_TIME_BUDGET_MS = 20000;
 export const LIST_TIME_BUDGET_MS = Math.floor(SUMMARY_TIME_BUDGET_MS / 2);
 
