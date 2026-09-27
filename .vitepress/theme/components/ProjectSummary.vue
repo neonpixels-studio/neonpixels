@@ -10,7 +10,12 @@ import { trackGoogleAnalyticsEvent } from "../analytics/loadGoogleAnalytics";
 
 // GA4 event name for a project CTA click, tracked so traffic driven to each
 // project's own domain (the site's actual conversion goal) is visible in GA4
-// instead of vanishing the moment a visitor leaves neonpixels.dev.
+// instead of vanishing the moment a visitor leaves neonpixels.dev. Deliberate
+// overlap: GA4's built-in "Outbound clicks" Enhanced Measurement (on by
+// default for web streams) already logs these as a generic `click` event —
+// this custom event additionally carries `project_name` (so each project is
+// its own row, not one lumped "outbound clicks" total) and, unlike the
+// built-in one, also fires on middle-click (see handleCtaAuxClick below).
 const OUTBOUND_CLICK_EVENT = "outbound_click";
 
 // MouseEvent.button value for the middle mouse button — a common way to open
@@ -78,7 +83,9 @@ const headingGlowStyle = computed(() => ({
 // Gated the same way page tracking already is (ConsentBanner.vue): only ever
 // fires once the visitor has actively accepted analytics, with no DNT/GPC
 // signal overriding that. Never blocks or delays the link's own navigation —
-// trackGoogleAnalyticsEvent only ever pushes onto an in-memory array.
+// trackGoogleAnalyticsEvent only ever pushes onto an in-memory array. Bound
+// directly to `@click` (left-click, and Ctrl/Cmd+click, which still fires
+// `click`); handleCtaAuxClick below covers the one case this doesn't.
 function trackOutboundClick() {
   if (!shouldLoadAnalytics(navigator, getConsentStorage())) {
     return;
@@ -87,12 +94,6 @@ function trackOutboundClick() {
     project_name: props.project.name,
     destination_url: props.project.url,
   });
-}
-
-// Left-click (and Ctrl/Cmd+click, which still fires `click`) opens or follows
-// the link normally.
-function handleCtaClick() {
-  trackOutboundClick();
 }
 
 // Middle-click is a common way to open a link in a new tab, but the browser
@@ -135,7 +136,7 @@ function handleCtaAuxClick(event: MouseEvent) {
       rel="noopener noreferrer"
       :class="ctaClass"
       :style="ctaStyle"
-      @click="handleCtaClick"
+      @click="trackOutboundClick"
       @auxclick="handleCtaAuxClick"
       >visit {{ project.name }}{{ project.tld }} →</a
     >
