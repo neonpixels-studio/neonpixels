@@ -297,6 +297,97 @@ function readHeader(headers: Map<string, string>, name: string) {
   return value;
 }
 
+type Redirect = {
+  from?: string;
+  to?: string;
+  status?: number;
+  force?: boolean;
+};
+
+const REDIRECTS_TABLE_START = /^\s*\[\[redirects\]\]/;
+
+// Splits netlify.toml into the raw text of every [[redirects]] block, in file
+// order, mirroring readGlobalHeadersTable's table-slicing approach above:
+// each block runs from its `[[redirects]]` marker up to whichever comes
+// first, the next `[[redirects]]` marker or any other table start. Unlike
+// the headers blocks, redirect keys sit directly in the block (no nested
+// [values] table), so no further slicing is needed before reading keys.
+function splitRedirectsBlocks(config: string): string[] {
+  const lines = config.split("\n");
+  const blocks: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!REDIRECTS_TABLE_START.test(lines[index])) {
+      continue;
+    }
+    const rest = lines.slice(index + 1);
+    const nextTable = rest.findIndex((line) => ANY_TABLE_START.test(line));
+    const end = nextTable === -1 ? rest.length : nextTable;
+    blocks.push(rest.slice(0, end).join("\n"));
+  }
+  return blocks;
+}
+
+// Shared matcher behind all three typed readers below: anchors `key` to the
+// start of a line (redirect keys are never nested in an inline table in this
+// file, unlike the more permissive buildKeyAssignmentPattern above which has
+// to account for inline tables and dotted keys elsewhere in the file) and
+// captures whatever `valuePattern` says its value looks like.
+function matchRedirectKey(block: string, key: string, valuePattern: string) {
+  const match = block.match(
+    new RegExp(`^\\s*${escapeForRegExp(key)}\\s*=\\s*${valuePattern}`, "m"),
+  );
+  return match?.[1];
+}
+
+function readRedirectStringValue(block: string, key: string) {
+  return matchRedirectKey(block, key, '"([^"]*)"');
+}
+
+function readRedirectNumberValue(block: string, key: string) {
+  const value = matchRedirectKey(block, key, "(\\d+)");
+  return value === undefined ? undefined : Number(value);
+}
+
+function readRedirectBooleanValue(block: string, key: string) {
+  const value = matchRedirectKey(block, key, "(true|false)");
+  return value === undefined ? undefined : value === "true";
+}
+
+// Parses every [[redirects]] block in `config` into a plain object per
+// block. A key missing from a block reads as `undefined` rather than
+// throwing, so a caller can assert on exactly what's absent (see
+// findRedirect below for the "must exist" case).
+function parseRedirects(config: string): Redirect[] {
+  return splitRedirectsBlocks(config).map((block) => ({
+    from: readRedirectStringValue(block, "from"),
+    to: readRedirectStringValue(block, "to"),
+    status: readRedirectNumberValue(block, "status"),
+    force: readRedirectBooleanValue(block, "force"),
+  }));
+}
+
+// Finds the single redirect block whose `from` matches exactly, throwing
+// with a message that names the missing path rather than letting a caller's
+// assertion fail against `undefined` with no context. Also throws on more
+// than one match: Array.find would silently return the first of any
+// duplicates, letting a caller's per-field assertions pass or fail on
+// whichever block happens to come first rather than catching the duplicate
+// itself.
+function findRedirect(redirects: Redirect[], from: string) {
+  const matches = redirects.filter((entry) => entry.from === from);
+  if (matches.length === 0) {
+    throw new Error(
+      `netlify.toml has no [[redirects]] block with from = "${from}"`,
+    );
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `netlify.toml has ${matches.length} [[redirects]] blocks with from = "${from}"`,
+    );
+  }
+  return matches[0];
+}
+
 function parseDirectives(headerValue: string) {
   return headerValue
     .split(";")
@@ -416,6 +507,7 @@ const headers = parseHeaders(NETLIFY_CONFIG);
 const cspHeaderValue = readHeader(headers, "Content-Security-Policy");
 const { directives: cspDirectives, duplicates: cspDuplicates } =
   parseCsp(cspHeaderValue);
+const redirects = parseRedirects(NETLIFY_CONFIG);
 
 // countKeyDefinitions/lineHasKeyAssignment back every key-assignment guard in
 // this file (the build-only command/publish check, the NODE_VERSION pin
@@ -862,5 +954,134 @@ describe("noindex header ownership", () => {
   it("does not let public/_headers declare its own X-Robots-Tag", () => {
     const handWrittenHeaders = readFileSync(HAND_WRITTEN_HEADERS_PATH, "utf8");
     expect(handWrittenHeaders).not.toMatch(/^\s*X-Robots-Tag\s*:/im);
+  });
+});
+
+describe("parseRedirects block splitting", () => {
+  it("stops a block at the next [[redirects]] table", () => {
+    const config = [
+      "[[redirects]]",
+      '  from = "/a"',
+      '  to = "https://a.example"',
+      "",
+      "[[redirects]]",
+      '  from = "/b"',
+      '  to = "https://b.example"',
+    ].join("\n");
+    const blocks = parseRedirects(config);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].from).toBe("/a");
+    expect(blocks[1].from).toBe("/b");
+  });
+
+  it("stops a block at an unrelated table, not just another [[redirects]]", () => {
+    const config = [
+      "[[redirects]]",
+      '  from = "/a"',
+      '  to = "https://a.example"',
+      "",
+      "[[headers]]",
+      '  for = "/*"',
+    ].join("\n");
+    const [redirect] = parseRedirects(config);
+    expect(redirect.from).toBe("/a");
+    expect(redirect.to).toBe("https://a.example");
+  });
+
+  it("reads status as a number and force as a boolean, not strings", () => {
+    const config = [
+      "[[redirects]]",
+      '  from = "/a"',
+      '  to = "https://a.example"',
+      "  status = 200",
+      "  force = true",
+    ].join("\n");
+    const [redirect] = parseRedirects(config);
+    expect(redirect.status).toBe(200);
+    expect(redirect.force).toBe(true);
+  });
+
+  it("reads an absent key as undefined rather than throwing", () => {
+    const config = ["[[redirects]]", '  from = "/a"'].join("\n");
+    const [redirect] = parseRedirects(config);
+    expect(redirect.to).toBeUndefined();
+    expect(redirect.status).toBeUndefined();
+    expect(redirect.force).toBeUndefined();
+  });
+
+  it("throws findRedirect with the missing path when no block matches", () => {
+    expect(() => findRedirect(parseRedirects(""), "/dashboard")).toThrow(
+      /no \[\[redirects\]\] block with from = "\/dashboard"/,
+    );
+  });
+
+  // Array.find would silently return the first of two same-`from` blocks,
+  // hiding a duplicate (and whichever one's fields are wrong) behind
+  // whichever happens to come first in the file.
+  it("throws findRedirect when more than one block shares the same from", () => {
+    const config = [
+      "[[redirects]]",
+      '  from = "/a"',
+      '  to = "https://a.example"',
+      "",
+      "[[redirects]]",
+      '  from = "/a"',
+      '  to = "https://a-duplicate.example"',
+    ].join("\n");
+    expect(() => findRedirect(parseRedirects(config), "/a")).toThrow(
+      /has 2 \[\[redirects\]\] blocks with from = "\/a"/,
+    );
+  });
+});
+
+// Issue #152: the two [[redirects]] blocks proxying /dashboard and
+// /dashboard/* to the separately-deployed dashboard app had zero test
+// coverage, so an edit that broke either block (wrong destination, a 3xx
+// status instead of the 200 that makes Netlify proxy rather than redirect,
+// or a dropped `force`) could ship with no CI signal — silently turning the
+// proxy into a broken link or an off-origin redirect.
+describe("dashboard proxy redirects", () => {
+  const DASHBOARD_APP_ORIGIN = "https://neonpixels-dashboard.netlify.app";
+  // status = 200 is what makes Netlify rewrite (proxy) the request rather
+  // than send the browser a 3xx redirect, so the URL stays on this origin.
+  const PROXY_STATUS = 200;
+
+  it("declares exactly two redirect blocks for the /dashboard path", () => {
+    const dashboardRedirects = redirects.filter(
+      (redirect) =>
+        redirect.from === "/dashboard" || redirect.from === "/dashboard/*",
+    );
+    expect(dashboardRedirects).toHaveLength(2);
+  });
+
+  it("proxies /dashboard to the dashboard app's root", () => {
+    const redirect = findRedirect(redirects, "/dashboard");
+    expect(redirect.to).toBe(DASHBOARD_APP_ORIGIN);
+    expect(redirect.status).toBe(PROXY_STATUS);
+    expect(redirect.force).toBe(true);
+  });
+
+  it("proxies /dashboard/* to the dashboard app, forwarding the splat", () => {
+    const redirect = findRedirect(redirects, "/dashboard/*");
+    expect(redirect.to).toBe(`${DASHBOARD_APP_ORIGIN}/:splat`);
+    expect(redirect.status).toBe(PROXY_STATUS);
+    expect(redirect.force).toBe(true);
+  });
+
+  // Netlify applies the first redirect rule that matches a request, so a
+  // catch-all block (e.g. `from = "/*"`) added earlier in the file would
+  // silently shadow both dashboard blocks below it — every assertion above
+  // would still pass, since they only check each block's own fields, not
+  // whether an earlier, broader rule intercepts the request first. That's
+  // the same "ships with no CI signal" failure issue #152 describes, just
+  // via rule order instead of a broken field.
+  it("has no catch-all redirect ahead of the dashboard blocks in the file", () => {
+    const dashboardIndex = redirects.findIndex(
+      (redirect) => redirect.from === "/dashboard",
+    );
+    const precedingCatchAll = redirects
+      .slice(0, dashboardIndex)
+      .filter((redirect) => redirect.from === "/*");
+    expect(precedingCatchAll).toEqual([]);
   });
 });
