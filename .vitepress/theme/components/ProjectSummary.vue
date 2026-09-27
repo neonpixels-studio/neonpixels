@@ -2,6 +2,16 @@
 import { computed } from "vue";
 import type { Project } from "../data/projects";
 import { hexToRgba } from "../utils/color";
+import {
+  getConsentStorage,
+  shouldLoadAnalytics,
+} from "../analytics/analyticsConsent";
+import { trackGoogleAnalyticsEvent } from "../analytics/loadGoogleAnalytics";
+
+// GA4 event name for a project CTA click, tracked so traffic driven to each
+// project's own domain (the site's actual conversion goal) is visible in GA4
+// instead of vanishing the moment a visitor leaves neonpixels.dev.
+const OUTBOUND_CLICK_EVENT = "outbound_click";
 
 // The heading glow and the filled-CTA shadows are the accent color at fixed
 // alphas; the aurora alpha lives per-project in the section data.
@@ -60,6 +70,20 @@ const tldClass = computed(() => {
 const headingGlowStyle = computed(() => ({
   textShadow: `0 0 18px ${hexToRgba(props.project.color, HEADING_GLOW_ALPHA)}`,
 }));
+
+// Gated the same way page tracking already is (ConsentBanner.vue): only ever
+// fires once the visitor has actively accepted analytics, with no DNT/GPC
+// signal overriding that. Never blocks or delays the link's own navigation —
+// trackGoogleAnalyticsEvent only ever pushes onto an in-memory array.
+function handleCtaClick() {
+  if (!shouldLoadAnalytics(navigator, getConsentStorage())) {
+    return;
+  }
+  trackGoogleAnalyticsEvent(OUTBOUND_CLICK_EVENT, {
+    project_name: props.project.name,
+    destination_url: props.project.url,
+  });
+}
 </script>
 
 <template>
@@ -91,6 +115,7 @@ const headingGlowStyle = computed(() => ({
       rel="noopener noreferrer"
       :class="ctaClass"
       :style="ctaStyle"
+      @click="handleCtaClick"
       >visit {{ project.name }}{{ project.tld }} →</a
     >
   </div>

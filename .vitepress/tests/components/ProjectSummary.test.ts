@@ -1,9 +1,27 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount } from "@vue/test-utils";
 import { createSSRApp, h } from "vue";
 import { renderToString } from "@vue/server-renderer";
 import ProjectSummary from "@components/ProjectSummary.vue";
 import { PROJECTS, type Project } from "@theme/data/projects";
+
+// The CTA click handler delegates the actual GA4 event push to
+// loadGoogleAnalytics.ts (covered on its own in loadGoogleAnalytics.test.ts)
+// and consults analyticsConsent.ts the same way ConsentBanner.vue does —
+// mocked here so these tests assert only "did the CTA decide to track,
+// gated on consent", never a real dataLayer push or real
+// localStorage/navigator state.
+const trackGoogleAnalyticsEventMock = vi.fn();
+vi.mock("@theme/analytics/loadGoogleAnalytics", () => ({
+  trackGoogleAnalyticsEvent: (...args: unknown[]) =>
+    trackGoogleAnalyticsEventMock(...args),
+}));
+
+const shouldLoadAnalyticsMock = vi.fn();
+vi.mock("@theme/analytics/analyticsConsent", () => ({
+  getConsentStorage: () => ({}),
+  shouldLoadAnalytics: (...args: unknown[]) => shouldLoadAnalyticsMock(...args),
+}));
 
 // Build fixtures off a real project so the shape stays honest, but pin the
 // variant/flicker flags here rather than mining PROJECTS by variant — that way
@@ -21,6 +39,14 @@ const outlineProject: Project = {
 };
 
 describe("ProjectSummary", () => {
+  beforeEach(() => {
+    shouldLoadAnalyticsMock.mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("renders correctly", () => {
     const wrapper = mount(ProjectSummary, {
       props: { project: filledProject },
@@ -146,5 +172,52 @@ describe("ProjectSummary", () => {
       "animate-flicker",
     );
     steadyWrapper.unmount();
+  });
+
+  it("fires an outbound_click GA4 event with the project name and destination when consent is granted", async () => {
+    shouldLoadAnalyticsMock.mockReturnValue(true);
+    const wrapper = mount(ProjectSummary, {
+      props: { project: filledProject },
+    });
+    await wrapper.find("a").trigger("click");
+    expect(trackGoogleAnalyticsEventMock).toHaveBeenCalledTimes(1);
+    expect(trackGoogleAnalyticsEventMock).toHaveBeenCalledWith(
+      "outbound_click",
+      {
+        project_name: filledProject.name,
+        destination_url: filledProject.url,
+      },
+    );
+    wrapper.unmount();
+  });
+
+  it("fires no GA4 event when consent has not been granted", async () => {
+    shouldLoadAnalyticsMock.mockReturnValue(false);
+    const wrapper = mount(ProjectSummary, {
+      props: { project: filledProject },
+    });
+    await wrapper.find("a").trigger("click");
+    expect(trackGoogleAnalyticsEventMock).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("does not prevent the CTA's own navigation when tracking the click", async () => {
+    shouldLoadAnalyticsMock.mockReturnValue(true);
+    const wrapper = mount(ProjectSummary, {
+      props: { project: filledProject },
+    });
+    const anchorElement = wrapper.find("a").element;
+    // trigger() dispatches a real DOM event but doesn't hand the event object
+    // back, so capture it directly to assert the handler never calls
+    // preventDefault — a happy-dom anchor with no real page to load won't
+    // navigate, so defaultPrevented is the only observable proxy for "the
+    // link would still navigate normally".
+    let capturedEvent: Event | undefined;
+    anchorElement.addEventListener("click", (event) => {
+      capturedEvent = event;
+    });
+    await wrapper.find("a").trigger("click");
+    expect(capturedEvent?.defaultPrevented).toBe(false);
+    wrapper.unmount();
   });
 });
