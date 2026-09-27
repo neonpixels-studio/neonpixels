@@ -17,9 +17,13 @@ vi.mock("@theme/analytics/loadGoogleAnalytics", () => ({
     trackGoogleAnalyticsEventMock(...args),
 }));
 
+// A stable sentinel (not a fresh `{}` per call) so tests can assert the
+// handler forwards this exact storage object to shouldLoadAnalytics, rather
+// than merely calling the mock at all.
+const consentStorageSentinel = {};
 const shouldLoadAnalyticsMock = vi.fn();
 vi.mock("@theme/analytics/analyticsConsent", () => ({
-  getConsentStorage: () => ({}),
+  getConsentStorage: () => consentStorageSentinel,
   shouldLoadAnalytics: (...args: unknown[]) => shouldLoadAnalyticsMock(...args),
 }));
 
@@ -180,6 +184,10 @@ describe("ProjectSummary", () => {
       props: { project: filledProject },
     });
     await wrapper.find("a").trigger("click");
+    expect(shouldLoadAnalyticsMock).toHaveBeenCalledWith(
+      navigator,
+      consentStorageSentinel,
+    );
     expect(trackGoogleAnalyticsEventMock).toHaveBeenCalledTimes(1);
     expect(trackGoogleAnalyticsEventMock).toHaveBeenCalledWith(
       "outbound_click",
@@ -197,6 +205,33 @@ describe("ProjectSummary", () => {
       props: { project: filledProject },
     });
     await wrapper.find("a").trigger("click");
+    expect(trackGoogleAnalyticsEventMock).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("also tracks a middle-click, which opens a new tab via auxclick rather than click", async () => {
+    shouldLoadAnalyticsMock.mockReturnValue(true);
+    const wrapper = mount(ProjectSummary, {
+      props: { project: filledProject },
+    });
+    await wrapper.find("a").trigger("auxclick", { button: 1 });
+    expect(trackGoogleAnalyticsEventMock).toHaveBeenCalledTimes(1);
+    expect(trackGoogleAnalyticsEventMock).toHaveBeenCalledWith(
+      "outbound_click",
+      {
+        project_name: filledProject.name,
+        destination_url: filledProject.url,
+      },
+    );
+    wrapper.unmount();
+  });
+
+  it("ignores a right-click auxclick (context menu), which reports a different button", async () => {
+    shouldLoadAnalyticsMock.mockReturnValue(true);
+    const wrapper = mount(ProjectSummary, {
+      props: { project: filledProject },
+    });
+    await wrapper.find("a").trigger("auxclick", { button: 2 });
     expect(trackGoogleAnalyticsEventMock).not.toHaveBeenCalled();
     wrapper.unmount();
   });

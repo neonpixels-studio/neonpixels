@@ -13,6 +13,10 @@ import { trackGoogleAnalyticsEvent } from "../analytics/loadGoogleAnalytics";
 // instead of vanishing the moment a visitor leaves neonpixels.dev.
 const OUTBOUND_CLICK_EVENT = "outbound_click";
 
+// MouseEvent.button value for the middle mouse button — a common way to open
+// a link in a new tab, which the browser reports as `auxclick`, not `click`.
+const MIDDLE_MOUSE_BUTTON = 1;
+
 // The heading glow and the filled-CTA shadows are the accent color at fixed
 // alphas; the aurora alpha lives per-project in the section data.
 const HEADING_GLOW_ALPHA = 0.6;
@@ -75,7 +79,7 @@ const headingGlowStyle = computed(() => ({
 // fires once the visitor has actively accepted analytics, with no DNT/GPC
 // signal overriding that. Never blocks or delays the link's own navigation —
 // trackGoogleAnalyticsEvent only ever pushes onto an in-memory array.
-function handleCtaClick() {
+function trackOutboundClick() {
   if (!shouldLoadAnalytics(navigator, getConsentStorage())) {
     return;
   }
@@ -83,6 +87,22 @@ function handleCtaClick() {
     project_name: props.project.name,
     destination_url: props.project.url,
   });
+}
+
+// Left-click (and Ctrl/Cmd+click, which still fires `click`) opens or follows
+// the link normally.
+function handleCtaClick() {
+  trackOutboundClick();
+}
+
+// Middle-click is a common way to open a link in a new tab, but the browser
+// reports it as `auxclick`, not `click` — without this, that path would leave
+// a real conversion silently untracked.
+function handleCtaAuxClick(event: MouseEvent) {
+  if (event.button !== MIDDLE_MOUSE_BUTTON) {
+    return;
+  }
+  trackOutboundClick();
 }
 </script>
 
@@ -116,6 +136,7 @@ function handleCtaClick() {
       :class="ctaClass"
       :style="ctaStyle"
       @click="handleCtaClick"
+      @auxclick="handleCtaAuxClick"
       >visit {{ project.name }}{{ project.tld }} →</a
     >
   </div>

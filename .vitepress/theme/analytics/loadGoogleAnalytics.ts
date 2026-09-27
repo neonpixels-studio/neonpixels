@@ -85,12 +85,10 @@ export function loadGoogleAnalytics(
   appendGtagScriptTag(target, measurementId);
 }
 
-// The narrow slice of `Window` an event call touches — just `dataLayer`, same
-// as AnalyticsTarget's window field — so a test can pass an in-memory fake
-// here too instead of asserting against the real global `window`.
-export interface AnalyticsEventTarget {
-  window: Pick<Window, "dataLayer">;
-}
+// An event call only ever touches `window.dataLayer` — the same slice
+// AnalyticsTarget's window field already describes — so reuse that shape
+// instead of redeclaring it and risking the two drifting apart.
+export type AnalyticsEventTarget = Pick<AnalyticsTarget, "window">;
 
 // Fires a GA4 event (e.g. the outbound-click CTAs in ProjectSummary.vue)
 // through the same dataLayer queue gtag.js itself drains once loaded. Callers

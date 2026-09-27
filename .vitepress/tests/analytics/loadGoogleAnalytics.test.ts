@@ -4,6 +4,8 @@ import {
   disableGoogleAnalytics,
   enableGoogleAnalytics,
   loadGoogleAnalytics,
+  trackGoogleAnalyticsEvent,
+  type AnalyticsEventTarget,
   type AnalyticsTarget,
 } from "@theme/analytics/loadGoogleAnalytics";
 
@@ -102,6 +104,54 @@ describe("loadGoogleAnalytics", () => {
     loadGoogleAnalytics("G-TEST123", second.target);
     expect(first.appendedScripts).toHaveLength(1);
     expect(second.appendedScripts).toHaveLength(1);
+  });
+});
+
+describe("trackGoogleAnalyticsEvent", () => {
+  function createFakeEventTarget(): {
+    target: AnalyticsEventTarget;
+    fakeWindow: { dataLayer?: unknown[] };
+  } {
+    const fakeWindow: { dataLayer?: unknown[] } = {};
+    return { target: { window: fakeWindow }, fakeWindow };
+  }
+
+  it("pushes an event command in the same arguments-object shape gtag.js's queue processor expects", () => {
+    const { target, fakeWindow } = createFakeEventTarget();
+    trackGoogleAnalyticsEvent(
+      "outbound_click",
+      { project_name: "grimicorn", destination_url: "https://grimicorn.dev" },
+      target,
+    );
+    expectQueuedGtagCommand(fakeWindow.dataLayer?.[0], [
+      "event",
+      "outbound_click",
+      { project_name: "grimicorn", destination_url: "https://grimicorn.dev" },
+    ]);
+  });
+
+  it("creates dataLayer when the target has none yet", () => {
+    const { target, fakeWindow } = createFakeEventTarget();
+    expect(fakeWindow.dataLayer).toBeUndefined();
+    trackGoogleAnalyticsEvent(
+      "outbound_click",
+      { project_name: "basin" },
+      target,
+    );
+    expect(fakeWindow.dataLayer).toHaveLength(1);
+  });
+
+  it("appends to an existing dataLayer instead of replacing it", () => {
+    const { target, fakeWindow } = createFakeEventTarget();
+    const priorEntry = ["already queued"];
+    fakeWindow.dataLayer = [priorEntry];
+    trackGoogleAnalyticsEvent(
+      "outbound_click",
+      { project_name: "wanderist" },
+      target,
+    );
+    expect(fakeWindow.dataLayer?.[0]).toBe(priorEntry);
+    expect(fakeWindow.dataLayer).toHaveLength(2);
   });
 });
 
