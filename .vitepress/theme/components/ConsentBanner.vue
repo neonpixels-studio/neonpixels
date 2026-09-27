@@ -19,6 +19,7 @@ import {
   enableGoogleAnalytics,
   loadGoogleAnalytics,
 } from "../analytics/loadGoogleAnalytics";
+import { PRIVACY_POLICY_URL } from "../routes";
 
 // Rendered once from AppLayout, next to the skip link, so every route shares
 // one banner instance instead of each view wiring its own. Starts hidden and
@@ -135,6 +136,12 @@ function reopenBanner() {
     <p class="text-fg-muted m-0 max-w-[560px] text-[13px] leading-[1.6]">
       This site uses Google Analytics to see which pages get read. Nothing loads
       until you say yes, and your choice only lives in this browser.
+      <a
+        :href="PRIVACY_POLICY_URL"
+        class="text-fg-subtle hover:text-fg underline transition-colors"
+      >
+        Privacy policy
+      </a>
     </p>
     <div class="flex gap-3">
       <button
