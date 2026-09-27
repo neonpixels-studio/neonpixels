@@ -205,6 +205,13 @@ describe("ProjectSummary", () => {
       props: { project: filledProject },
     });
     await wrapper.find("a").trigger("click");
+    // Proves the click actually consulted (and was blocked by) the consent
+    // gate, not merely that no event fired for some unrelated reason (e.g. a
+    // missing `@click` binding).
+    expect(shouldLoadAnalyticsMock).toHaveBeenCalledWith(
+      navigator,
+      consentStorageSentinel,
+    );
     expect(trackGoogleAnalyticsEventMock).not.toHaveBeenCalled();
     wrapper.unmount();
   });

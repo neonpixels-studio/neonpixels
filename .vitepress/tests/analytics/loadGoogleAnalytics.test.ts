@@ -157,16 +157,20 @@ describe("trackGoogleAnalyticsEvent", () => {
   // Every case above passes an explicit fake target; this one exercises the
   // `target: AnalyticsEventTarget = { window }` default instead, since that
   // default is the only path ProjectSummary.vue's production call (no third
-  // argument) actually takes.
+  // argument) actually takes. Cleanup runs in `finally` (not just after the
+  // assertions) so a failing assertion here can never leak a real
+  // `window.dataLayer` into later tests in this file.
   it("defaults to the real global window when no target is given", () => {
-    delete (window as { dataLayer?: unknown[] }).dataLayer;
-    trackGoogleAnalyticsEvent("outbound_click", { project_name: "markpost" });
-    expectQueuedGtagCommand(window.dataLayer?.[0], [
-      "event",
-      "outbound_click",
-      { project_name: "markpost" },
-    ]);
-    delete (window as { dataLayer?: unknown[] }).dataLayer;
+    try {
+      trackGoogleAnalyticsEvent("outbound_click", { project_name: "markpost" });
+      expectQueuedGtagCommand(window.dataLayer?.[0], [
+        "event",
+        "outbound_click",
+        { project_name: "markpost" },
+      ]);
+    } finally {
+      delete (window as { dataLayer?: unknown[] }).dataLayer;
+    }
   });
 });
 

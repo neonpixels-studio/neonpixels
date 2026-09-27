@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import type { Project } from "../data/projects";
 import { hexToRgba } from "../utils/color";
 import {
   getConsentStorage,
   shouldLoadAnalytics,
+  type ConsentStorage,
 } from "../analytics/analyticsConsent";
 import { trackGoogleAnalyticsEvent } from "../analytics/loadGoogleAnalytics";
 
@@ -80,6 +81,16 @@ const headingGlowStyle = computed(() => ({
   textShadow: `0 0 18px ${hexToRgba(props.project.color, HEADING_GLOW_ALPHA)}`,
 }));
 
+// Resolved once on mount (same pattern as ConsentBanner.vue's own
+// `consentStorage`), not read fresh inside trackOutboundClick — getConsentStorage()
+// probes localStorage with a set/remove round-trip, and this CTA can be
+// clicked far more often than the banner's Accept/Decline buttons ever are.
+let consentStorage: ConsentStorage;
+
+onMounted(() => {
+  consentStorage = getConsentStorage();
+});
+
 // Gated the same way page tracking already is (ConsentBanner.vue): only ever
 // fires once the visitor has actively accepted analytics, with no DNT/GPC
 // signal overriding that. Never blocks or delays the link's own navigation —
@@ -87,7 +98,7 @@ const headingGlowStyle = computed(() => ({
 // directly to `@click` (left-click, and Ctrl/Cmd+click, which still fires
 // `click`); handleCtaAuxClick below covers the one case this doesn't.
 function trackOutboundClick() {
-  if (!shouldLoadAnalytics(navigator, getConsentStorage())) {
+  if (!shouldLoadAnalytics(navigator, consentStorage)) {
     return;
   }
   trackGoogleAnalyticsEvent(OUTBOUND_CLICK_EVENT, {
