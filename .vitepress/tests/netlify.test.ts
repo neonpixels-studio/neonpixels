@@ -396,6 +396,31 @@ function findRedirect(redirects: Redirect[], from: string) {
   return matches[0];
 }
 
+// Netlify applies the first redirect rule in the file that matches a
+// request, so a literal `/*` catch-all placed anywhere ahead of the LAST of
+// `paths` in the file — including between two of them, not just ahead of
+// all of them — would silently intercept the request before a later,
+// intended block ever runs. Returns every such catch-all block found, empty
+// when none are ahead. Throws if any of `paths` isn't in `redirects` at
+// all, rather than silently treating a missing path's -1 index as if it
+// were the earliest position and narrowing (or inverting) the range this
+// guards.
+function findCatchAllsAhead(redirects: Redirect[], paths: string[]) {
+  const indexes = paths.map((path) =>
+    redirects.findIndex((redirect) => redirect.from === path),
+  );
+  const missing = paths.filter((_path, index) => indexes[index] === -1);
+  if (missing.length > 0) {
+    throw new Error(
+      `netlify.toml has no [[redirects]] block for: ${missing.join(", ")}`,
+    );
+  }
+  const lastIndex = Math.max(...indexes);
+  return redirects
+    .slice(0, lastIndex)
+    .filter((redirect) => redirect.from === "/*");
+}
+
 function parseDirectives(headerValue: string) {
   return headerValue
     .split(";")
@@ -1053,6 +1078,74 @@ describe("parseRedirects block splitting", () => {
   });
 });
 
+describe("findCatchAllsAhead", () => {
+  it("flags a catch-all placed before both target paths", () => {
+    const config = [
+      "[[redirects]]",
+      '  from = "/*"',
+      '  to = "/index.html"',
+      "",
+      "[[redirects]]",
+      '  from = "/a"',
+      '  to = "https://a.example"',
+      "",
+      "[[redirects]]",
+      '  from = "/b"',
+      '  to = "https://b.example"',
+    ].join("\n");
+    expect(findCatchAllsAhead(parseRedirects(config), ["/a", "/b"])).toEqual([
+      expect.objectContaining({ from: "/*" }),
+    ]);
+  });
+
+  // The case the "ahead of both" check alone would miss: a catch-all
+  // sitting between the two target blocks still shadows the later one.
+  it("flags a catch-all placed between the two target paths", () => {
+    const config = [
+      "[[redirects]]",
+      '  from = "/a"',
+      '  to = "https://a.example"',
+      "",
+      "[[redirects]]",
+      '  from = "/*"',
+      '  to = "/index.html"',
+      "",
+      "[[redirects]]",
+      '  from = "/b"',
+      '  to = "https://b.example"',
+    ].join("\n");
+    expect(findCatchAllsAhead(parseRedirects(config), ["/a", "/b"])).toEqual([
+      expect.objectContaining({ from: "/*" }),
+    ]);
+  });
+
+  it("returns an empty array when the catch-all comes after both target paths", () => {
+    const config = [
+      "[[redirects]]",
+      '  from = "/a"',
+      '  to = "https://a.example"',
+      "",
+      "[[redirects]]",
+      '  from = "/b"',
+      '  to = "https://b.example"',
+      "",
+      "[[redirects]]",
+      '  from = "/*"',
+      '  to = "/index.html"',
+    ].join("\n");
+    expect(findCatchAllsAhead(parseRedirects(config), ["/a", "/b"])).toEqual(
+      [],
+    );
+  });
+
+  it("throws when one of the target paths has no matching block", () => {
+    const config = ["[[redirects]]", '  from = "/a"'].join("\n");
+    expect(() =>
+      findCatchAllsAhead(parseRedirects(config), ["/a", "/b"]),
+    ).toThrow(/no \[\[redirects\]\] block for: \/b/);
+  });
+});
+
 // Issue #152: the two [[redirects]] blocks proxying /dashboard and
 // /dashboard/* to the separately-deployed dashboard app had zero test
 // coverage, so an edit that broke either block (wrong destination, a 3xx
@@ -1082,28 +1175,19 @@ describe("dashboard proxy redirects", () => {
   });
 
   // Netlify applies the first redirect rule that matches a request, so a
-  // catch-all block (e.g. `from = "/*"`) added anywhere before either
-  // dashboard block — including between the two, not just ahead of both —
-  // would silently shadow it: every assertion above would still pass, since
-  // they only check each block's own fields, not whether an earlier, broader
-  // rule intercepts the request first. That's the same "ships with no CI
-  // signal" failure issue #152 describes, just via rule order instead of a
-  // broken field. findRedirect already fails loud if either path is missing
-  // entirely, so this only needs to guard against a catch-all *ahead of*
-  // whichever dashboard block comes last in the file.
+  // literal `/*` catch-all block added anywhere before either dashboard
+  // block — including between the two, not just ahead of both — would
+  // silently shadow it: every assertion above would still pass, since they
+  // only check each block's own fields, not whether an earlier, broader rule
+  // intercepts the request first. That's the same "ships with no CI signal"
+  // failure issue #152 describes, just via rule order instead of a broken
+  // field. Scoped to the literal string "/*" only — a placeholder segment
+  // (e.g. `from = "/:page"`) ahead of /dashboard could shadow it too, but
+  // detecting that generally needs Netlify's actual segment-matching rules,
+  // which is out of scope here (see the PR's follow-up suggestions).
   it("has no catch-all redirect ahead of either dashboard block in the file", () => {
-    const dashboardIndexes = [DASHBOARD_PATH, DASHBOARD_SPLAT_PATH].map(
-      (from) => redirects.findIndex((redirect) => redirect.from === from),
-    );
-    // findIndex returns -1 for a missing block; guard explicitly rather than
-    // let a -1 silently narrow (or, if every index is -1, invert) the slice
-    // below into checking the wrong range — or none at all — while this test
-    // still reports a pass.
-    expect(dashboardIndexes).not.toContain(-1);
-    const lastDashboardIndex = Math.max(...dashboardIndexes);
-    const precedingCatchAll = redirects
-      .slice(0, lastDashboardIndex)
-      .filter((redirect) => redirect.from === "/*");
-    expect(precedingCatchAll).toEqual([]);
+    expect(
+      findCatchAllsAhead(redirects, [DASHBOARD_PATH, DASHBOARD_SPLAT_PATH]),
+    ).toEqual([]);
   });
 });
