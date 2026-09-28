@@ -864,3 +864,60 @@ describe("noindex header ownership", () => {
     expect(handWrittenHeaders).not.toMatch(/^\s*X-Robots-Tag\s*:/im);
   });
 });
+
+// Issue #149: ConsentBanner.vue links to the extensionless /privacy URL, which
+// only resolves because this file rewrites it to the real privacy.html
+// VitePress builds. Nothing else in this suite reads [[redirects]], so a
+// dropped or mis-typed rule here would break that link with every other
+// static guard still green.
+type RedirectRule = { from?: string; to?: string; status?: number };
+
+function parseRedirects(config: string): RedirectRule[] {
+  const rules: RedirectRule[] = [];
+  let currentRule: RedirectRule | null = null;
+  for (const line of config.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "[[redirects]]") {
+      currentRule = {};
+      rules.push(currentRule);
+      continue;
+    }
+    if (trimmed.startsWith("[") && trimmed !== "[[redirects]]") {
+      currentRule = null;
+      continue;
+    }
+    if (!currentRule) {
+      continue;
+    }
+    const assignment = trimmed.match(/^(from|to|status)\s*=\s*(.+)$/);
+    if (!assignment) {
+      continue;
+    }
+    const [, key, rawValue] = assignment;
+    if (key === "status") {
+      currentRule.status = Number(rawValue);
+      continue;
+    }
+    currentRule[key as "from" | "to"] = rawValue.replace(/^"|"$/g, "");
+  }
+  return rules;
+}
+
+describe("privacy policy redirect", () => {
+  const redirects = parseRedirects(NETLIFY_CONFIG);
+
+  it("rewrites the extensionless /privacy URL to the built privacy.html", () => {
+    const privacyRule = redirects.find((rule) => rule.from === "/privacy");
+    expect(privacyRule).toBeDefined();
+    expect(privacyRule?.to).toBe("/privacy.html");
+    // status 200 rewrites in place; a 3xx would visibly bounce the URL bar
+    // to /privacy.html instead of keeping the clean /privacy the consent
+    // banner links to.
+    expect(privacyRule?.status).toBe(200);
+  });
+
+  it("never redirects any path to itself (a self-loop)", () => {
+    const selfLoops = redirects.filter((rule) => rule.from === rule.to);
+    expect(selfLoops).toEqual([]);
+  });
+});

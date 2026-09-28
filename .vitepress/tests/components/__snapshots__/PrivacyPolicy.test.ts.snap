@@ -19,7 +19,7 @@ exports[`PrivacyPolicy > renders correctly 1`] = `
     </section>
     <section data-v-771b5e01="" class="mb-10">
       <h2 data-v-771b5e01="" class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]">Why</h2>
-      <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8]"> To see which pages get read and which of the four project links get clicked, so we have a rough sense of what's worth spending more time on. Nothing collected here is used to advertise to you, build a profile of you, or follow you across other sites. </p>
+      <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8]"> To see which pages get read and which of the 4 project links get clicked, so we have a rough sense of what's worth spending more time on. Nothing collected here is used to advertise to you, build a profile of you, or follow you across other sites. </p>
     </section>
     <section data-v-771b5e01="" class="mb-10">
       <h2 data-v-771b5e01="" class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]">How long it's kept</h2>

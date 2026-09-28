@@ -3,6 +3,7 @@ import { WORDMARK_GRADIENT } from "../brand";
 import { MAIN_CONTENT_ID } from "../a11y";
 import { GA_MEASUREMENT_ID } from "../analytics/loadGoogleAnalytics";
 import { MANAGE_CHOICE_LABEL } from "../analytics/analyticsConsent";
+import { PROJECTS } from "../data/projects";
 
 // Shared across every section heading/body paragraph below so the five
 // sections read consistently and a font-size/color tweak only has one place
@@ -13,13 +14,22 @@ const SECTION_HEADING_CLASS =
   "font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]";
 const BODY_TEXT_CLASS = "text-fg-muted m-0 text-[15.5px] leading-[1.8]";
 
+// PROJECTS is the same source NeonPixelsPage.vue's hero pills and footer
+// links read from - deriving the hostnames and count from it here means
+// adding/removing/renaming a project can't leave this page quietly wrong
+// the way a hand-typed domain list and "the four project links" would.
+const PROJECT_COUNT = PROJECTS.length;
+const PROJECT_HOSTNAMES = PROJECTS.map(
+  (project) => new URL(project.url).hostname,
+).join(", ");
+
 // What GA4 actually records once a visitor accepts the banner. Kept as data
 // (rendered via v-for below) rather than three hand-written <li> blocks so a
 // future addition — e.g. a CTA-click event — is a one-line array edit, not a
 // fourth copy-pasted list item.
 const COLLECTED_DATA_POINTS = [
   "Pageviews - which pages on this site you visit and roughly how long you stay.",
-  "Interaction events - things like clicking one of the project links (grimicorn.dev, wanderist.io, basin.fm, markpost.io), so we can tell which project people are actually curious about.",
+  `Interaction events - things like clicking one of the project links (${PROJECT_HOSTNAMES}), so we can tell which project people are actually curious about.`,
   "Standard technical details GA4 collects automatically for any hit: an approximate location derived from IP address (not the IP address itself), device/browser type, and referring site.",
 ];
 </script>
@@ -98,10 +108,10 @@ const COLLECTED_DATA_POINTS = [
       <section class="mb-10">
         <h2 :class="SECTION_HEADING_CLASS">Why</h2>
         <p :class="BODY_TEXT_CLASS">
-          To see which pages get read and which of the four project links get
-          clicked, so we have a rough sense of what's worth spending more time
-          on. Nothing collected here is used to advertise to you, build a
-          profile of you, or follow you across other sites.
+          To see which pages get read and which of the {{ PROJECT_COUNT }}
+          project links get clicked, so we have a rough sense of what's worth
+          spending more time on. Nothing collected here is used to advertise to
+          you, build a profile of you, or follow you across other sites.
         </p>
       </section>
 

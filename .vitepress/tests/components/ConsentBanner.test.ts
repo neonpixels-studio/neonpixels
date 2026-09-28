@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount } from "@vue/test-utils";
 import ConsentBanner from "@components/ConsentBanner.vue";
-import { CONSENT_STORAGE_KEY } from "@theme/analytics/analyticsConsent";
+import {
+  CONSENT_STORAGE_KEY,
+  MANAGE_CHOICE_LABEL,
+} from "@theme/analytics/analyticsConsent";
 import { PRIVACY_POLICY_URL } from "@theme/routes";
 
 // The banner delegates the actual GA4 bootstrap/kill-switch to
@@ -24,7 +27,11 @@ vi.mock("@theme/analytics/loadGoogleAnalytics", () => ({
 }));
 
 const BANNER_SELECTOR = '[role="region"]';
-const MANAGE_CHOICE_TEXT = "Analytics choice";
+// Imported (not hand-typed) so every assertion below that matches on this
+// text also proves the rendered button still reads MANAGE_CHOICE_LABEL - the
+// same constant PrivacyPolicy.vue points visitors at - rather than a second,
+// independently-drifting copy of the string.
+const MANAGE_CHOICE_TEXT = MANAGE_CHOICE_LABEL;
 
 function setDoNotTrack(value: string | null) {
   Object.defineProperty(navigator, "doNotTrack", {
