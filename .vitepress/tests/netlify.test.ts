@@ -406,6 +406,9 @@ function findRedirect(redirects: Redirect[], from: string) {
 // were the earliest position and narrowing (or inverting) the range this
 // guards.
 function findCatchAllsAhead(redirects: Redirect[], paths: string[]) {
+  if (paths.length === 0) {
+    throw new Error("findCatchAllsAhead needs at least one path to check");
+  }
   const indexes = paths.map((path) =>
     redirects.findIndex((redirect) => redirect.from === path),
   );
@@ -990,17 +993,25 @@ describe("noindex header ownership", () => {
   });
 });
 
+// Builds the text of one [[redirects]] block for the fixtures below — the
+// same "[[redirects]]" + from/to (+ optional extra lines) shape otherwise
+// repeats across nearly every fixture in this describe block and in
+// findCatchAllsAhead's below.
+function redirectBlock(from: string, to: string, extraLines: string[] = []) {
+  return [
+    "[[redirects]]",
+    `  from = "${from}"`,
+    `  to = "${to}"`,
+    ...extraLines,
+  ].join("\n");
+}
+
 describe("parseRedirects block splitting", () => {
   it("stops a block at the next [[redirects]] table", () => {
     const config = [
-      "[[redirects]]",
-      '  from = "/a"',
-      '  to = "https://a.example"',
-      "",
-      "[[redirects]]",
-      '  from = "/b"',
-      '  to = "https://b.example"',
-    ].join("\n");
+      redirectBlock("/a", "https://a.example"),
+      redirectBlock("/b", "https://b.example"),
+    ].join("\n\n");
     const blocks = parseRedirects(config);
     expect(blocks).toHaveLength(2);
     expect(blocks[0].from).toBe("/a");
@@ -1009,13 +1020,9 @@ describe("parseRedirects block splitting", () => {
 
   it("stops a block at an unrelated table, not just another [[redirects]]", () => {
     const config = [
-      "[[redirects]]",
-      '  from = "/a"',
-      '  to = "https://a.example"',
-      "",
-      "[[headers]]",
-      '  for = "/*"',
-    ].join("\n");
+      redirectBlock("/a", "https://a.example"),
+      '[[headers]]\n  for = "/*"',
+    ].join("\n\n");
     const [redirect] = parseRedirects(config);
     expect(redirect.from).toBe("/a");
     expect(redirect.to).toBe("https://a.example");
@@ -1024,7 +1031,9 @@ describe("parseRedirects block splitting", () => {
   // TOML allows a value to be a single-quoted literal string as an
   // alternative to a double-quoted basic string; Netlify accepts either, so
   // a `from`/`to` written with single quotes must parse the same as one
-  // written with double quotes rather than reading as undefined.
+  // written with double quotes rather than reading as undefined. Written out
+  // by hand rather than via redirectBlock, since the quote style is exactly
+  // what this fixture is testing.
   it("reads a single-quoted string value the same as a double-quoted one", () => {
     const config = ["[[redirects]]", "  from = '/a'", "  to = '/b'"].join("\n");
     const [redirect] = parseRedirects(config);
@@ -1033,18 +1042,17 @@ describe("parseRedirects block splitting", () => {
   });
 
   it("reads status as a number and force as a boolean, not strings", () => {
-    const config = [
-      "[[redirects]]",
-      '  from = "/a"',
-      '  to = "https://a.example"',
+    const config = redirectBlock("/a", "https://a.example", [
       "  status = 200",
       "  force = true",
-    ].join("\n");
+    ]);
     const [redirect] = parseRedirects(config);
     expect(redirect.status).toBe(200);
     expect(redirect.force).toBe(true);
   });
 
+  // Written out by hand rather than via redirectBlock, since the missing
+  // `to`/`status`/`force` keys are exactly what this fixture is testing.
   it("reads an absent key as undefined rather than throwing", () => {
     const config = ["[[redirects]]", '  from = "/a"'].join("\n");
     const [redirect] = parseRedirects(config);
@@ -1064,14 +1072,9 @@ describe("parseRedirects block splitting", () => {
   // whichever happens to come first in the file.
   it("throws findRedirect when more than one block shares the same from", () => {
     const config = [
-      "[[redirects]]",
-      '  from = "/a"',
-      '  to = "https://a.example"',
-      "",
-      "[[redirects]]",
-      '  from = "/a"',
-      '  to = "https://a-duplicate.example"',
-    ].join("\n");
+      redirectBlock("/a", "https://a.example"),
+      redirectBlock("/a", "https://a-duplicate.example"),
+    ].join("\n\n");
     expect(() => findRedirect(parseRedirects(config), "/a")).toThrow(
       /has 2 \[\[redirects\]\] blocks with from = "\/a"/,
     );
@@ -1081,18 +1084,10 @@ describe("parseRedirects block splitting", () => {
 describe("findCatchAllsAhead", () => {
   it("flags a catch-all placed before both target paths", () => {
     const config = [
-      "[[redirects]]",
-      '  from = "/*"',
-      '  to = "/index.html"',
-      "",
-      "[[redirects]]",
-      '  from = "/a"',
-      '  to = "https://a.example"',
-      "",
-      "[[redirects]]",
-      '  from = "/b"',
-      '  to = "https://b.example"',
-    ].join("\n");
+      redirectBlock("/*", "/index.html"),
+      redirectBlock("/a", "https://a.example"),
+      redirectBlock("/b", "https://b.example"),
+    ].join("\n\n");
     expect(findCatchAllsAhead(parseRedirects(config), ["/a", "/b"])).toEqual([
       expect.objectContaining({ from: "/*" }),
     ]);
@@ -1102,18 +1097,10 @@ describe("findCatchAllsAhead", () => {
   // sitting between the two target blocks still shadows the later one.
   it("flags a catch-all placed between the two target paths", () => {
     const config = [
-      "[[redirects]]",
-      '  from = "/a"',
-      '  to = "https://a.example"',
-      "",
-      "[[redirects]]",
-      '  from = "/*"',
-      '  to = "/index.html"',
-      "",
-      "[[redirects]]",
-      '  from = "/b"',
-      '  to = "https://b.example"',
-    ].join("\n");
+      redirectBlock("/a", "https://a.example"),
+      redirectBlock("/*", "/index.html"),
+      redirectBlock("/b", "https://b.example"),
+    ].join("\n\n");
     expect(findCatchAllsAhead(parseRedirects(config), ["/a", "/b"])).toEqual([
       expect.objectContaining({ from: "/*" }),
     ]);
@@ -1121,18 +1108,10 @@ describe("findCatchAllsAhead", () => {
 
   it("returns an empty array when the catch-all comes after both target paths", () => {
     const config = [
-      "[[redirects]]",
-      '  from = "/a"',
-      '  to = "https://a.example"',
-      "",
-      "[[redirects]]",
-      '  from = "/b"',
-      '  to = "https://b.example"',
-      "",
-      "[[redirects]]",
-      '  from = "/*"',
-      '  to = "/index.html"',
-    ].join("\n");
+      redirectBlock("/a", "https://a.example"),
+      redirectBlock("/b", "https://b.example"),
+      redirectBlock("/*", "/index.html"),
+    ].join("\n\n");
     expect(findCatchAllsAhead(parseRedirects(config), ["/a", "/b"])).toEqual(
       [],
     );
@@ -1143,6 +1122,17 @@ describe("findCatchAllsAhead", () => {
     expect(() =>
       findCatchAllsAhead(parseRedirects(config), ["/a", "/b"]),
     ).toThrow(/no \[\[redirects\]\] block for: \/b/);
+  });
+
+  // Math.max(...[]) is -Infinity, which would make the slice below run over
+  // the whole array and report "nothing ahead" without having checked
+  // anything — the same silent vacuous pass the missing-path guard above
+  // exists to prevent, just via an empty list instead of a wrong one.
+  it("throws when given no target paths to check", () => {
+    const config = redirectBlock("/*", "/index.html");
+    expect(() => findCatchAllsAhead(parseRedirects(config), [])).toThrow(
+      /at least one path/,
+    );
   });
 });
 
