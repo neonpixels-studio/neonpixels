@@ -11,6 +11,12 @@ const DO_NOT_TRACK_ENABLED_VALUES = new Set(["1", "yes"]);
 
 export const CONSENT_STORAGE_KEY = "np-analytics-consent";
 
+// The visible label on ConsentBanner.vue's re-open control. Exported so
+// PrivacyPolicy.vue can reference the exact same string when it tells a
+// visitor what to look for, rather than a hand-typed copy the two files
+// could silently drift apart from if the button were ever relabeled.
+export const MANAGE_CHOICE_LABEL = "Analytics choice";
+
 export const CONSENT_CHOICES = {
   accepted: "accepted",
   declined: "declined",

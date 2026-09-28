@@ -36,6 +36,15 @@
   to = "/privacy.html"
   status = 200
 
+# A trailing-slash visit (e.g. a hand-typed /privacy/) would otherwise 404
+# under the same "not the real file" gap the rule above exists to close -
+# send it to the canonical extensionless URL first, then let the rule above
+# rewrite that to the real file.
+[[redirects]]
+  from = "/privacy/"
+  to = "/privacy"
+  status = 301
+
 [[headers]]
   for = "/*"
   [headers.values]

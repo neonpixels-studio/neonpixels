@@ -2,6 +2,26 @@
 import { WORDMARK_GRADIENT } from "../brand";
 import { MAIN_CONTENT_ID } from "../a11y";
 import { GA_MEASUREMENT_ID } from "../analytics/loadGoogleAnalytics";
+import { MANAGE_CHOICE_LABEL } from "../analytics/analyticsConsent";
+
+// Shared across every section heading/body paragraph below so the five
+// sections read consistently and a font-size/color tweak only has one place
+// to land — mirrors how NeonPixelsPage.vue composes its own repeated inline
+// style objects (auroraGlow, cardGlow) from one definition instead of
+// restating each section's markup by hand.
+const SECTION_HEADING_CLASS =
+  "font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]";
+const BODY_TEXT_CLASS = "text-fg-muted m-0 text-[15.5px] leading-[1.8]";
+
+// What GA4 actually records once a visitor accepts the banner. Kept as data
+// (rendered via v-for below) rather than three hand-written <li> blocks so a
+// future addition — e.g. a CTA-click event — is a one-line array edit, not a
+// fourth copy-pasted list item.
+const COLLECTED_DATA_POINTS = [
+  "Pageviews - which pages on this site you visit and roughly how long you stay.",
+  "Interaction events - things like clicking one of the project links (grimicorn.dev, wanderist.io, basin.fm, markpost.io), so we can tell which project people are actually curious about.",
+  "Standard technical details GA4 collects automatically for any hit: an approximate location derived from IP address (not the IP address itself), device/browser type, and referring site.",
+];
 </script>
 
 <template>
@@ -45,108 +65,80 @@ import { GA_MEASUREMENT_ID } from "../analytics/loadGoogleAnalytics";
         Privacy Policy
       </h1>
 
-      <p class="text-fg-muted m-0 mb-8 text-[15.5px] leading-[1.8]">
+      <p :class="BODY_TEXT_CLASS" class="mb-8">
         This is a small studio site with one analytics tool bolted on. This page
         explains, in plain language, what that tool collects, why, and for how
         long.
       </p>
 
       <section class="mb-10">
-        <h2
-          class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]"
-        >
-          What we collect
-        </h2>
-        <p class="text-fg-muted m-0 mb-4 text-[15.5px] leading-[1.8]">
+        <h2 :class="SECTION_HEADING_CLASS">What we collect</h2>
+        <p :class="BODY_TEXT_CLASS" class="mb-4">
           If you accept the analytics banner, this site loads Google Analytics 4
           (GA4), which records:
         </p>
         <ul
           class="text-fg-muted m-0 mb-2 flex list-none flex-col gap-2 pl-0 text-[15.5px] leading-[1.7]"
         >
-          <li class="flex gap-3">
+          <li
+            v-for="dataPoint in COLLECTED_DATA_POINTS"
+            :key="dataPoint"
+            class="flex gap-3"
+          >
             <span class="text-lime">▸</span>
-            <span
-              >Pageviews - which pages on this site you visit and roughly how
-              long you stay.</span
-            >
-          </li>
-          <li class="flex gap-3">
-            <span class="text-lime">▸</span>
-            <span
-              >Interaction events - things like clicking one of the project
-              links (grimicorn.dev, wanderist.io, basin.fm, markpost.io), so we
-              can tell which project people are actually curious about.</span
-            >
-          </li>
-          <li class="flex gap-3">
-            <span class="text-lime">▸</span>
-            <span
-              >Standard technical details GA4 collects automatically for any
-              hit: an approximate location derived from IP address (not the IP
-              address itself), device/browser type, and referring site.</span
-            >
+            <span>{{ dataPoint }}</span>
           </li>
         </ul>
-        <p class="text-fg-muted m-0 text-[15.5px] leading-[1.8]">
+        <p :class="BODY_TEXT_CLASS">
           We don't collect names, email addresses, or any other information
           you'd have to type in - there's nowhere on this site to type anything.
         </p>
       </section>
 
       <section class="mb-10">
-        <h2
-          class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]"
-        >
-          Why
-        </h2>
-        <p class="text-fg-muted m-0 text-[15.5px] leading-[1.8]">
-          Purely to see which of the four project links people click, so we have
-          a rough sense of what's worth spending more time on. Nothing collected
-          here is used to advertise to you, build a profile of you, or follow
-          you across other sites.
+        <h2 :class="SECTION_HEADING_CLASS">Why</h2>
+        <p :class="BODY_TEXT_CLASS">
+          To see which pages get read and which of the four project links get
+          clicked, so we have a rough sense of what's worth spending more time
+          on. Nothing collected here is used to advertise to you, build a
+          profile of you, or follow you across other sites.
         </p>
       </section>
 
       <section class="mb-10">
-        <h2
-          class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]"
-        >
-          How long it's kept
-        </h2>
-        <p class="text-fg-muted m-0 text-[15.5px] leading-[1.8]">
-          This site uses Google's standard GA4 configuration - we haven't
-          customized the retention window. Google's own documentation caps
-          event-level retention at a maximum of 14 months, after which it's
-          automatically deleted from GA4's servers.
+        <h2 :class="SECTION_HEADING_CLASS">How long it's kept</h2>
+        <p :class="BODY_TEXT_CLASS">
+          This site uses Google Analytics 4's own data retention controls, which
+          cap event-level data at a maximum of 14 months before Google
+          automatically deletes it - the exact window is a setting on the GA4
+          property itself, not something this codebase controls.
         </p>
       </section>
 
       <section class="mb-10">
-        <h2
-          class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]"
-        >
-          Who else sees it
-        </h2>
-        <p class="text-fg-muted m-0 text-[15.5px] leading-[1.8]">
-          Nobody. Data goes to Google as the analytics processor and nowhere
-          else - it isn't sold, shared with advertisers, or handed to any other
-          third party.
+        <h2 :class="SECTION_HEADING_CLASS">Who else sees it</h2>
+        <p :class="BODY_TEXT_CLASS">
+          Analytics data goes to Google, who processes it as described in
+          <a
+            href="https://policies.google.com/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="nav-link text-fg-subtle underline"
+            >Google's own Privacy Policy</a
+          >. This site has no other analytics, advertising, or tracking service
+          embedded in it, and we don't sell or otherwise share this data
+          ourselves.
         </p>
       </section>
 
       <section>
-        <h2
-          class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]"
-        >
-          Your choice
-        </h2>
-        <p class="text-fg-muted m-0 mb-4 text-[15.5px] leading-[1.8]">
+        <h2 :class="SECTION_HEADING_CLASS">Your choice</h2>
+        <p :class="BODY_TEXT_CLASS" class="mb-4">
           Nothing loads until you accept the banner, and you can change your
-          mind at any time using the "Analytics choice" control that stays
-          on-screen once you've decided. If your browser sends a Do Not Track or
-          Global Privacy Control signal, analytics never loads at all and you're
-          never asked.
+          mind at any time using the "{{ MANAGE_CHOICE_LABEL }}" control that
+          stays on-screen once you've decided. If your browser sends a Do Not
+          Track or Global Privacy Control signal, analytics never loads at all
+          and you're never asked.
         </p>
         <p class="text-fg-dim m-0 text-[13px] leading-[1.7]">
           GA4 measurement ID: {{ GA_MEASUREMENT_ID }}

@@ -3,6 +3,7 @@ import { nextTick, onMounted, ref, type Ref } from "vue";
 import { WORDMARK_GRADIENT } from "../brand";
 import {
   CONSENT_CHOICES,
+  MANAGE_CHOICE_LABEL,
   getConsentStorage,
   getStoredConsentChoice,
   setStoredConsentChoice,
@@ -169,6 +170,6 @@ function reopenBanner() {
     class="text-fg-subtle border-border bg-panel fixed bottom-3 left-3 z-40 rounded-none border px-3 py-1.5 font-mono text-[11px]"
     @click="reopenBanner"
   >
-    Analytics choice
+    {{ MANAGE_CHOICE_LABEL }}
   </button>
 </template>

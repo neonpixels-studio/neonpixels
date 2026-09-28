@@ -4,34 +4,34 @@ exports[`PrivacyPolicy > renders correctly 1`] = `
 "<div data-v-771b5e01="" class="bg-bg text-fg relative font-mono">
   <header data-v-771b5e01="" class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b px-10 py-[22px] backdrop-blur-md" style="background: #08080ae6;"><a data-v-771b5e01="" href="/" class="flex items-center gap-[11px]"><span data-v-771b5e01="" class="font-display text-[15px] font-black tracking-[-0.01em] text-[#f2f2f4]"> NEON<span data-v-771b5e01="" class="bg-clip-text text-transparent" style="background-image: linear-gradient(90deg, #b8ff2e, #22e0ff, #ff2ea6, #ffc21f, #b8ff2e);">PIXELS</span></span></a><a data-v-771b5e01="" href="/" class="text-fg-subtle nav-link text-[12.5px]"> ← back to home </a></header>
   <main data-v-771b5e01="" id="main-content" tabindex="-1" class="relative z-[2] mx-auto max-w-[720px] px-10 py-20">
-    <div class="text-lime mb-6 flex items-center gap-3 text-[11.5px] tracking-[0.24em] uppercase" data-v-771b5e01=""><span class="bg-lime h-px w-6" data-v-771b5e01=""></span> privacy </div>
-    <h1 class="font-display m-0 mb-8 font-black tracking-[-0.025em] text-[#f2f2f4]" style="font-size:clamp(30px, 3.6vw, 46px);line-height:1.02;" data-v-771b5e01=""> Privacy Policy </h1>
-    <p class="text-fg-muted m-0 mb-8 text-[15.5px] leading-[1.8]" data-v-771b5e01=""> This is a small studio site with one analytics tool bolted on. This page explains, in plain language, what that tool collects, why, and for how long. </p>
-    <section class="mb-10" data-v-771b5e01="">
-      <h2 class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]" data-v-771b5e01=""> What we collect </h2>
-      <p class="text-fg-muted m-0 mb-4 text-[15.5px] leading-[1.8]" data-v-771b5e01=""> If you accept the analytics banner, this site loads Google Analytics 4 (GA4), which records: </p>
-      <ul class="text-fg-muted m-0 mb-2 flex list-none flex-col gap-2 pl-0 text-[15.5px] leading-[1.7]" data-v-771b5e01="">
-        <li class="flex gap-3" data-v-771b5e01=""><span class="text-lime" data-v-771b5e01="">▸</span><span data-v-771b5e01="">Pageviews - which pages on this site you visit and roughly how long you stay.</span></li>
-        <li class="flex gap-3" data-v-771b5e01=""><span class="text-lime" data-v-771b5e01="">▸</span><span data-v-771b5e01="">Interaction events - things like clicking one of the project links (grimicorn.dev, wanderist.io, basin.fm, markpost.io), so we can tell which project people are actually curious about.</span></li>
-        <li class="flex gap-3" data-v-771b5e01=""><span class="text-lime" data-v-771b5e01="">▸</span><span data-v-771b5e01="">Standard technical details GA4 collects automatically for any hit: an approximate location derived from IP address (not the IP address itself), device/browser type, and referring site.</span></li>
+    <div data-v-771b5e01="" class="text-lime mb-6 flex items-center gap-3 text-[11.5px] tracking-[0.24em] uppercase"><span data-v-771b5e01="" class="bg-lime h-px w-6"></span> privacy </div>
+    <h1 data-v-771b5e01="" class="font-display m-0 mb-8 font-black tracking-[-0.025em] text-[#f2f2f4]" style="line-height: 1.02;"> Privacy Policy </h1>
+    <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8] mb-8"> This is a small studio site with one analytics tool bolted on. This page explains, in plain language, what that tool collects, why, and for how long. </p>
+    <section data-v-771b5e01="" class="mb-10">
+      <h2 data-v-771b5e01="" class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]">What we collect</h2>
+      <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8] mb-4"> If you accept the analytics banner, this site loads Google Analytics 4 (GA4), which records: </p>
+      <ul data-v-771b5e01="" class="text-fg-muted m-0 mb-2 flex list-none flex-col gap-2 pl-0 text-[15.5px] leading-[1.7]">
+        <li data-v-771b5e01="" class="flex gap-3"><span data-v-771b5e01="" class="text-lime">▸</span><span data-v-771b5e01="">Pageviews - which pages on this site you visit and roughly how long you stay.</span></li>
+        <li data-v-771b5e01="" class="flex gap-3"><span data-v-771b5e01="" class="text-lime">▸</span><span data-v-771b5e01="">Interaction events - things like clicking one of the project links (grimicorn.dev, wanderist.io, basin.fm, markpost.io), so we can tell which project people are actually curious about.</span></li>
+        <li data-v-771b5e01="" class="flex gap-3"><span data-v-771b5e01="" class="text-lime">▸</span><span data-v-771b5e01="">Standard technical details GA4 collects automatically for any hit: an approximate location derived from IP address (not the IP address itself), device/browser type, and referring site.</span></li>
       </ul>
-      <p class="text-fg-muted m-0 text-[15.5px] leading-[1.8]" data-v-771b5e01=""> We don't collect names, email addresses, or any other information you'd have to type in - there's nowhere on this site to type anything. </p>
+      <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8]"> We don't collect names, email addresses, or any other information you'd have to type in - there's nowhere on this site to type anything. </p>
     </section>
-    <section class="mb-10" data-v-771b5e01="">
-      <h2 class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]" data-v-771b5e01=""> Why </h2>
-      <p class="text-fg-muted m-0 text-[15.5px] leading-[1.8]" data-v-771b5e01=""> Purely to see which of the four project links people click, so we have a rough sense of what's worth spending more time on. Nothing collected here is used to advertise to you, build a profile of you, or follow you across other sites. </p>
+    <section data-v-771b5e01="" class="mb-10">
+      <h2 data-v-771b5e01="" class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]">Why</h2>
+      <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8]"> To see which pages get read and which of the four project links get clicked, so we have a rough sense of what's worth spending more time on. Nothing collected here is used to advertise to you, build a profile of you, or follow you across other sites. </p>
     </section>
-    <section class="mb-10" data-v-771b5e01="">
-      <h2 class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]" data-v-771b5e01=""> How long it's kept </h2>
-      <p class="text-fg-muted m-0 text-[15.5px] leading-[1.8]" data-v-771b5e01=""> This site uses Google's standard GA4 configuration - we haven't customized the retention window. Google's own documentation caps event-level retention at a maximum of 14 months, after which it's automatically deleted from GA4's servers. </p>
+    <section data-v-771b5e01="" class="mb-10">
+      <h2 data-v-771b5e01="" class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]">How long it's kept</h2>
+      <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8]"> This site uses Google Analytics 4's own data retention controls, which cap event-level data at a maximum of 14 months before Google automatically deletes it - the exact window is a setting on the GA4 property itself, not something this codebase controls. </p>
     </section>
-    <section class="mb-10" data-v-771b5e01="">
-      <h2 class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]" data-v-771b5e01=""> Who else sees it </h2>
-      <p class="text-fg-muted m-0 text-[15.5px] leading-[1.8]" data-v-771b5e01=""> Nobody. Data goes to Google as the analytics processor and nowhere else - it isn't sold, shared with advertisers, or handed to any other third party. </p>
+    <section data-v-771b5e01="" class="mb-10">
+      <h2 data-v-771b5e01="" class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]">Who else sees it</h2>
+      <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8]"> Analytics data goes to Google, who processes it as described in <a data-v-771b5e01="" href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer" class="nav-link text-fg-subtle underline">Google's own Privacy Policy</a>. This site has no other analytics, advertising, or tracking service embedded in it, and we don't sell or otherwise share this data ourselves. </p>
     </section>
     <section data-v-771b5e01="">
-      <h2 data-v-771b5e01="" class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]"> Your choice </h2>
-      <p data-v-771b5e01="" class="text-fg-muted m-0 mb-4 text-[15.5px] leading-[1.8]"> Nothing loads until you accept the banner, and you can change your mind at any time using the "Analytics choice" control that stays on-screen once you've decided. If your browser sends a Do Not Track or Global Privacy Control signal, analytics never loads at all and you're never asked. </p>
+      <h2 data-v-771b5e01="" class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]">Your choice</h2>
+      <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8] mb-4"> Nothing loads until you accept the banner, and you can change your mind at any time using the "Analytics choice" control that stays on-screen once you've decided. If your browser sends a Do Not Track or Global Privacy Control signal, analytics never loads at all and you're never asked. </p>
       <p data-v-771b5e01="" class="text-fg-dim m-0 text-[13px] leading-[1.7]"> GA4 measurement ID: G-Y4448RR4CR</p>
     </section>
   </main>

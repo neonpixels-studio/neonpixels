@@ -3,6 +3,7 @@ import { shallowMount } from "@vue/test-utils";
 import PrivacyPolicy from "@components/PrivacyPolicy.vue";
 import { MAIN_CONTENT_ID } from "@theme/a11y";
 import { GA_MEASUREMENT_ID } from "@theme/analytics/loadGoogleAnalytics";
+import { MANAGE_CHOICE_LABEL } from "@theme/analytics/analyticsConsent";
 
 describe("PrivacyPolicy", () => {
   it("renders correctly", () => {
@@ -36,10 +37,33 @@ describe("PrivacyPolicy", () => {
     const wrapper = shallowMount(PrivacyPolicy);
     const text = wrapper.text();
     expect(text).toContain("Google Analytics");
-    expect(text).toMatch(/pageview/i);
-    expect(text).toMatch(/event/i);
+    expect(text).toContain("Pageviews");
+    expect(text).toContain("Interaction events");
     expect(text).toContain("14 months");
     expect(text).toContain(GA_MEASUREMENT_ID);
+    wrapper.unmount();
+  });
+
+  it("points the manage-choice instruction at the banner's real control label", () => {
+    // Regression coverage for the round-2 review finding: this page tells a
+    // visitor to look for a control by name, so it must read the same
+    // MANAGE_CHOICE_LABEL ConsentBanner.vue's button actually renders, not an
+    // independently hand-typed copy the two could drift apart from.
+    const wrapper = shallowMount(PrivacyPolicy);
+    expect(wrapper.text()).toContain(MANAGE_CHOICE_LABEL);
+    wrapper.unmount();
+  });
+
+  it("links out to Google's own privacy policy safely in a new tab", () => {
+    const wrapper = shallowMount(PrivacyPolicy);
+    const googleLink = wrapper.find(
+      'a[href="https://policies.google.com/privacy"]',
+    );
+    expect(googleLink.exists()).toBe(true);
+    expect(googleLink.attributes("target")).toBe("_blank");
+    const relTokens = (googleLink.attributes("rel") ?? "").split(/\s+/);
+    expect(relTokens).toContain("noopener");
+    expect(relTokens).toContain("noreferrer");
     wrapper.unmount();
   });
 
