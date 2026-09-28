@@ -19,6 +19,7 @@ The site is a single custom-themed page. The theme lives in `.vitepress/theme`:
 
 - `AppLayout.vue` — swaps between the landing page and the 404 view
 - `components/NeonPixelsPage.vue` — the landing page
+- `components/ContactForm.vue` — the Netlify Forms contact form, rendered above the header
 - `components/NotFound.vue` — the 404 view
 - `style.css` — Tailwind entry, theme tokens, keyframes and animation utilities
 
@@ -48,6 +49,23 @@ accessibility ruleset.
 Deploys to [Netlify](https://www.netlify.com). See [`netlify.toml`](netlify.toml) for
 the build command, publish directory and security headers. The build runs the test
 suite before building, so a failing test blocks the deploy.
+
+### Contact form ([Netlify Forms](https://docs.netlify.com/manage/forms/setup/))
+
+`components/ContactForm.vue` is a real HTML `<form data-netlify="true" name="contact">`
+(with a hidden `form-name` input) rendered unconditionally in the page template, so it
+survives into the static HTML VitePress emits at build time — this is what lets
+Netlify's build-time bot detect and register it; a form that only materialized after
+client-side hydration would never be picked up. At runtime the component submits via
+`fetch` (isolated in `theme/forms/submitNetlifyForm.ts`) to avoid a full page reload,
+posting the same url-encoded body a native submission would. Spam filtering uses an
+accessible honeypot field (`bot-field`, `data-netlify-honeypot`) that's hidden from
+sighted users and assistive tech and removed from the tab order, so only an automated
+filler ever populates it; a filled honeypot reports success without actually
+submitting. **No new environment variables or build config are required** — Netlify
+auto-detects the form from the deployed HTML. To receive submissions by email, enable
+notifications once per site: Netlify dashboard → Site configuration → Forms →
+Form notifications.
 
 ### CSP violation collector
 

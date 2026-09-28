@@ -97,6 +97,7 @@ const ABSOLUTE_URL_META: ReadonlyArray<readonly [string, string]> = [
 
 let buildOutDir = "";
 let builtHead = "";
+let builtIndexHtml = "";
 // Only a build the suite created itself is cleaned up; a reused deploy dir is left
 // in place because it is the artifact Netlify publishes.
 let ownsBuildDir = false;
@@ -389,6 +390,7 @@ beforeAll(async () => {
   }
   const indexHtml = readFileSync(resolve(buildOutDir, INDEX_HTML_FILE), "utf8");
   builtHead = extractHead(indexHtml);
+  builtIndexHtml = indexHtml;
   generatedHeaders = readFileSync(resolve(buildOutDir, HEADERS_FILE), "utf8");
 }, BUILD_TIMEOUT_MS);
 
@@ -524,6 +526,57 @@ describe("hero font preload", () => {
     // pages (e.g. a partial rebuild) fails here.
     const indexHref = attributeValue(preloadLinkFor(builtHead)!, "href");
     expect(attributeValue(notFoundLinkTag!, "href")).toBe(indexHref);
+  });
+});
+
+// Netlify's contact-form support (issue #150) works by having a bot scan the
+// *built, static* HTML at deploy time for a <form data-netlify="true">; a form
+// that only ever materializes after client-side hydration would never be
+// registered, and every runtime submission would 404. This closes that gap by
+// asserting on the real production build output, not just a component mount.
+describe("Netlify Forms static markup", () => {
+  function contactForm(html: string) {
+    const match = html.match(/<form\b[^>]*name="contact"[^>]*>/);
+    return match ? match[0] : null;
+  }
+
+  it("ships a statically-detectable <form data-netlify> on the built home page", () => {
+    const formTag = contactForm(builtIndexHtml);
+    expect(formTag, 'no name="contact" form in built index.html').toBeTruthy();
+    expect(formTag).toMatch(/data-netlify="true"/);
+    expect(formTag).toMatch(/method="POST"/);
+    // The server-side honeypot filter (as opposed to the client-side JS
+    // check) keys off this attribute; a bot that posts natively, bypassing
+    // the fetch handler entirely, is only caught if it ships on the tag.
+    expect(formTag).toMatch(/data-netlify-honeypot="bot-field"/);
+  });
+
+  it("ships the hidden form-name input Netlify needs to match a submission to the form", () => {
+    expect(builtIndexHtml).toMatch(
+      /<input[^>]*type="hidden"[^>]*name="form-name"[^>]*value="contact"[^>]*>/,
+    );
+  });
+
+  it("ships an accessible honeypot field for spam filtering", () => {
+    expect(builtIndexHtml).toMatch(/<input[^>]*name="bot-field"[^>]*>/);
+    // The honeypot's wrapper must render aria-hidden and visually hidden in
+    // the actual build output, not only in the component's source — a
+    // template typo here would otherwise expose it to real visitors. Matches
+    // the opening <p ...> tag's attributes independently of the honeypot
+    // input's position/order within it (rather than requiring an exact,
+    // literal `<p class="hidden" aria-hidden="true">` prefix), so a harmless
+    // attribute reordering or an added class doesn't false-fail this, while
+    // bounding the search to content up to that <p>'s own closing tag (not a
+    // lazy match with no end boundary) so an unrelated, earlier <p> elsewhere
+    // on the page can't make this pass when the honeypot's own wrapper is
+    // missing the attribute.
+    const honeypotWrapperMatch = builtIndexHtml.match(
+      /<p\b([^>]*)>((?:(?!<\/p>)[\s\S])*name="bot-field"(?:(?!<\/p>)[\s\S])*)<\/p>/,
+    );
+    expect(honeypotWrapperMatch, "no honeypot wrapper <p> found").toBeTruthy();
+    const honeypotWrapperAttributes = honeypotWrapperMatch![1];
+    expect(honeypotWrapperAttributes).toMatch(/aria-hidden="true"/);
+    expect(honeypotWrapperAttributes).toMatch(/class="[^"]*\bhidden\b[^"]*"/);
   });
 });
 
