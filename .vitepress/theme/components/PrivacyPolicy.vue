@@ -29,8 +29,9 @@ const PROJECT_HOSTNAMES = PROJECTS.map(
 // fourth copy-pasted list item.
 const COLLECTED_DATA_POINTS = [
   "Pageviews - which pages on this site you visit and roughly how long you stay.",
-  `Interaction events - things like clicking one of the project links (${PROJECT_HOSTNAMES}), so we can tell which project people are actually curious about.`,
+  `Interaction events GA4 records automatically via its Enhanced Measurement setting - such as outbound clicks on the project links (${PROJECT_HOSTNAMES}) - so we can tell which project people are actually curious about.`,
   "Standard technical details GA4 collects automatically for any hit: an approximate location derived from IP address (not the IP address itself), device/browser type, and referring site.",
+  'Two first-party cookies GA4 itself sets once you accept - _ga and _ga_<container-id> - which hold a random id so repeat visits can be counted as the same visitor. Both expire automatically after about 2 years, or sooner if you decline (see "Your choice" below).',
 ];
 </script>
 
@@ -121,7 +122,9 @@ const COLLECTED_DATA_POINTS = [
           This site uses Google Analytics 4's own data retention controls, which
           cap event-level data at a maximum of 14 months before Google
           automatically deletes it - the exact window is a setting on the GA4
-          property itself, not something this codebase controls.
+          property itself, not something this codebase controls. The _ga and
+          _ga_* cookies mentioned above expire on their own after about 2 years,
+          or are cleared immediately if you decline via the consent banner.
         </p>
       </section>
 

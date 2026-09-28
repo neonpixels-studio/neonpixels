@@ -872,17 +872,27 @@ describe("noindex header ownership", () => {
 // static guard still green.
 type RedirectRule = { from?: string; to?: string; status?: number };
 
+// Strips a trailing ` # comment` before matching, so a legal TOML inline
+// comment on a redirect line can't be parsed as part of the value (e.g.
+// `status = 200 # rewrite` misparsing as NaN).
+function stripInlineComment(line: string) {
+  return line.replace(/\s+#.*$/, "");
+}
+
 function parseRedirects(config: string): RedirectRule[] {
   const rules: RedirectRule[] = [];
   let currentRule: RedirectRule | null = null;
-  for (const line of config.split("\n")) {
-    const trimmed = line.trim();
+  for (const rawLine of config.split("\n")) {
+    const trimmed = stripInlineComment(rawLine).trim();
     if (trimmed === "[[redirects]]") {
       currentRule = {};
       rules.push(currentRule);
       continue;
     }
-    if (trimmed.startsWith("[") && trimmed !== "[[redirects]]") {
+    // Reaching a different table always ends the current redirect block -
+    // the exact "[[redirects]]" case is already handled (and continued)
+    // above, so this can never re-match it.
+    if (trimmed.startsWith("[")) {
       currentRule = null;
       continue;
     }
@@ -919,5 +929,17 @@ describe("privacy policy redirect", () => {
   it("never redirects any path to itself (a self-loop)", () => {
     const selfLoops = redirects.filter((rule) => rule.from === rule.to);
     expect(selfLoops).toEqual([]);
+  });
+
+  it("parses a redirect rule even with a trailing inline comment", () => {
+    const withComment = `
+[[redirects]]
+  from = "/a" # legacy path
+  to = "/b"
+  status = 200 # rewrite, not a redirect
+`;
+    expect(parseRedirects(withComment)).toEqual([
+      { from: "/a", to: "/b", status: 200 },
+    ]);
   });
 });

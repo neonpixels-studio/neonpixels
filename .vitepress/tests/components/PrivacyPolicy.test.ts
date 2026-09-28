@@ -44,6 +44,18 @@ describe("PrivacyPolicy", () => {
     wrapper.unmount();
   });
 
+  it("discloses the GA4 cookies loadGoogleAnalytics.ts actually sets", () => {
+    // Round-3 review finding: loadGoogleAnalyticsCookies.ts's own
+    // clearGoogleAnalyticsCookies() already knows _ga/_ga_* exist (it clears
+    // them on decline) - this page must actually disclose them too, not just
+    // the pageview/event data GA4 sends over the wire.
+    const wrapper = shallowMount(PrivacyPolicy);
+    const text = wrapper.text();
+    expect(text).toContain("_ga");
+    expect(text).toMatch(/2 years/);
+    wrapper.unmount();
+  });
+
   it("points the manage-choice instruction at the banner's real control label", () => {
     // Regression coverage for the round-2 review finding: this page tells a
     // visitor to look for a control by name, so it must read the same
