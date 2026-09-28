@@ -331,26 +331,34 @@ function splitRedirectsBlocks(config: string): string[] {
 // start of a line (redirect keys are never nested in an inline table in this
 // file, unlike the more permissive buildKeyAssignmentPattern above which has
 // to account for inline tables and dotted keys elsewhere in the file) and
-// captures whatever `valuePattern` says its value looks like.
+// captures whatever `valuePattern` says its value looks like. Returns the
+// raw match (or null) rather than a single group, since the string reader
+// below needs two alternative capture groups (double- vs single-quoted) while
+// the number/boolean readers only ever need one.
 function matchRedirectKey(block: string, key: string, valuePattern: string) {
-  const match = block.match(
+  return block.match(
     new RegExp(`^\\s*${escapeForRegExp(key)}\\s*=\\s*${valuePattern}`, "m"),
   );
-  return match?.[1];
 }
 
+// TOML allows either a double-quoted basic string or a single-quoted literal
+// string for the same value, and Netlify accepts both, so a `from = '/x'`
+// written with single quotes must read the same as `from = "/x"` rather than
+// silently coming back undefined (which would misdirect findRedirect's error
+// toward "missing block" when the real cause is quote style).
 function readRedirectStringValue(block: string, key: string) {
-  return matchRedirectKey(block, key, '"([^"]*)"');
+  const match = matchRedirectKey(block, key, `(?:"([^"]*)"|'([^']*)')`);
+  return match?.[1] ?? match?.[2];
 }
 
 function readRedirectNumberValue(block: string, key: string) {
-  const value = matchRedirectKey(block, key, "(\\d+)");
-  return value === undefined ? undefined : Number(value);
+  const match = matchRedirectKey(block, key, "(\\d+)");
+  return match ? Number(match[1]) : undefined;
 }
 
 function readRedirectBooleanValue(block: string, key: string) {
-  const value = matchRedirectKey(block, key, "(true|false)");
-  return value === undefined ? undefined : value === "true";
+  const match = matchRedirectKey(block, key, "(true|false)");
+  return match ? match[1] === "true" : undefined;
 }
 
 // Parses every [[redirects]] block in `config` into a plain object per
@@ -988,6 +996,17 @@ describe("parseRedirects block splitting", () => {
     expect(redirect.to).toBe("https://a.example");
   });
 
+  // TOML allows a value to be a single-quoted literal string as an
+  // alternative to a double-quoted basic string; Netlify accepts either, so
+  // a `from`/`to` written with single quotes must parse the same as one
+  // written with double quotes rather than reading as undefined.
+  it("reads a single-quoted string value the same as a double-quoted one", () => {
+    const config = ["[[redirects]]", "  from = '/a'", "  to = '/b'"].join("\n");
+    const [redirect] = parseRedirects(config);
+    expect(redirect.from).toBe("/a");
+    expect(redirect.to).toBe("/b");
+  });
+
   it("reads status as a number and force as a boolean, not strings", () => {
     const config = [
       "[[redirects]]",
@@ -1042,45 +1061,48 @@ describe("parseRedirects block splitting", () => {
 // proxy into a broken link or an off-origin redirect.
 describe("dashboard proxy redirects", () => {
   const DASHBOARD_APP_ORIGIN = "https://neonpixels-dashboard.netlify.app";
+  const DASHBOARD_PATH = "/dashboard";
+  const DASHBOARD_SPLAT_PATH = "/dashboard/*";
   // status = 200 is what makes Netlify rewrite (proxy) the request rather
   // than send the browser a 3xx redirect, so the URL stays on this origin.
   const PROXY_STATUS = 200;
 
-  it("declares exactly two redirect blocks for the /dashboard path", () => {
-    const dashboardRedirects = redirects.filter(
-      (redirect) =>
-        redirect.from === "/dashboard" || redirect.from === "/dashboard/*",
-    );
-    expect(dashboardRedirects).toHaveLength(2);
-  });
-
   it("proxies /dashboard to the dashboard app's root", () => {
-    const redirect = findRedirect(redirects, "/dashboard");
+    const redirect = findRedirect(redirects, DASHBOARD_PATH);
     expect(redirect.to).toBe(DASHBOARD_APP_ORIGIN);
     expect(redirect.status).toBe(PROXY_STATUS);
     expect(redirect.force).toBe(true);
   });
 
   it("proxies /dashboard/* to the dashboard app, forwarding the splat", () => {
-    const redirect = findRedirect(redirects, "/dashboard/*");
+    const redirect = findRedirect(redirects, DASHBOARD_SPLAT_PATH);
     expect(redirect.to).toBe(`${DASHBOARD_APP_ORIGIN}/:splat`);
     expect(redirect.status).toBe(PROXY_STATUS);
     expect(redirect.force).toBe(true);
   });
 
   // Netlify applies the first redirect rule that matches a request, so a
-  // catch-all block (e.g. `from = "/*"`) added earlier in the file would
-  // silently shadow both dashboard blocks below it — every assertion above
-  // would still pass, since they only check each block's own fields, not
-  // whether an earlier, broader rule intercepts the request first. That's
-  // the same "ships with no CI signal" failure issue #152 describes, just
-  // via rule order instead of a broken field.
-  it("has no catch-all redirect ahead of the dashboard blocks in the file", () => {
-    const dashboardIndex = redirects.findIndex(
-      (redirect) => redirect.from === "/dashboard",
+  // catch-all block (e.g. `from = "/*"`) added anywhere before either
+  // dashboard block — including between the two, not just ahead of both —
+  // would silently shadow it: every assertion above would still pass, since
+  // they only check each block's own fields, not whether an earlier, broader
+  // rule intercepts the request first. That's the same "ships with no CI
+  // signal" failure issue #152 describes, just via rule order instead of a
+  // broken field. findRedirect already fails loud if either path is missing
+  // entirely, so this only needs to guard against a catch-all *ahead of*
+  // whichever dashboard block comes last in the file.
+  it("has no catch-all redirect ahead of either dashboard block in the file", () => {
+    const dashboardIndexes = [DASHBOARD_PATH, DASHBOARD_SPLAT_PATH].map(
+      (from) => redirects.findIndex((redirect) => redirect.from === from),
     );
+    // findIndex returns -1 for a missing block; guard explicitly rather than
+    // let a -1 silently narrow (or, if every index is -1, invert) the slice
+    // below into checking the wrong range — or none at all — while this test
+    // still reports a pass.
+    expect(dashboardIndexes).not.toContain(-1);
+    const lastDashboardIndex = Math.max(...dashboardIndexes);
     const precedingCatchAll = redirects
-      .slice(0, dashboardIndex)
+      .slice(0, lastDashboardIndex)
       .filter((redirect) => redirect.from === "/*");
     expect(precedingCatchAll).toEqual([]);
   });
