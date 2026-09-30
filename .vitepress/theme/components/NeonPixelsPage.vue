@@ -214,6 +214,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
       <nav class="text-fg-subtle flex items-center gap-[26px] text-[12.5px]">
         <a href="#projects" class="nav-link text-fg-subtle">projects</a>
         <a href="#about" class="nav-link text-fg-subtle">about</a>
+        <a href="#contact" class="nav-link text-fg-subtle">contact</a>
         <span class="text-lime flex items-center gap-[7px]">
           <span
             class="bg-lime animate-pulse-dot status-dot h-[7px] w-[7px] rounded-full"
