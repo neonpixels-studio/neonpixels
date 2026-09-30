@@ -83,7 +83,10 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="border-border bg-panel relative z-[2] border-b px-10 py-10">
+  <div
+    id="contact"
+    class="border-border bg-panel relative z-[2] border-t px-10 py-10"
+  >
     <div
       class="mx-auto flex max-w-[1180px] flex-col gap-6 lg:flex-row lg:items-start lg:justify-between lg:gap-14"
     >

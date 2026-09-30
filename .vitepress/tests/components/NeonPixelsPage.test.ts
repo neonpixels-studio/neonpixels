@@ -250,18 +250,18 @@ describe("NeonPixelsPage", () => {
     wrapper.unmount();
   });
 
-  it("renders the contact form immediately above the header (issue #150)", () => {
+  it("renders the contact form immediately above the footer", () => {
     const wrapper = mount(NeonPixelsPage);
     const rootChildren = Array.from<Element>(wrapper.element.children);
     const contactFormIndex = rootChildren.findIndex((child) =>
       child.querySelector('form[name="contact"]'),
     );
-    const headerIndex = rootChildren.findIndex(
-      (child) => child.tagName === "HEADER",
+    const footerIndex = rootChildren.findIndex(
+      (child) => child.tagName === "FOOTER",
     );
     expect(contactFormIndex).toBeGreaterThanOrEqual(0);
-    expect(headerIndex).toBeGreaterThanOrEqual(0);
-    expect(contactFormIndex).toBe(headerIndex - 1);
+    expect(footerIndex).toBeGreaterThanOrEqual(0);
+    expect(contactFormIndex).toBe(footerIndex - 1);
     wrapper.unmount();
   });
 

@@ -111,6 +111,21 @@ body {
   background: var(--color-bg);
 }
 
+/* Offset in-page anchor jumps by the sticky header's height so a targeted
+   section (#projects/#about/#contact) lands below the nav rather than tucked
+   under it. */
+html {
+  scroll-padding-top: 5rem;
+}
+
+/* Smooth-scroll the in-page nav links, but only for visitors who haven't asked
+   their OS for reduced motion — matching the ambient-animation guard below. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
 /* VitePress resets: the custom theme owns the whole page, so hide the default
    nav/sidebar/footer chrome that the framework injects. */
 .VPNav,
