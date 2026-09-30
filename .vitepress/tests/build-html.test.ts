@@ -527,6 +527,20 @@ describe("hero font preload", () => {
     const indexHref = attributeValue(preloadLinkFor(builtHead)!, "href");
     expect(attributeValue(notFoundLinkTag!, "href")).toBe(indexHref);
   });
+
+  // Issue #149: the consent banner links to /privacy (rewritten by
+  // netlify.toml to this file - see netlify.test.ts's "privacy policy
+  // redirect" describe for that half). This closes the gap neither guard
+  // covers alone: that VitePress actually emits the real page content, not
+  // just that a redirect rule points somewhere.
+  it("builds a real privacy.html carrying the policy content", () => {
+    const privacyHtml = readFileSync(
+      resolve(buildOutDir, "privacy.html"),
+      "utf8",
+    );
+    expect(privacyHtml).toContain("Privacy Policy");
+    expect(privacyHtml).toContain("Google Analytics");
+  });
 });
 
 // Netlify's contact-form support (issue #150) works by having a bot scan the

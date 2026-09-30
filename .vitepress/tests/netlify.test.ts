@@ -864,3 +864,82 @@ describe("noindex header ownership", () => {
     expect(handWrittenHeaders).not.toMatch(/^\s*X-Robots-Tag\s*:/im);
   });
 });
+
+// Issue #149: ConsentBanner.vue links to the extensionless /privacy URL, which
+// only resolves because this file rewrites it to the real privacy.html
+// VitePress builds. Nothing else in this suite reads [[redirects]], so a
+// dropped or mis-typed rule here would break that link with every other
+// static guard still green.
+type RedirectRule = { from?: string; to?: string; status?: number };
+
+// Strips a trailing ` # comment` before matching, so a legal TOML inline
+// comment on a redirect line can't be parsed as part of the value (e.g.
+// `status = 200 # rewrite` misparsing as NaN).
+function stripInlineComment(line: string) {
+  return line.replace(/\s+#.*$/, "");
+}
+
+function parseRedirects(config: string): RedirectRule[] {
+  const rules: RedirectRule[] = [];
+  let currentRule: RedirectRule | null = null;
+  for (const rawLine of config.split("\n")) {
+    const trimmed = stripInlineComment(rawLine).trim();
+    if (trimmed === "[[redirects]]") {
+      currentRule = {};
+      rules.push(currentRule);
+      continue;
+    }
+    // Reaching a different table always ends the current redirect block -
+    // the exact "[[redirects]]" case is already handled (and continued)
+    // above, so this can never re-match it.
+    if (trimmed.startsWith("[")) {
+      currentRule = null;
+      continue;
+    }
+    if (!currentRule) {
+      continue;
+    }
+    const assignment = trimmed.match(/^(from|to|status)\s*=\s*(.+)$/);
+    if (!assignment) {
+      continue;
+    }
+    const [, key, rawValue] = assignment;
+    if (key === "status") {
+      currentRule.status = Number(rawValue);
+      continue;
+    }
+    currentRule[key as "from" | "to"] = rawValue.replace(/^"|"$/g, "");
+  }
+  return rules;
+}
+
+describe("privacy policy redirect", () => {
+  const redirects = parseRedirects(NETLIFY_CONFIG);
+
+  it("rewrites the extensionless /privacy URL to the built privacy.html", () => {
+    const privacyRule = redirects.find((rule) => rule.from === "/privacy");
+    expect(privacyRule).toBeDefined();
+    expect(privacyRule?.to).toBe("/privacy.html");
+    // status 200 rewrites in place; a 3xx would visibly bounce the URL bar
+    // to /privacy.html instead of keeping the clean /privacy the consent
+    // banner links to.
+    expect(privacyRule?.status).toBe(200);
+  });
+
+  it("never redirects any path to itself (a self-loop)", () => {
+    const selfLoops = redirects.filter((rule) => rule.from === rule.to);
+    expect(selfLoops).toEqual([]);
+  });
+
+  it("parses a redirect rule even with a trailing inline comment", () => {
+    const withComment = `
+[[redirects]]
+  from = "/a" # legacy path
+  to = "/b"
+  status = 200 # rewrite, not a redirect
+`;
+    expect(parseRedirects(withComment)).toEqual([
+      { from: "/a", to: "/b", status: 200 },
+    ]);
+  });
+});

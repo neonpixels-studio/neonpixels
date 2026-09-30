@@ -6,19 +6,26 @@ import path from "node:path";
 import { TABBABLE_SELECTOR } from "../utils/tabbable";
 import { stripComments } from "../utils/outlineGuard";
 
-const pageState = vi.hoisted(() => ({ isNotFound: false }));
+const pageState = vi.hoisted(() => ({
+  isNotFound: false,
+  relativePath: "index.md",
+}));
 
 vi.mock("vitepress", async () => {
   const { computed } = await import("vue");
   return {
     useData: () => ({
-      page: computed(() => ({ isNotFound: pageState.isNotFound })),
+      page: computed(() => ({
+        isNotFound: pageState.isNotFound,
+        relativePath: pageState.relativePath,
+      })),
     }),
   };
 });
 
 import AppLayout from "@theme/AppLayout.vue";
 import { MAIN_CONTENT_ID } from "@theme/a11y";
+import { PRIVACY_POLICY_RELATIVE_PATH } from "@theme/routes";
 
 // happy-dom evaluates no computed CSS, so the skip link's "hidden until focused"
 // styling can't be asserted on the mounted DOM — scan the layout source instead
@@ -47,6 +54,7 @@ enableAutoUnmount(afterEach);
 // before the next mount regardless of hook sequencing.
 beforeEach(() => {
   pageState.isNotFound = false;
+  pageState.relativePath = "index.md";
   document.body.innerHTML = "";
 });
 afterEach(() => {
@@ -86,6 +94,32 @@ describe("AppLayout", () => {
     const wrapper = shallowMount(AppLayout);
     expect(wrapper.findComponent({ name: "NotFound" }).exists()).toBe(true);
     expect(wrapper.findComponent({ name: "NeonPixelsPage" }).exists()).toBe(
+      false,
+    );
+  });
+
+  it("renders the privacy policy view on the privacy route", () => {
+    pageState.relativePath = PRIVACY_POLICY_RELATIVE_PATH;
+    const wrapper = shallowMount(AppLayout);
+    expect(wrapper.findComponent({ name: "PrivacyPolicy" }).exists()).toBe(
+      true,
+    );
+    expect(wrapper.findComponent({ name: "NeonPixelsPage" }).exists()).toBe(
+      false,
+    );
+    expect(wrapper.findComponent({ name: "NotFound" }).exists()).toBe(false);
+  });
+
+  // isNotFound takes priority: VitePress only ever reports a route as
+  // isNotFound when nothing matched it, so a real privacy.md route can never
+  // simultaneously be not-found - but pinning the precedence here catches a
+  // future v-if/v-else-if reorder before it ships.
+  it("prefers the 404 view over the privacy view if both were somehow true", () => {
+    pageState.isNotFound = true;
+    pageState.relativePath = PRIVACY_POLICY_RELATIVE_PATH;
+    const wrapper = shallowMount(AppLayout);
+    expect(wrapper.findComponent({ name: "NotFound" }).exists()).toBe(true);
+    expect(wrapper.findComponent({ name: "PrivacyPolicy" }).exists()).toBe(
       false,
     );
   });
