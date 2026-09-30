@@ -1180,4 +1180,42 @@ describe("dashboard proxy redirects", () => {
       findCatchAllsAhead(redirects, [DASHBOARD_PATH, DASHBOARD_SPLAT_PATH]),
     ).toEqual([]);
   });
+// Issue #149: ConsentBanner.vue links to the extensionless /privacy URL, which
+// only resolves because this file rewrites it to the real privacy.html
+// VitePress builds. Nothing else in this suite reads [[redirects]], so a
+// dropped or mis-typed rule here would break that link with every other
+// static guard still green. Built on the shared parseRedirects/findRedirect
+// helpers above (the same ones the dashboard proxy tests below use) rather
+// than a second bespoke parser — that shared implementation already tolerates
+// a trailing inline TOML comment (matchRedirectKey doesn't anchor to the end
+// of the line), so this suite only needs to assert that behavior, not
+// reimplement it.
+describe("privacy policy redirect", () => {
+  it("rewrites the extensionless /privacy URL to the built privacy.html", () => {
+    const privacyRedirect = findRedirect(redirects, "/privacy");
+    expect(privacyRedirect.to).toBe("/privacy.html");
+    // status 200 rewrites in place; a 3xx would visibly bounce the URL bar
+    // to /privacy.html instead of keeping the clean /privacy the consent
+    // banner links to.
+    expect(privacyRedirect.status).toBe(200);
+  });
+
+  it("never redirects any path to itself (a self-loop)", () => {
+    const selfLoops = redirects.filter(
+      (redirect) => redirect.from === redirect.to,
+    );
+    expect(selfLoops).toEqual([]);
+  });
+
+  it("parses a redirect rule even with a trailing inline comment", () => {
+    const withComment = `
+[[redirects]]
+  from = "/a" # legacy path
+  to = "/b"
+  status = 200 # rewrite, not a redirect
+`;
+    expect(parseRedirects(withComment)).toEqual([
+      { from: "/a", to: "/b", status: 200 },
+    ]);
+  });
 });

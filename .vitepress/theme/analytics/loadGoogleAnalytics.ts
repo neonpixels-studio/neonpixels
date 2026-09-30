@@ -29,24 +29,29 @@ export interface AnalyticsTarget {
   window: Pick<Window, "dataLayer">;
 }
 
-// gtag.js's documented bootstrap snippet, translated 1:1: define a `gtag`
-// function that queues its raw `arguments` object — NOT a plain array, since
-// gtag.js's own queue processor (loaded moments later, once the script tag
-// below resolves) is defined against that exact shape — then call it for the
-// two startup commands gtag.js expects to find waiting when it starts
-// draining the queue.
+// Queues one gtag.js command in the exact shape — the raw `arguments`
+// object, NOT a plain array — gtag.js's own queue processor (loaded moments
+// later, once the script tag below resolves) is defined against. Shared by
+// the two startup commands below and by trackGoogleAnalyticsEvent's later
+// "event" calls, so neither drifts from the shape the other relies on.
+function pushGtagCommand(dataLayer: unknown[], ...args: unknown[]) {
+  function gtag(..._args: unknown[]) {
+    // Deliberately `arguments`, not `_args`: gtag.js's queue processor
+    // requires the actual `arguments` object. `_args` exists only so
+    // TypeScript accepts the rest-argument spread below.
+    dataLayer.push(arguments);
+  }
+  gtag(...args);
+}
+
+// gtag.js's documented bootstrap snippet: the two startup commands gtag.js
+// expects to find waiting when it starts draining the queue.
 function queueGtagBootstrapCommands(
   dataLayer: unknown[],
   measurementId: string,
 ) {
-  function gtag(..._args: unknown[]) {
-    // Deliberately `arguments`, not `_args`: gtag.js's queue processor
-    // requires the actual `arguments` object. `_args` exists only so
-    // TypeScript checks call-site arity for the two calls below.
-    dataLayer.push(arguments);
-  }
-  gtag("js", new Date());
-  gtag("config", measurementId);
+  pushGtagCommand(dataLayer, "js", new Date());
+  pushGtagCommand(dataLayer, "config", measurementId);
 }
 
 function appendGtagScriptTag(target: AnalyticsTarget, measurementId: string) {
@@ -78,6 +83,28 @@ export function loadGoogleAnalytics(
   target.window.dataLayer = target.window.dataLayer ?? [];
   queueGtagBootstrapCommands(target.window.dataLayer, measurementId);
   appendGtagScriptTag(target, measurementId);
+}
+
+// An event call only ever touches `window.dataLayer` — the same slice
+// AnalyticsTarget's window field already describes — so reuse that shape
+// instead of redeclaring it and risking the two drifting apart.
+export type AnalyticsEventTarget = Pick<AnalyticsTarget, "window">;
+
+// Fires a GA4 event (e.g. the outbound-click CTAs in ProjectSummary.vue)
+// through the same dataLayer queue gtag.js itself drains once loaded. Callers
+// are responsible for the same consent gate loadGoogleAnalytics's callers use
+// (see analyticsConsent.ts / ConsentBanner.vue) — this function does no
+// consent gating of its own, same contract as loadGoogleAnalytics. If GA
+// hasn't loaded this session (consent never granted), the pushed entry just
+// sits in an unread dataLayer array — never sent, since no gtag.js is present
+// to drain it.
+export function trackGoogleAnalyticsEvent(
+  eventName: string,
+  eventParams: Record<string, unknown>,
+  target: AnalyticsEventTarget = { window },
+) {
+  target.window.dataLayer = target.window.dataLayer ?? [];
+  pushGtagCommand(target.window.dataLayer, "event", eventName, eventParams);
 }
 
 function gaDisableFlagName(measurementId: string) {

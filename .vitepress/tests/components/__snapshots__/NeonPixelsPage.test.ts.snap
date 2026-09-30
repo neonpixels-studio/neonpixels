@@ -3,7 +3,40 @@
 exports[`NeonPixelsPage > renders correctly 1`] = `
 "<div data-v-aa442b0f="" class="bg-bg text-fg relative font-mono">
   <!-- drifting grid backdrop -->
-  <div data-v-aa442b0f="" class="animate-drift ambient-decoration pointer-events-none fixed inset-0 z-0" style="background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 80px 80px;"></div><!-- header -->
+  <div data-v-aa442b0f="" class="animate-drift ambient-decoration pointer-events-none fixed inset-0 z-0" style="background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 80px 80px;"></div>
+  <!-- contact: placed right above the header per issue #150, so it's the
+         first thing on the page (ahead of the sticky nav) rather than buried
+         below the fold. -->
+  <div data-v-aa442b0f="" class="border-border bg-panel relative z-[2] border-b px-10 py-10">
+    <div class="mx-auto flex max-w-[1180px] flex-col gap-6 lg:flex-row lg:items-start lg:justify-between lg:gap-14">
+      <div class="flex max-w-[360px] flex-col gap-[10px]">
+        <!-- A real heading (rather than another styled div, as the other
+             section eyebrows use) so the form has an accessible name
+             reachable by heading-navigation, not just visually implied. -->
+        <h2 class="m-0 flex items-center gap-3 text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"><span class="h-px w-[22px] bg-[#7a7a85]"></span> get in touch </h2>
+        <p class="text-fg-muted m-0 text-[13.5px] leading-[1.7]"> Hiring, collaborating, or something's broken? Send a note — someone (well, one and a half someones) reads every one. </p>
+      </div>
+      <form name="contact" method="POST" data-netlify="true" data-netlify-honeypot="bot-field" class="flex flex-1 flex-col gap-3 lg:max-w-[620px]">
+        <!-- Required verbatim so Netlify's build-time bot can associate a
+             runtime submission with the form it parsed from the static HTML. --><input type="hidden" name="form-name" value="contact">
+        <!-- Honeypot: visually hidden (\`hidden\`), removed from the
+             accessibility tree (aria-hidden), and out of the tab order
+             (tabindex="-1") so no real visitor — sighted or using assistive
+             tech — can ever reach or perceive it. -->
+        <p class="hidden" aria-hidden="true"><label for="contact-honeypot"> Leave this field blank <input id="contact-honeypot" name="bot-field" tabindex="-1" autocomplete="off"></label></p>
+        <div class="flex flex-col gap-3 sm:flex-row"><label for="contact-name" class="flex flex-col gap-[6px] sm:flex-1"><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase">name</span><input id="contact-name" type="text" name="name" autocomplete="name" class="border-border bg-bg text-fg rounded-none border px-3 py-2 text-[13px]"></label><label for="contact-email" class="flex flex-col gap-[6px] sm:flex-1"><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase">email</span><input id="contact-email" type="email" name="email" required="" autocomplete="email" class="border-border bg-bg text-fg rounded-none border px-3 py-2 text-[13px]"></label></div><label for="contact-message" class="flex flex-col gap-[6px]"><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase">message</span><textarea id="contact-message" name="message" rows="3" required="" class="border-border bg-bg text-fg rounded-none border px-3 py-2 text-[13px]"></textarea></label>
+        <div class="flex flex-wrap items-center gap-4"><button type="submit" class="text-bg animate-sweep rounded-none px-5 py-[9px] text-[13px] font-bold disabled:opacity-60" style="background-image: linear-gradient(90deg, #b8ff2e, #22e0ff, #ff2ea6, #ffc21f, #b8ff2e);">send message</button>
+          <!-- Both regions stay mounted for the whole component lifetime and
+               only their text changes: a live region inserted into the DOM at
+               the same moment as the content it announces is commonly missed
+               by screen readers (NVDA/VoiceOver), so toggling with v-if here
+               would defeat the announcement rather than just look odd. -->
+          <p role="status" aria-live="polite" class="text-lime m-0 text-[12.5px]"></p>
+          <p role="alert" class="text-pink m-0 text-[12.5px]"></p>
+        </div>
+      </form>
+    </div>
+  </div><!-- header -->
   <header data-v-aa442b0f="" class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b px-10 py-[22px] backdrop-blur-md" style="background: #08080ae6;"><a data-v-aa442b0f="" href="#top" class="flex items-center gap-[11px]"><svg data-v-aa442b0f="" width="20" height="20" viewBox="0 0 34 34" class="block flex-none" aria-hidden="true">
         <rect data-v-aa442b0f="" x="0" y="22" width="10" height="10" fill="#22e0ff"></rect>
         <rect data-v-aa442b0f="" x="12" y="11" width="10" height="10" fill="#b8ff2e"></rect>

@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount } from "@vue/test-utils";
 import ConsentBanner from "@components/ConsentBanner.vue";
-import { CONSENT_STORAGE_KEY } from "@theme/analytics/analyticsConsent";
+import {
+  CONSENT_STORAGE_KEY,
+  MANAGE_CHOICE_LABEL,
+} from "@theme/analytics/analyticsConsent";
+import { PRIVACY_POLICY_URL } from "@theme/routes";
 
 // The banner delegates the actual GA4 bootstrap/kill-switch to
 // loadGoogleAnalytics.ts (covered on its own in loadGoogleAnalytics.test.ts)
@@ -23,7 +27,11 @@ vi.mock("@theme/analytics/loadGoogleAnalytics", () => ({
 }));
 
 const BANNER_SELECTOR = '[role="region"]';
-const MANAGE_CHOICE_TEXT = "Analytics choice";
+// Imported (not hand-typed) so every assertion below that matches on this
+// text also proves the rendered button still reads MANAGE_CHOICE_LABEL - the
+// same constant PrivacyPolicy.vue points visitors at - rather than a second,
+// independently-drifting copy of the string.
+const MANAGE_CHOICE_TEXT = MANAGE_CHOICE_LABEL;
 
 function setDoNotTrack(value: string | null) {
   Object.defineProperty(navigator, "doNotTrack", {
@@ -74,6 +82,19 @@ describe("ConsentBanner", () => {
     await wrapper.vm.$nextTick();
     expect(loadGoogleAnalyticsMock).not.toHaveBeenCalled();
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  // Issue #149: the banner names Google Analytics but must actually link to
+  // something describing what's collected/retained, not just say the name.
+  it("links to the privacy policy from the banner text", async () => {
+    const wrapper = mount(ConsentBanner);
+    await wrapper.vm.$nextTick();
+    const privacyLink = wrapper
+      .findAll("a")
+      .find((link) => link.text() === "Privacy policy");
+    expect(privacyLink).toBeDefined();
+    expect(privacyLink?.attributes("href")).toBe(PRIVACY_POLICY_URL);
     wrapper.unmount();
   });
 

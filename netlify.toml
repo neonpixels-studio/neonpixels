@@ -26,6 +26,16 @@
   status = 200
   force = true
 
+# Extensionless URL for the privacy policy page (built by VitePress as
+# privacy.html from privacy.md). status = 200 rewrites rather than
+# redirecting, so the URL bar stays on /privacy instead of visibly bouncing
+# to /privacy.html - this doesn't depend on Netlify's separate "Pretty URLs"
+# post-processing setting being enabled.
+[[redirects]]
+  from = "/privacy"
+  to = "/privacy.html"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]

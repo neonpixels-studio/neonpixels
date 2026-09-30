@@ -2,8 +2,10 @@
 import { useData } from "vitepress";
 import NeonPixelsPage from "./components/NeonPixelsPage.vue";
 import NotFound from "./components/NotFound.vue";
+import PrivacyPolicy from "./components/PrivacyPolicy.vue";
 import ConsentBanner from "./components/ConsentBanner.vue";
 import { MAIN_CONTENT_ID } from "./a11y";
+import { PRIVACY_POLICY_RELATIVE_PATH } from "./routes";
 
 const { page } = useData();
 
@@ -44,6 +46,9 @@ function skipToContent(event: MouseEvent) {
        order, so this only affects tab/reading order, not layout. -->
   <ConsentBanner />
   <NotFound v-if="page.isNotFound" />
+  <PrivacyPolicy
+    v-else-if="page.relativePath === PRIVACY_POLICY_RELATIVE_PATH"
+  />
   <NeonPixelsPage v-else />
 </template>
 
