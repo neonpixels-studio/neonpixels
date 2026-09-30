@@ -297,6 +297,133 @@ function readHeader(headers: Map<string, string>, name: string) {
   return value;
 }
 
+type Redirect = {
+  from?: string;
+  to?: string;
+  status?: number;
+  force?: boolean;
+};
+
+const REDIRECTS_TABLE_START = /^\s*\[\[redirects\]\]/;
+
+// Splits netlify.toml into the raw text of every [[redirects]] block, in file
+// order, mirroring readGlobalHeadersTable's table-slicing approach above:
+// each block runs from its `[[redirects]]` marker up to whichever comes
+// first, the next `[[redirects]]` marker or any other table start. Unlike
+// the headers blocks, redirect keys sit directly in the block (no nested
+// [values] table), so no further slicing is needed before reading keys.
+function splitRedirectsBlocks(config: string): string[] {
+  const lines = config.split("\n");
+  const blocks: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!REDIRECTS_TABLE_START.test(lines[index])) {
+      continue;
+    }
+    const rest = lines.slice(index + 1);
+    const nextTable = rest.findIndex((line) => ANY_TABLE_START.test(line));
+    const end = nextTable === -1 ? rest.length : nextTable;
+    blocks.push(rest.slice(0, end).join("\n"));
+  }
+  return blocks;
+}
+
+// Shared matcher behind all three typed readers below: anchors `key` to the
+// start of a line (redirect keys are never nested in an inline table in this
+// file, unlike the more permissive buildKeyAssignmentPattern above which has
+// to account for inline tables and dotted keys elsewhere in the file) and
+// captures whatever `valuePattern` says its value looks like. Returns the
+// raw match (or null) rather than a single group, since the string reader
+// below needs two alternative capture groups (double- vs single-quoted) while
+// the number/boolean readers only ever need one.
+function matchRedirectKey(block: string, key: string, valuePattern: string) {
+  return block.match(
+    new RegExp(`^\\s*${escapeForRegExp(key)}\\s*=\\s*${valuePattern}`, "m"),
+  );
+}
+
+// TOML allows either a double-quoted basic string or a single-quoted literal
+// string for the same value, and Netlify accepts both, so a `from = '/x'`
+// written with single quotes must read the same as `from = "/x"` rather than
+// silently coming back undefined (which would misdirect findRedirect's error
+// toward "missing block" when the real cause is quote style).
+function readRedirectStringValue(block: string, key: string) {
+  const match = matchRedirectKey(block, key, `(?:"([^"]*)"|'([^']*)')`);
+  return match?.[1] ?? match?.[2];
+}
+
+function readRedirectNumberValue(block: string, key: string) {
+  const match = matchRedirectKey(block, key, "(\\d+)");
+  return match ? Number(match[1]) : undefined;
+}
+
+function readRedirectBooleanValue(block: string, key: string) {
+  const match = matchRedirectKey(block, key, "(true|false)");
+  return match ? match[1] === "true" : undefined;
+}
+
+// Parses every [[redirects]] block in `config` into a plain object per
+// block. A key missing from a block reads as `undefined` rather than
+// throwing, so a caller can assert on exactly what's absent (see
+// findRedirect below for the "must exist" case).
+function parseRedirects(config: string): Redirect[] {
+  return splitRedirectsBlocks(config).map((block) => ({
+    from: readRedirectStringValue(block, "from"),
+    to: readRedirectStringValue(block, "to"),
+    status: readRedirectNumberValue(block, "status"),
+    force: readRedirectBooleanValue(block, "force"),
+  }));
+}
+
+// Finds the single redirect block whose `from` matches exactly, throwing
+// with a message that names the missing path rather than letting a caller's
+// assertion fail against `undefined` with no context. Also throws on more
+// than one match: Array.find would silently return the first of any
+// duplicates, letting a caller's per-field assertions pass or fail on
+// whichever block happens to come first rather than catching the duplicate
+// itself.
+function findRedirect(redirects: Redirect[], from: string) {
+  const matches = redirects.filter((entry) => entry.from === from);
+  if (matches.length === 0) {
+    throw new Error(
+      `netlify.toml has no [[redirects]] block with from = "${from}"`,
+    );
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `netlify.toml has ${matches.length} [[redirects]] blocks with from = "${from}"`,
+    );
+  }
+  return matches[0];
+}
+
+// Netlify applies the first redirect rule in the file that matches a
+// request, so a literal `/*` catch-all placed anywhere ahead of the LAST of
+// `paths` in the file — including between two of them, not just ahead of
+// all of them — would silently intercept the request before a later,
+// intended block ever runs. Returns every such catch-all block found, empty
+// when none are ahead. Throws if any of `paths` isn't in `redirects` at
+// all, rather than silently treating a missing path's -1 index as if it
+// were the earliest position and narrowing (or inverting) the range this
+// guards.
+function findCatchAllsAhead(redirects: Redirect[], paths: string[]) {
+  if (paths.length === 0) {
+    throw new Error("findCatchAllsAhead needs at least one path to check");
+  }
+  const indexes = paths.map((path) =>
+    redirects.findIndex((redirect) => redirect.from === path),
+  );
+  const missing = paths.filter((_path, index) => indexes[index] === -1);
+  if (missing.length > 0) {
+    throw new Error(
+      `netlify.toml has no [[redirects]] block for: ${missing.join(", ")}`,
+    );
+  }
+  const lastIndex = Math.max(...indexes);
+  return redirects
+    .slice(0, lastIndex)
+    .filter((redirect) => redirect.from === "/*");
+}
+
 function parseDirectives(headerValue: string) {
   return headerValue
     .split(";")
@@ -416,6 +543,7 @@ const headers = parseHeaders(NETLIFY_CONFIG);
 const cspHeaderValue = readHeader(headers, "Content-Security-Policy");
 const { directives: cspDirectives, duplicates: cspDuplicates } =
   parseCsp(cspHeaderValue);
+const redirects = parseRedirects(NETLIFY_CONFIG);
 
 // countKeyDefinitions/lineHasKeyAssignment back every key-assignment guard in
 // this file (the build-only command/publish check, the NODE_VERSION pin
@@ -865,69 +993,222 @@ describe("noindex header ownership", () => {
   });
 });
 
+// Builds the text of one [[redirects]] block for the fixtures below — the
+// same "[[redirects]]" + from/to (+ optional extra lines) shape otherwise
+// repeats across nearly every fixture in this describe block and in
+// findCatchAllsAhead's below.
+function redirectBlock(from: string, to: string, extraLines: string[] = []) {
+  return [
+    "[[redirects]]",
+    `  from = "${from}"`,
+    `  to = "${to}"`,
+    ...extraLines,
+  ].join("\n");
+}
+
+describe("parseRedirects block splitting", () => {
+  it("stops a block at the next [[redirects]] table", () => {
+    const config = [
+      redirectBlock("/a", "https://a.example"),
+      redirectBlock("/b", "https://b.example"),
+    ].join("\n\n");
+    const blocks = parseRedirects(config);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].from).toBe("/a");
+    expect(blocks[1].from).toBe("/b");
+  });
+
+  it("stops a block at an unrelated table, not just another [[redirects]]", () => {
+    const config = [
+      redirectBlock("/a", "https://a.example"),
+      '[[headers]]\n  for = "/*"',
+    ].join("\n\n");
+    const [redirect] = parseRedirects(config);
+    expect(redirect.from).toBe("/a");
+    expect(redirect.to).toBe("https://a.example");
+  });
+
+  // TOML allows a value to be a single-quoted literal string as an
+  // alternative to a double-quoted basic string; Netlify accepts either, so
+  // a `from`/`to` written with single quotes must parse the same as one
+  // written with double quotes rather than reading as undefined. Written out
+  // by hand rather than via redirectBlock, since the quote style is exactly
+  // what this fixture is testing.
+  it("reads a single-quoted string value the same as a double-quoted one", () => {
+    const config = ["[[redirects]]", "  from = '/a'", "  to = '/b'"].join("\n");
+    const [redirect] = parseRedirects(config);
+    expect(redirect.from).toBe("/a");
+    expect(redirect.to).toBe("/b");
+  });
+
+  it("reads status as a number and force as a boolean, not strings", () => {
+    const config = redirectBlock("/a", "https://a.example", [
+      "  status = 200",
+      "  force = true",
+    ]);
+    const [redirect] = parseRedirects(config);
+    expect(redirect.status).toBe(200);
+    expect(redirect.force).toBe(true);
+  });
+
+  // Written out by hand rather than via redirectBlock, since the missing
+  // `to`/`status`/`force` keys are exactly what this fixture is testing.
+  it("reads an absent key as undefined rather than throwing", () => {
+    const config = ["[[redirects]]", '  from = "/a"'].join("\n");
+    const [redirect] = parseRedirects(config);
+    expect(redirect.to).toBeUndefined();
+    expect(redirect.status).toBeUndefined();
+    expect(redirect.force).toBeUndefined();
+  });
+
+  it("throws findRedirect with the missing path when no block matches", () => {
+    expect(() => findRedirect(parseRedirects(""), "/dashboard")).toThrow(
+      /no \[\[redirects\]\] block with from = "\/dashboard"/,
+    );
+  });
+
+  // Array.find would silently return the first of two same-`from` blocks,
+  // hiding a duplicate (and whichever one's fields are wrong) behind
+  // whichever happens to come first in the file.
+  it("throws findRedirect when more than one block shares the same from", () => {
+    const config = [
+      redirectBlock("/a", "https://a.example"),
+      redirectBlock("/a", "https://a-duplicate.example"),
+    ].join("\n\n");
+    expect(() => findRedirect(parseRedirects(config), "/a")).toThrow(
+      /has 2 \[\[redirects\]\] blocks with from = "\/a"/,
+    );
+  });
+});
+
+describe("findCatchAllsAhead", () => {
+  it("flags a catch-all placed before both target paths", () => {
+    const config = [
+      redirectBlock("/*", "/index.html"),
+      redirectBlock("/a", "https://a.example"),
+      redirectBlock("/b", "https://b.example"),
+    ].join("\n\n");
+    expect(findCatchAllsAhead(parseRedirects(config), ["/a", "/b"])).toEqual([
+      expect.objectContaining({ from: "/*" }),
+    ]);
+  });
+
+  // The case the "ahead of both" check alone would miss: a catch-all
+  // sitting between the two target blocks still shadows the later one.
+  it("flags a catch-all placed between the two target paths", () => {
+    const config = [
+      redirectBlock("/a", "https://a.example"),
+      redirectBlock("/*", "/index.html"),
+      redirectBlock("/b", "https://b.example"),
+    ].join("\n\n");
+    expect(findCatchAllsAhead(parseRedirects(config), ["/a", "/b"])).toEqual([
+      expect.objectContaining({ from: "/*" }),
+    ]);
+  });
+
+  it("returns an empty array when the catch-all comes after both target paths", () => {
+    const config = [
+      redirectBlock("/a", "https://a.example"),
+      redirectBlock("/b", "https://b.example"),
+      redirectBlock("/*", "/index.html"),
+    ].join("\n\n");
+    expect(findCatchAllsAhead(parseRedirects(config), ["/a", "/b"])).toEqual(
+      [],
+    );
+  });
+
+  it("throws when one of the target paths has no matching block", () => {
+    const config = ["[[redirects]]", '  from = "/a"'].join("\n");
+    expect(() =>
+      findCatchAllsAhead(parseRedirects(config), ["/a", "/b"]),
+    ).toThrow(/no \[\[redirects\]\] block for: \/b/);
+  });
+
+  // Math.max(...[]) is -Infinity, which would make the slice below run over
+  // the whole array and report "nothing ahead" without having checked
+  // anything — the same silent vacuous pass the missing-path guard above
+  // exists to prevent, just via an empty list instead of a wrong one.
+  it("throws when given no target paths to check", () => {
+    const config = redirectBlock("/*", "/index.html");
+    expect(() => findCatchAllsAhead(parseRedirects(config), [])).toThrow(
+      /at least one path/,
+    );
+  });
+});
+
+// Issue #152: the two [[redirects]] blocks proxying /dashboard and
+// /dashboard/* to the separately-deployed dashboard app had zero test
+// coverage, so an edit that broke either block (wrong destination, a 3xx
+// status instead of the 200 that makes Netlify proxy rather than redirect,
+// or a dropped `force`) could ship with no CI signal — silently turning the
+// proxy into a broken link or an off-origin redirect.
+describe("dashboard proxy redirects", () => {
+  const DASHBOARD_APP_ORIGIN = "https://neonpixels-dashboard.netlify.app";
+  const DASHBOARD_PATH = "/dashboard";
+  const DASHBOARD_SPLAT_PATH = "/dashboard/*";
+  // status = 200 is what makes Netlify rewrite (proxy) the request rather
+  // than send the browser a 3xx redirect, so the URL stays on this origin.
+  const PROXY_STATUS = 200;
+
+  it("proxies /dashboard to the dashboard app's root", () => {
+    const redirect = findRedirect(redirects, DASHBOARD_PATH);
+    expect(redirect.to).toBe(DASHBOARD_APP_ORIGIN);
+    expect(redirect.status).toBe(PROXY_STATUS);
+    expect(redirect.force).toBe(true);
+  });
+
+  it("proxies /dashboard/* to the dashboard app, forwarding the splat", () => {
+    const redirect = findRedirect(redirects, DASHBOARD_SPLAT_PATH);
+    expect(redirect.to).toBe(`${DASHBOARD_APP_ORIGIN}/:splat`);
+    expect(redirect.status).toBe(PROXY_STATUS);
+    expect(redirect.force).toBe(true);
+  });
+
+  // Netlify applies the first redirect rule that matches a request, so a
+  // literal `/*` catch-all block added anywhere before either dashboard
+  // block — including between the two, not just ahead of both — would
+  // silently shadow it: every assertion above would still pass, since they
+  // only check each block's own fields, not whether an earlier, broader rule
+  // intercepts the request first. That's the same "ships with no CI signal"
+  // failure issue #152 describes, just via rule order instead of a broken
+  // field. Scoped to the literal string "/*" only — a placeholder segment
+  // (e.g. `from = "/:page"`) ahead of /dashboard could shadow it too, but
+  // detecting that generally needs Netlify's actual segment-matching rules,
+  // which is out of scope here (see the PR's follow-up suggestions).
+  it("has no catch-all redirect ahead of either dashboard block in the file", () => {
+    expect(
+      findCatchAllsAhead(redirects, [DASHBOARD_PATH, DASHBOARD_SPLAT_PATH]),
+    ).toEqual([]);
+  });
+});
+
 // Issue #149: ConsentBanner.vue links to the extensionless /privacy URL, which
 // only resolves because this file rewrites it to the real privacy.html
 // VitePress builds. Nothing else in this suite reads [[redirects]], so a
 // dropped or mis-typed rule here would break that link with every other
-// static guard still green.
-type RedirectRule = { from?: string; to?: string; status?: number };
-
-// Strips a trailing ` # comment` before matching, so a legal TOML inline
-// comment on a redirect line can't be parsed as part of the value (e.g.
-// `status = 200 # rewrite` misparsing as NaN).
-function stripInlineComment(line: string) {
-  return line.replace(/\s+#.*$/, "");
-}
-
-function parseRedirects(config: string): RedirectRule[] {
-  const rules: RedirectRule[] = [];
-  let currentRule: RedirectRule | null = null;
-  for (const rawLine of config.split("\n")) {
-    const trimmed = stripInlineComment(rawLine).trim();
-    if (trimmed === "[[redirects]]") {
-      currentRule = {};
-      rules.push(currentRule);
-      continue;
-    }
-    // Reaching a different table always ends the current redirect block -
-    // the exact "[[redirects]]" case is already handled (and continued)
-    // above, so this can never re-match it.
-    if (trimmed.startsWith("[")) {
-      currentRule = null;
-      continue;
-    }
-    if (!currentRule) {
-      continue;
-    }
-    const assignment = trimmed.match(/^(from|to|status)\s*=\s*(.+)$/);
-    if (!assignment) {
-      continue;
-    }
-    const [, key, rawValue] = assignment;
-    if (key === "status") {
-      currentRule.status = Number(rawValue);
-      continue;
-    }
-    currentRule[key as "from" | "to"] = rawValue.replace(/^"|"$/g, "");
-  }
-  return rules;
-}
-
+// static guard still green. Built on the shared parseRedirects/findRedirect
+// helpers above (the same ones the dashboard proxy tests above use) rather
+// than a second bespoke parser — that shared implementation already tolerates
+// a trailing inline TOML comment (matchRedirectKey doesn't anchor to the end
+// of the line), so this suite only needs to assert that behavior, not
+// reimplement it.
 describe("privacy policy redirect", () => {
-  const redirects = parseRedirects(NETLIFY_CONFIG);
+  const PRIVACY_PATH = "/privacy";
+  // status 200 rewrites in place; a 3xx would visibly bounce the URL bar
+  // to /privacy.html instead of keeping the clean /privacy the consent
+  // banner links to.
+  const REWRITE_STATUS = 200;
 
   it("rewrites the extensionless /privacy URL to the built privacy.html", () => {
-    const privacyRule = redirects.find((rule) => rule.from === "/privacy");
-    expect(privacyRule).toBeDefined();
-    expect(privacyRule?.to).toBe("/privacy.html");
-    // status 200 rewrites in place; a 3xx would visibly bounce the URL bar
-    // to /privacy.html instead of keeping the clean /privacy the consent
-    // banner links to.
-    expect(privacyRule?.status).toBe(200);
+    const privacyRedirect = findRedirect(redirects, PRIVACY_PATH);
+    expect(privacyRedirect.to).toBe("/privacy.html");
+    expect(privacyRedirect.status).toBe(REWRITE_STATUS);
   });
 
   it("never redirects any path to itself (a self-loop)", () => {
-    const selfLoops = redirects.filter((rule) => rule.from === rule.to);
+    const selfLoops = redirects.filter(
+      (redirect) => redirect.from === redirect.to,
+    );
     expect(selfLoops).toEqual([]);
   });
 
