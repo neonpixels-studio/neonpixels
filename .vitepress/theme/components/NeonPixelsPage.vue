@@ -10,6 +10,7 @@ import { hexToRgba } from "../utils/color";
 import { PROJECTS } from "../data/projects";
 import { STATES_TOTAL, STATES_VISITED, STATE_VISITS } from "../data/states";
 import ProjectSection from "./ProjectSection.vue";
+import ContactForm from "./ContactForm.vue";
 
 // Zero-padded project total for the "NN / NN" counter, so the header tracks the
 // data instead of a hand-typed number. PROJECTS is a static import, so a plain
@@ -161,6 +162,11 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
         background-size: 80px 80px;
       "
     />
+
+    <!-- contact: placed right above the header per issue #150, so it's the
+         first thing on the page (ahead of the sticky nav) rather than buried
+         below the fold. -->
+    <ContactForm />
 
     <!-- header -->
     <header
