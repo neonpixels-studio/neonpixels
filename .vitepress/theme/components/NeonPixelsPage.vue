@@ -163,11 +163,6 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
       "
     />
 
-    <!-- contact: placed right above the header per issue #150, so it's the
-         first thing on the page (ahead of the sticky nav) rather than buried
-         below the fold. -->
-    <ContactForm />
-
     <!-- header -->
     <header
       class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b px-10 py-[22px] backdrop-blur-md"
@@ -603,6 +598,10 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
         </template>
       </ProjectSection>
     </main>
+
+    <!-- contact: placed right above the footer, so it's the closing call to
+         action after the projects rather than the first thing on the page. -->
+    <ContactForm />
 
     <!-- footer -->
     <footer
