@@ -17,7 +17,7 @@ import ContactForm from "./ContactForm.vue";
 // constant is enough — no reactivity to track.
 const paddedProjectCount = String(PROJECTS.length).padStart(2, "0");
 
-// Trip-log heatmap for the Far Flung card: each cell is one of four brightness
+// Trip-log heatmap for the FarFlung card: each cell is one of four brightness
 // states so the grid reads as visited / partly / faint / empty. The lit states
 // are the cyan accent at descending alpha; the alpha suffixes (88/55 hex) fade
 // it toward the empty tint.
@@ -45,7 +45,7 @@ const TRIP_CELLS: TripCellState[] = STATE_VISITS.map((visited, cellIndex) => {
   return LIT_CELL_STATES[cellIndex % LIT_CELL_STATES.length];
 });
 
-// The Far Flung visual carries trip-scale figures, so unlike the other
+// The FarFlung visual carries trip-scale figures, so unlike the other
 // decorative mockups it is exposed to assistive tech as a single labelled
 // image rather than hidden. The caption "47 / 50 states" is the canonical
 // figure; the footer total is reconciled to the same 47 (it previously read a
@@ -72,7 +72,7 @@ function groupThousands(value: number) {
 // both derive from FARFLUNG_MILES_TRAVELED so they can't drift.
 const FARFLUNG_MILES_SHORT = `${Math.floor(FARFLUNG_MILES_TRAVELED / 1000)}k+`;
 const FARFLUNG_MILES_LABEL = `${groupThousands(FARFLUNG_MILES_TRAVELED)}+`;
-const FARFLUNG_MOCKUP_LABEL = `Far Flung trip log: ${FARFLUNG_STATES_VISITED} of ${FARFLUNG_STATES_TOTAL} US states visited, ${FARFLUNG_MILES_LABEL} miles traveled across ${FARFLUNG_COUNTRIES} countries.`;
+const FARFLUNG_MOCKUP_LABEL = `FarFlung trip log: ${FARFLUNG_STATES_VISITED} of ${FARFLUNG_STATES_TOTAL} US states visited, ${FARFLUNG_MILES_LABEL} miles traveled across ${FARFLUNG_COUNTRIES} countries.`;
 
 // Basin aggregates a mixed feed; opacity of the leading dot fades with recency
 // via descending alpha suffixes on the amber accent (88/55/33 hex). Only the

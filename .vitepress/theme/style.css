@@ -169,7 +169,7 @@ body {
   }
 }
 
-/* Far Flung trip-log cells set their fill through this custom property
+/* FarFlung trip-log cells set their fill through this custom property
    instead of `background` directly, purely so the forced-colors override
    below can win the cascade: an inline `style="background: …"` attribute
    always beats an external stylesheet rule regardless of selector
@@ -191,7 +191,7 @@ body {
    (`background-clip: text` + `color: transparent`) still needs a real fill
    once its background is gone, or the glyphs paint with nothing behind
    them; and small solid `background-color` shapes that carry meaning purely
-   through color (the nav status dot, the accent-pill swatch, the Far Flung
+   through color (the nav status dot, the accent-pill swatch, the FarFlung
    trip-log cells) get neutralized to `Canvas` — the same color as the page
    background — and can vanish outright rather than degrade gracefully.
    System color keywords (`Canvas`, `CanvasText`, `currentColor`) used below
@@ -241,7 +241,7 @@ body {
     border: 1px solid currentColor;
   }
 
-  /* Far Flung trip-log heatmap: unlike the other project visuals (pure
+  /* FarFlung trip-log heatmap: unlike the other project visuals (pure
      decoration, aria-hidden), this grid is the real content behind the
      card's role="img"/aria-label — its four cyan brightness tiers encode
      visited/partly/faint/empty. Forced-colors collapses all of them to the

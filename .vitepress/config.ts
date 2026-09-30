@@ -8,7 +8,7 @@ import { PROJECTS, type Project } from "./theme/data/projects";
 
 const SITE_URL = "https://neonpixels.dev";
 const DESCRIPTION =
-  "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, Far Flung, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
+  "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, FarFlung, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
 const OG_TITLE = "Neon Pixels — We build the missing apps";
 const OG_IMAGE = `${SITE_URL}/images/social-card.png`;
 const OG_IMAGE_ALT =

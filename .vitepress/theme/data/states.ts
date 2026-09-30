@@ -1,4 +1,4 @@
-// The Far Flung trip-log figure: US states visited out of the total. This is
+// The FarFlung trip-log figure: US states visited out of the total. This is
 // the single source for both the "47 / 50 states" caption and the heatmap grid
 // in NeonPixelsPage.vue, so the picture (cell count and lit count) can never
 // drift from the label again.

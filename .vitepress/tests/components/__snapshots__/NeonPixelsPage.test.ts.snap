@@ -111,7 +111,7 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
       <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(270deg, #22e0ff, transparent 65%);"></div>
       <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-26%] right-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 34s; background: radial-gradient(circle, rgba(34, 224, 255, 0.16), transparent 62%);"></div>
       <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]">
-        <div data-v-aa442b0f="" class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]" style="box-shadow: 0 0 60px rgba(34, 224, 255, 0.1);" role="img" aria-label="Far Flung trip log: 47 of 50 US states visited, 60,000+ miles traveled across 3 countries.">
+        <div data-v-aa442b0f="" class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]" style="box-shadow: 0 0 60px rgba(34, 224, 255, 0.1);" role="img" aria-label="FarFlung trip log: 47 of 50 US states visited, 60,000+ miles traveled across 3 countries.">
           <div data-v-aa442b0f="" class="text-farflung-label flex justify-between text-[11px] tracking-[0.16em] uppercase"><span data-v-aa442b0f="">trip log</span><span data-v-aa442b0f="">47 / 50 states</span></div>
           <!-- 10 columns lays the 50 state cells out as a clean 10x5 block;
                  the taller card (vs. the old 3-row strip) is deliberate now that
