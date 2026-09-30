@@ -440,7 +440,24 @@ function summarizeRollout(
 // making a timeout more likely, not less. Exported so tests assert the real
 // batch boundary instead of mirroring a magic number (mirrors
 // DELETE_BATCH_SIZE in cspReportPruner.ts).
-export const FETCH_BATCH_SIZE = 25;
+//
+// 25 was too small a round-trip unit for a fully-loaded store (#151): the
+// number of round trips a full DEFAULT_MAX_BLOBS store needs, times a
+// pessimistic per-batch tail latency (a batch of concurrent get() calls
+// only finishes once its slowest member does, not its average), must fit
+// inside fetchAll's worst-case share of the budget — list() spending its
+// full LIST_TIME_BUDGET_MS before fetchAll starts, leaving only
+// SUMMARY_TIME_BUDGET_MS - LIST_TIME_BUDGET_MS to work with. At 25/batch
+// that arithmetic exhausted the worst-case budget at a tail latency well
+// within normal network variance for a remote key/value store. 100/batch
+// quarters the round trips, clearing the same budget with real headroom,
+// while staying a bounded multiple (not an unbounded fan-out) of
+// DELETE_BATCH_SIZE's already-accepted concurrency against this same store
+// size in cspReportPruner.ts. cspReportSummaryThroughput.test.ts pins the
+// exact numbers behind both claims and simulates the worst case (this repo
+// has no linked Netlify site to measure real Blobs latency against) — see
+// that file rather than this comment for the current figures.
+export const FETCH_BATCH_SIZE = 100;
 
 // The run's combined list+fetch budget (mirrors PRUNE_TIME_BUDGET_MS in
 // cspReportPruner.ts), split in half so a slow list() walk can't starve
