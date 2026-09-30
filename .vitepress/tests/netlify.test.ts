@@ -1180,12 +1180,14 @@ describe("dashboard proxy redirects", () => {
       findCatchAllsAhead(redirects, [DASHBOARD_PATH, DASHBOARD_SPLAT_PATH]),
     ).toEqual([]);
   });
+});
+
 // Issue #149: ConsentBanner.vue links to the extensionless /privacy URL, which
 // only resolves because this file rewrites it to the real privacy.html
 // VitePress builds. Nothing else in this suite reads [[redirects]], so a
 // dropped or mis-typed rule here would break that link with every other
 // static guard still green. Built on the shared parseRedirects/findRedirect
-// helpers above (the same ones the dashboard proxy tests below use) rather
+// helpers above (the same ones the dashboard proxy tests above use) rather
 // than a second bespoke parser — that shared implementation already tolerates
 // a trailing inline TOML comment (matchRedirectKey doesn't anchor to the end
 // of the line), so this suite only needs to assert that behavior, not
