@@ -1193,13 +1193,16 @@ describe("dashboard proxy redirects", () => {
 // of the line), so this suite only needs to assert that behavior, not
 // reimplement it.
 describe("privacy policy redirect", () => {
+  const PRIVACY_PATH = "/privacy";
+  // status 200 rewrites in place; a 3xx would visibly bounce the URL bar
+  // to /privacy.html instead of keeping the clean /privacy the consent
+  // banner links to.
+  const REWRITE_STATUS = 200;
+
   it("rewrites the extensionless /privacy URL to the built privacy.html", () => {
-    const privacyRedirect = findRedirect(redirects, "/privacy");
+    const privacyRedirect = findRedirect(redirects, PRIVACY_PATH);
     expect(privacyRedirect.to).toBe("/privacy.html");
-    // status 200 rewrites in place; a 3xx would visibly bounce the URL bar
-    // to /privacy.html instead of keeping the clean /privacy the consent
-    // banner links to.
-    expect(privacyRedirect.status).toBe(200);
+    expect(privacyRedirect.status).toBe(REWRITE_STATUS);
   });
 
   it("never redirects any path to itself (a self-loop)", () => {
