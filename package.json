@@ -45,7 +45,8 @@
     "vitepress": {
       "vite": "^6.4.3",
       "esbuild": "^0.25.0"
-    }
+    },
+    "brace-expansion": "^5.0.12"
   },
   "dependencies": {
     "@netlify/blobs": "^11.1.0"
