@@ -4,7 +4,7 @@ import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 import { BRAND_ACCENTS } from "@theme/brand";
 import { STATES_TOTAL, STATES_VISITED, STATE_VISITS } from "@theme/data/states";
 
-// The Wanderist trip-log heatmap must render one cell per state (STATES_TOTAL)
+// The Far Flung trip-log heatmap must render one cell per state (STATES_TOTAL)
 // with exactly the visited count lit (STATES_VISITED), so the picture matches
 // the "47 / 50 states" caption. Both the caption and the cells derive from the
 // states figure, so a hardcoded cell string or caption would fail here.

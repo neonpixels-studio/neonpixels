@@ -8,11 +8,11 @@ import { PROJECTS, type Project } from "./theme/data/projects";
 
 const SITE_URL = "https://neonpixels.dev";
 const DESCRIPTION =
-  "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, Wanderist, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
+  "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, Far Flung, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
 const OG_TITLE = "Neon Pixels — We build the missing apps";
 const OG_IMAGE = `${SITE_URL}/images/social-card.png`;
 const OG_IMAGE_ALT =
-  "Neon Pixels wordmark on a dark grid, with the pixel logo mark and the four project names — grimicorn.dev, wanderist.io, basin.fm, markpost.io — glowing in lime, cyan, amber and pink.";
+  "Neon Pixels wordmark on a dark grid, with the pixel logo mark and the four project names — grimicorn.dev, farflung.io, basin.fm, markpost.io — glowing in lime, cyan, amber and pink.";
 
 // The org exists to promote the four projects, but PROJECTS already owns their
 // canonical name/url/description — deriving each project's ld+json node from
@@ -24,7 +24,7 @@ const OG_IMAGE_ALT =
 // `hasPart`: schema.org defines `sameAs` as an identity assertion ("this page
 // and that page describe the same thing"), so listing the four project
 // domains there would tell crawlers neonpixels.dev *is* grimicorn.dev,
-// wanderist.io, basin.fm and markpost.io — the opposite of "the org publishes
+// farflung.io, basin.fm and markpost.io — the opposite of "the org publishes
 // these products". `hasPart` isn't defined on Organization at all (only on
 // CreativeWork/Place), so it validates as an unrecognized property there. A
 // `@graph` of sibling nodes tied together by `publisher` is the shape that

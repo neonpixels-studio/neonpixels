@@ -480,7 +480,7 @@ describe("buildEnd wires the noindex context into the generated _headers", () =>
 // usage above for the same convention).
 const EXPECTED_PROJECT_URLS = [
   "https://grimicorn.dev",
-  "https://wanderist.io",
+  "https://farflung.io",
   "https://basin.fm",
   "https://markpost.io",
 ];

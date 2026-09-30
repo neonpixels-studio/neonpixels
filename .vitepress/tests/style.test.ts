@@ -311,7 +311,7 @@ describe("style.css reduced-motion coverage", () => {
 
 // The `forced-colors: active` block (Windows High Contrast Mode) restyles the
 // ambient decoration, gradient wordmark text, color-only indicator dots, and
-// the Wanderist trip-log heatmap that would otherwise render uncontrolled,
+// the Far Flung trip-log heatmap that would otherwise render uncontrolled,
 // vanish, or paint with no visible fill once the OS takes over the palette.
 // Matched by its @media opener, then sliced out via `findMatchingBraceIndex`
 // so a naive regex can't be fooled by nested rules — happy-dom evaluates

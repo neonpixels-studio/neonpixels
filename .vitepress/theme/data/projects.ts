@@ -82,10 +82,10 @@ export const PROJECTS: Project[] = [
     },
   },
   {
-    id: "wanderist",
-    name: "wanderist",
+    id: "farflung",
+    name: "farflung",
     tld: ".io",
-    url: "https://wanderist.io",
+    url: "https://farflung.io",
     color: BRAND_ACCENTS.cyan,
     pillBg: "#08161b",
     pillBgHover: "#0c2028",

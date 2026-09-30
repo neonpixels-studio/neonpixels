@@ -147,7 +147,7 @@ describe("trackGoogleAnalyticsEvent", () => {
     fakeWindow.dataLayer = [priorEntry];
     trackGoogleAnalyticsEvent(
       "outbound_click",
-      { project_name: "wanderist" },
+      { project_name: "farflung" },
       target,
     );
     expect(fakeWindow.dataLayer?.[0]).toBe(priorEntry);

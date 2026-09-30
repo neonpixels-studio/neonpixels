@@ -19,12 +19,12 @@ function isExternalHref(href: string) {
 // The one project visual that carries real information (trip-scale stats) and
 // so is exposed to assistive tech as a labelled image instead of hidden. Every
 // other visual stays decorative and aria-hidden.
-const EXPOSED_VISUAL_PROJECT_ID = "wanderist";
+const EXPOSED_VISUAL_PROJECT_ID = "farflung";
 
 // The four projects each get an external CTA and an external footer link.
 const PROJECT_URLS = [
   "https://grimicorn.dev",
-  "https://wanderist.io",
+  "https://farflung.io",
   "https://basin.fm",
   "https://markpost.io",
 ];
@@ -126,15 +126,15 @@ describe("NeonPixelsPage", () => {
     // Most visuals are fabricated product mockups (a terminal, a feed, in/out
     // panels) whose text is illustrative chrome, not information the page
     // commits to — so those containers must carry aria-hidden while the summary
-    // (the real prose and CTA) must not. The wanderist visual is the sole
+    // (the real prose and CTA) must not. The farflung visual is the sole
     // exception: its trip-scale figures are real content, so it's exposed as a
     // labelled image (asserted in its own test) rather than hidden.
     PROJECTS.forEach((project) => {
       const { summaryColumn, visualColumn } = columnsFor(wrapper, project);
       expect(summaryColumn?.getAttribute("aria-hidden")).toBeNull();
-      // Every decorative visual is aria-hidden; the exposed wanderist one must
+      // Every decorative visual is aria-hidden; the exposed farflung one must
       // NOT be (it's a labelled image instead) — pinning both cases here means
-      // re-hiding wanderist fails this test as well as its dedicated one.
+      // re-hiding farflung fails this test as well as its dedicated one.
       const expectedAriaHidden =
         project.id === EXPOSED_VISUAL_PROJECT_ID ? null : "true";
       expect(visualColumn?.getAttribute("aria-hidden")).toBe(
@@ -152,13 +152,13 @@ describe("NeonPixelsPage", () => {
     wrapper.unmount();
   });
 
-  it("exposes the wanderist trip stats to assistive technology as a labelled image", () => {
+  it("exposes the farflung trip stats to assistive technology as a labelled image", () => {
     const wrapper = mount(NeonPixelsPage);
-    const wanderist = PROJECTS.find(
+    const farflung = PROJECTS.find(
       (project) => project.id === EXPOSED_VISUAL_PROJECT_ID,
     );
-    expect(wanderist).toBeDefined();
-    const { visualColumn } = columnsFor(wrapper, wanderist!);
+    expect(farflung).toBeDefined();
+    const { visualColumn } = columnsFor(wrapper, farflung!);
     expect(visualColumn).toBeDefined();
     // Real content, so it must be reachable — a summarizing role="img" label,
     // not aria-hidden, or screen-reader users lose the stats entirely.
@@ -177,10 +177,10 @@ describe("NeonPixelsPage", () => {
     // Pin the complete set of numbers in the two stat rows (caption + footer)
     // in order — "47 / 50", then "60k+ miles", "47 states", "3 countries" — so
     // re-hardcoding any figure (like the old contradictory 26) fails here.
-    // Scoped to the .text-wanderist-label rows so unrelated future digits (a
+    // Scoped to the .text-farflung-label rows so unrelated future digits (a
     // year, a badge) don't misreport as an accessibility regression.
     const statRowText = Array.from(
-      visualColumn?.querySelectorAll(".text-wanderist-label") ?? [],
+      visualColumn?.querySelectorAll(".text-farflung-label") ?? [],
     )
       .map((row) => row.textContent)
       .join(" ");
