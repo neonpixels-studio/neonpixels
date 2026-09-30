@@ -17,7 +17,7 @@ import ContactForm from "./ContactForm.vue";
 // constant is enough — no reactivity to track.
 const paddedProjectCount = String(PROJECTS.length).padStart(2, "0");
 
-// Trip-log heatmap for the Wanderist card: each cell is one of four brightness
+// Trip-log heatmap for the FarFlung card: each cell is one of four brightness
 // states so the grid reads as visited / partly / faint / empty. The lit states
 // are the cyan accent at descending alpha; the alpha suffixes (88/55 hex) fade
 // it toward the empty tint.
@@ -45,7 +45,7 @@ const TRIP_CELLS: TripCellState[] = STATE_VISITS.map((visited, cellIndex) => {
   return LIT_CELL_STATES[cellIndex % LIT_CELL_STATES.length];
 });
 
-// The Wanderist visual carries trip-scale figures, so unlike the other
+// The FarFlung visual carries trip-scale figures, so unlike the other
 // decorative mockups it is exposed to assistive tech as a single labelled
 // image rather than hidden. The caption "47 / 50 states" is the canonical
 // figure; the footer total is reconciled to the same 47 (it previously read a
@@ -53,10 +53,10 @@ const TRIP_CELLS: TripCellState[] = STATE_VISITS.map((visited, cellIndex) => {
 // caption, this label, and the heatmap grid (one cell per state, exactly
 // STATES_VISITED lit — see TRIP_CELLS) all read from one source and can't drift
 // apart the way 26/47 did.
-const WANDERIST_STATES_VISITED = STATES_VISITED;
-const WANDERIST_STATES_TOTAL = STATES_TOTAL;
-const WANDERIST_MILES_TRAVELED = 60000;
-const WANDERIST_COUNTRIES = 3;
+const FARFLUNG_STATES_VISITED = STATES_VISITED;
+const FARFLUNG_STATES_TOTAL = STATES_TOTAL;
+const FARFLUNG_MILES_TRAVELED = 60000;
+const FARFLUNG_COUNTRIES = 3;
 
 // Group thousands without Intl: a module-scope toLocaleString would depend on
 // the build machine's ICU data and could surface as a hydration mismatch on the
@@ -69,10 +69,10 @@ function groupThousands(value: number) {
 // Two display forms of the one mileage figure: the compact "60k+" the mockup
 // shows and the grouped "60,000+" the label announces. Both floor to thousands,
 // so the "+" is always truthful (the real value is at least what's shown), and
-// both derive from WANDERIST_MILES_TRAVELED so they can't drift.
-const WANDERIST_MILES_SHORT = `${Math.floor(WANDERIST_MILES_TRAVELED / 1000)}k+`;
-const WANDERIST_MILES_LABEL = `${groupThousands(WANDERIST_MILES_TRAVELED)}+`;
-const WANDERIST_MOCKUP_LABEL = `Wanderist trip log: ${WANDERIST_STATES_VISITED} of ${WANDERIST_STATES_TOTAL} US states visited, ${WANDERIST_MILES_LABEL} miles traveled across ${WANDERIST_COUNTRIES} countries.`;
+// both derive from FARFLUNG_MILES_TRAVELED so they can't drift.
+const FARFLUNG_MILES_SHORT = `${Math.floor(FARFLUNG_MILES_TRAVELED / 1000)}k+`;
+const FARFLUNG_MILES_LABEL = `${groupThousands(FARFLUNG_MILES_TRAVELED)}+`;
+const FARFLUNG_MOCKUP_LABEL = `FarFlung trip log: ${FARFLUNG_STATES_VISITED} of ${FARFLUNG_STATES_TOTAL} US states visited, ${FARFLUNG_MILES_LABEL} miles traveled across ${FARFLUNG_COUNTRIES} countries.`;
 
 // Basin aggregates a mixed feed; opacity of the leading dot fades with recency
 // via descending alpha suffixes on the amber accent (88/55/33 hex). Only the
@@ -111,7 +111,7 @@ const BASIN_FEED = [
 
 const GRIMICORN_TERMINAL = [
   { text: "[03:14] merged a PR you haven't read" },
-  { text: "[03:16] shipped wanderist map tiles" },
+  { text: "[03:16] shipped farflung map tiles" },
   { text: "[03:19] broke staging. on purpose." },
 ];
 
@@ -144,7 +144,7 @@ function cardGlow(accent: string, alpha: number) {
   return `0 0 60px ${hexToRgba(accent, alpha)}`;
 }
 const GRIMICORN_GLOW = cardGlow(BRAND_ACCENTS.lime, 0.1);
-const WANDERIST_GLOW = cardGlow(BRAND_ACCENTS.cyan, 0.1);
+const FARFLUNG_GLOW = cardGlow(BRAND_ACCENTS.cyan, 0.1);
 const BASIN_GLOW = cardGlow(BRAND_ACCENTS.amber, 0.09);
 const MARKPOST_ARROW_GLOW = `0 0 14px ${hexToRgba(BRAND_ACCENTS.pink, 0.8)}`;
 const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
@@ -473,19 +473,19 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
           </div>
 
           <div
-            v-else-if="project.id === 'wanderist'"
+            v-else-if="project.id === 'farflung'"
             class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]"
-            :style="{ boxShadow: WANDERIST_GLOW }"
+            :style="{ boxShadow: FARFLUNG_GLOW }"
             role="img"
-            :aria-label="WANDERIST_MOCKUP_LABEL"
+            :aria-label="FARFLUNG_MOCKUP_LABEL"
           >
             <div
-              class="text-wanderist-label flex justify-between text-[11px] tracking-[0.16em] uppercase"
+              class="text-farflung-label flex justify-between text-[11px] tracking-[0.16em] uppercase"
             >
               <span>trip log</span
               ><span
-                >{{ WANDERIST_STATES_VISITED }} /
-                {{ WANDERIST_STATES_TOTAL }} states</span
+                >{{ FARFLUNG_STATES_VISITED }} /
+                {{ FARFLUNG_STATES_TOTAL }} states</span
               >
             </div>
             <!-- 10 columns lays the 50 state cells out as a clean 10x5 block;
@@ -512,10 +512,10 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
                 }"
               />
             </div>
-            <div class="text-wanderist-label flex gap-5 text-[11px]">
-              <span>{{ WANDERIST_MILES_SHORT }} miles</span
-              ><span>{{ WANDERIST_STATES_VISITED }} states</span
-              ><span>{{ WANDERIST_COUNTRIES }} countries</span>
+            <div class="text-farflung-label flex gap-5 text-[11px]">
+              <span>{{ FARFLUNG_MILES_SHORT }} miles</span
+              ><span>{{ FARFLUNG_STATES_VISITED }} states</span
+              ><span>{{ FARFLUNG_COUNTRIES }} countries</span>
             </div>
           </div>
 
