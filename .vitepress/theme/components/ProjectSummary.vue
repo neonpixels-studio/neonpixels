@@ -1,7 +1,27 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import type { Project } from "../data/projects";
 import { hexToRgba } from "../utils/color";
+import {
+  getConsentStorage,
+  shouldLoadAnalytics,
+  type ConsentStorage,
+} from "../analytics/analyticsConsent";
+import { trackGoogleAnalyticsEvent } from "../analytics/loadGoogleAnalytics";
+
+// GA4 event name for a project CTA click, tracked so traffic driven to each
+// project's own domain (the site's actual conversion goal) is visible in GA4
+// instead of vanishing the moment a visitor leaves neonpixels.dev. Deliberate
+// overlap: GA4's built-in "Outbound clicks" Enhanced Measurement (on by
+// default for web streams) already logs these as a generic `click` event —
+// this custom event additionally carries `project_name` (so each project is
+// its own row, not one lumped "outbound clicks" total) and, unlike the
+// built-in one, also fires on middle-click (see handleCtaAuxClick below).
+const OUTBOUND_CLICK_EVENT = "outbound_click";
+
+// MouseEvent.button value for the middle mouse button — a common way to open
+// a link in a new tab, which the browser reports as `auxclick`, not `click`.
+const MIDDLE_MOUSE_BUTTON = 1;
 
 // The heading glow and the filled-CTA shadows are the accent color at fixed
 // alphas; the aurora alpha lives per-project in the section data.
@@ -60,6 +80,42 @@ const tldClass = computed(() => {
 const headingGlowStyle = computed(() => ({
   textShadow: `0 0 18px ${hexToRgba(props.project.color, HEADING_GLOW_ALPHA)}`,
 }));
+
+// Resolved once on mount (same pattern as ConsentBanner.vue's own
+// `consentStorage`), not read fresh inside trackOutboundClick — getConsentStorage()
+// probes localStorage with a set/remove round-trip, and this CTA can be
+// clicked far more often than the banner's Accept/Decline buttons ever are.
+let consentStorage: ConsentStorage;
+
+onMounted(() => {
+  consentStorage = getConsentStorage();
+});
+
+// Gated the same way page tracking already is (ConsentBanner.vue): only ever
+// fires once the visitor has actively accepted analytics, with no DNT/GPC
+// signal overriding that. Never blocks or delays the link's own navigation —
+// trackGoogleAnalyticsEvent only ever pushes onto an in-memory array. Bound
+// directly to `@click` (left-click, and Ctrl/Cmd+click, which still fires
+// `click`); handleCtaAuxClick below covers the one case this doesn't.
+function trackOutboundClick() {
+  if (!shouldLoadAnalytics(navigator, consentStorage)) {
+    return;
+  }
+  trackGoogleAnalyticsEvent(OUTBOUND_CLICK_EVENT, {
+    project_name: props.project.name,
+    destination_url: props.project.url,
+  });
+}
+
+// Middle-click is a common way to open a link in a new tab, but the browser
+// reports it as `auxclick`, not `click` — without this, that path would leave
+// a real conversion silently untracked.
+function handleCtaAuxClick(event: MouseEvent) {
+  if (event.button !== MIDDLE_MOUSE_BUTTON) {
+    return;
+  }
+  trackOutboundClick();
+}
 </script>
 
 <template>
@@ -91,6 +147,8 @@ const headingGlowStyle = computed(() => ({
       rel="noopener noreferrer"
       :class="ctaClass"
       :style="ctaStyle"
+      @click="trackOutboundClick"
+      @auxclick="handleCtaAuxClick"
       >visit {{ project.name }}{{ project.tld }} →</a
     >
   </div>
