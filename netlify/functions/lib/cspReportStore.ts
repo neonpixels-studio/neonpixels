@@ -61,7 +61,7 @@ export function isRolloutDirective(directive: string): boolean {
 }
 
 // Keys are `<class>/<sanitized ISO receivedAt>-<uuid>.json`, where `<class>`
-// is `rollout` or `other` (see directiveTag). The class is a real Blobs key
+// is `rollout` or `other` (see directiveClass). The class is a real Blobs key
 // prefix, not a mid-key tag, so cspReportPruner.ts can `list({ prefix })`
 // one class at a time: eviction priority between the classes then holds even
 // when a single run can't list the whole store (#165). Declared before the

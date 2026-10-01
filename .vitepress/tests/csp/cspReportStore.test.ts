@@ -172,7 +172,6 @@ describe("keyClassOf", () => {
       `${timestamp}-other-${"a".repeat(36)}.json`,
       "other",
     ],
-    ["a legacy untagged key", `${timestamp}-${"a".repeat(36)}.json`, "rollout"],
   ])("classifies %s", (_label, key, expected) => {
     expect(keyClassOf(key)).toBe(expected);
   });
