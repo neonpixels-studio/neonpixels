@@ -1051,7 +1051,11 @@ describe("parseRedirects block splitting", () => {
     expect(redirect.to).toBe("https://a.example");
   });
 
-  it.each(["[redirects.headers]", "[redirects.conditions]"])(
+  it.each([
+    "[redirects.headers]",
+    "[redirects.conditions]",
+    "[ redirects .headers ]",
+  ])(
     "keeps the block together across a %s sub-table and still reads the next [[redirects]]",
     (subtable) => {
       const config = [
@@ -1064,8 +1068,14 @@ describe("parseRedirects block splitting", () => {
         ]),
         redirectBlock("/b", "https://b.example", ["  status = 200"]),
       ].join("\n\n");
-      const [first, second] = parseRedirects(config);
-      expect(parseRedirects(config)).toHaveLength(2);
+      const blocks = splitRedirectsBlocks(config);
+      expect(blocks).toHaveLength(2);
+      expect(blocks[0]).toContain(subtable);
+      expect(blocks[0]).toContain("Country");
+      expect(blocks[1]).not.toContain("Country");
+      const redirects = parseRedirects(config);
+      expect(redirects).toHaveLength(2);
+      const [first, second] = redirects;
       expect(first).toEqual({
         from: "/a",
         to: "https://a.example",
@@ -1098,7 +1108,10 @@ describe("parseRedirects block splitting", () => {
       ]),
       '[[headers]]\n  for = "/*"',
     ].join("\n\n");
-    expect(parseRedirects(config)).toHaveLength(1);
+    const blocks = splitRedirectsBlocks(config);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toContain("X-Test");
+    expect(blocks[0]).not.toContain('for = "/*"');
   });
 
   it("tolerates whitespace inside table headers", () => {
