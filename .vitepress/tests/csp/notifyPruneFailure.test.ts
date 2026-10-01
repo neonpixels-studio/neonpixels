@@ -205,6 +205,12 @@ describe("createPruneFailureResolver", () => {
       "#7: boom",
     );
     expect(client.closeIssue).toHaveBeenCalledWith(8);
+    // A failed close must not be followed by a "recovered" comment.
+    expect(client.createComment).not.toHaveBeenCalledWith(7, expect.anything());
+    expect(client.createComment).toHaveBeenCalledWith(
+      8,
+      PRUNE_RECOVERED_COMMENT,
+    );
   });
 
   it("logs, rather than throws, when the recovery comment fails after a successful close", async () => {

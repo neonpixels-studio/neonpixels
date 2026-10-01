@@ -398,6 +398,19 @@ async function closeTrackedIssue(
   }
 }
 
+async function closeOrDescribeFailure(
+  client: GithubIssueClosingClient,
+  config: FailureResolverConfig,
+  issueNumber: number,
+): Promise<string | null> {
+  try {
+    await closeTrackedIssue(client, config, issueNumber);
+    return null;
+  } catch (closeError) {
+    return `#${issueNumber}: ${toErrorMessage(closeError)}`;
+  }
+}
+
 // Counterpart to createFailureNotifier for the success path, mirroring
 // close-resolved-audit-failure.cjs: reuses the notifier's own tracked-issue
 // match (label + body marker, never a PR) so it targets exactly the issues
@@ -420,10 +433,13 @@ export function createFailureResolver(
       );
       const closeFailures: string[] = [];
       for (const issue of trackedIssues) {
-        try {
-          await closeTrackedIssue(client, config, issue.number);
-        } catch (closeError) {
-          closeFailures.push(`#${issue.number}: ${toErrorMessage(closeError)}`);
+        const failure = await closeOrDescribeFailure(
+          client,
+          config,
+          issue.number,
+        );
+        if (failure) {
+          closeFailures.push(failure);
         }
       }
       if (closeFailures.length > 0) {
