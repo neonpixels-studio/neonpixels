@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, reactive, ref } from "vue";
 import { WORDMARK_GRADIENT } from "../brand";
 import { submitNetlifyForm } from "../forms/submitNetlifyForm";
 
@@ -36,6 +36,13 @@ const fields = reactive({ name: "", email: "", message: "" });
 // blindly fills every input it finds outs itself by populating it.
 const honeypotValue = ref("");
 const status = ref<SubmitStatus>("idle");
+// novalidate only after hydration: before it (or with JS off) @submit.prevent
+// isn't attached and the form posts natively, so the static HTML must keep the
+// browser's required/type=email blocking.
+const isHydrated = ref(false);
+onMounted(() => {
+  isHydrated.value = true;
+});
 const formElement = ref<HTMLFormElement | null>(null);
 const emailInput = ref<HTMLInputElement | null>(null);
 const messageInput = ref<HTMLTextAreaElement | null>(null);
@@ -172,7 +179,7 @@ async function handleSubmit() {
         :name="FORM_NAME"
         method="POST"
         data-netlify="true"
-        novalidate
+        :novalidate="isHydrated || undefined"
         :data-netlify-honeypot="HONEYPOT_FIELD_NAME"
         class="flex flex-1 flex-col gap-3 lg:max-w-[620px]"
         @submit.prevent="handleSubmit"

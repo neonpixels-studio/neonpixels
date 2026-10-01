@@ -259,8 +259,16 @@ describe("ContactForm", () => {
   });
 
   describe("invalid state", () => {
+    it("only disables native validation once hydrated, so the no-JS post stays validated", async () => {
+      const wrapper = mount(ContactForm);
+      await flushPromises();
+      expect(wrapper.get("form").attributes("novalidate")).toBeDefined();
+      wrapper.unmount();
+    });
+
     it("shows no errors on the freshly cleared form after a successful send", async () => {
       mockedSubmitNetlifyForm.mockResolvedValue(undefined);
+      const resetSpy = vi.spyOn(HTMLFormElement.prototype, "reset");
       const wrapper = mount(ContactForm);
       await fillFields(wrapper, {
         email: "ada@example.com",
@@ -270,6 +278,8 @@ describe("ContactForm", () => {
       await wrapper.get("#contact-message").trigger("blur");
       await wrapper.find("form").trigger("submit");
       await flushPromises();
+      expect(resetSpy).toHaveBeenCalledTimes(1);
+      resetSpy.mockRestore();
       expect(wrapper.get("#contact-email-error").text()).toBe("");
       expect(wrapper.get("#contact-message-error").text()).toBe("");
       expect(wrapper.get("#contact-email").attributes("aria-invalid")).toBe(

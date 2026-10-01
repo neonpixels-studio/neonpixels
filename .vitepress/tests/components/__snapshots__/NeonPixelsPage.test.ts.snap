@@ -193,7 +193,7 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
         <h2 class="m-0 flex items-center gap-3 text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"><span class="h-px w-[22px] bg-[#7a7a85]"></span> get in touch </h2>
         <p class="text-fg-muted m-0 text-[13.5px] leading-[1.7]"> Hiring, collaborating, or something's broken? Send a note — someone (well, one and a half someones) reads every one. </p>
       </div>
-      <form name="contact" method="POST" data-netlify="true" novalidate="" data-netlify-honeypot="bot-field" class="flex flex-1 flex-col gap-3 lg:max-w-[620px]">
+      <form name="contact" method="POST" data-netlify="true" data-netlify-honeypot="bot-field" class="flex flex-1 flex-col gap-3 lg:max-w-[620px]">
         <!-- Required verbatim so Netlify's build-time bot can associate a
              runtime submission with the form it parsed from the static HTML. --><input type="hidden" name="form-name" value="contact">
         <!-- Honeypot: visually hidden (\`hidden\`), removed from the
