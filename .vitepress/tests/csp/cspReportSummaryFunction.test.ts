@@ -27,8 +27,11 @@ vi.mock("../../../netlify/functions/lib/notifySummaryFailure", () => ({
 import cspReportSummaryHandler, {
   config,
   HARD_TIMEOUT_MS,
+  NETLIFY_FUNCTION_LIMIT_MS,
   NOTIFY_TIMEOUT_MS,
+  RESPONSE_HEADROOM_MS,
   RUN_DEADLINE_MS,
+  remainingNotifyBudgetMs,
 } from "../../../netlify/functions/csp-report-summary";
 
 const SUMMARIZED_LOG_PREFIX = "csp-report-summarized";
@@ -345,5 +348,46 @@ describe("csp-report-summary Netlify scheduled function", () => {
     expect(RUN_DEADLINE_MS + COLD_START_HEADROOM_MS).toBeLessThanOrEqual(
       NETLIFY_SCHEDULED_FUNCTION_LIMIT_MS,
     );
+  });
+
+  it("does not reserve the notify budget on the success path", () => {
+    expect(HARD_TIMEOUT_MS).toBe(RUN_DEADLINE_MS);
+  });
+
+  it("gives the notifier its full budget after a fast failure", () => {
+    expect(remainingNotifyBudgetMs(0)).toBe(NOTIFY_TIMEOUT_MS);
+  });
+
+  it("shrinks the notify budget to what is left after a late hang, never below zero", () => {
+    expect(remainingNotifyBudgetMs(HARD_TIMEOUT_MS)).toBe(
+      NETLIFY_FUNCTION_LIMIT_MS - HARD_TIMEOUT_MS - RESPONSE_HEADROOM_MS,
+    );
+    expect(remainingNotifyBudgetMs(NETLIFY_FUNCTION_LIMIT_MS * 2)).toBe(0);
+  });
+
+  it("still notifies, within the remaining budget, when the summary hangs to the hard timeout", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    summarizeMock.mockImplementationOnce(() => new Promise(() => {}));
+    notifyMock.mockResolvedValueOnce(undefined);
+
+    const responsePromise = cspReportSummaryHandler(scheduledRequest());
+    await vi.advanceTimersByTimeAsync(HARD_TIMEOUT_MS);
+    const response = await responsePromise;
+
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(500);
+  });
+
+  it("does not delay a successful run by the notify budget", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    summarizeMock.mockResolvedValueOnce(EMPTY_SUMMARY);
+
+    const response = await cspReportSummaryHandler(scheduledRequest());
+
+    expect(response.status).toBe(200);
+    expect(notifyMock).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
