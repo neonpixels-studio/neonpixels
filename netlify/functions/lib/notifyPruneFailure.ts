@@ -24,10 +24,13 @@
 
 import {
   createFailureNotifier,
+  createFailureResolver,
   createFetchGithubIssuesClient,
   sanitizeReportedError,
   RENOTIFY_INTERVAL_MS,
   type FailureNotifier,
+  type FailureResolver,
+  type GithubIssueClosingClient,
   type GithubIssuesClient,
 } from "./githubFailureNotifier";
 
@@ -35,6 +38,9 @@ import {
 // etc. in csp-report-prune.ts) rather than an inline literal, and exported
 // so notifyPruneFailure.test.ts can assert against it directly.
 export const NOTIFY_THROTTLED_LOG_PREFIX = "csp-report-prune-notify-throttled";
+
+export const RESOLVE_COMMENT_FAILED_LOG_PREFIX =
+  "csp-report-prune-resolve-comment-failed";
 
 export const PRUNE_FAILURE_LABEL = "csp-prune-failure";
 export const PRUNE_FAILURE_ISSUE_TITLE =
@@ -82,4 +88,27 @@ export function createPruneFailureNotifier(
 
 export function getPruneFailureNotifier(): PruneFailureNotifier {
   return createPruneFailureNotifier(createFetchGithubIssuesClient());
+}
+
+export const PRUNE_RECOVERED_COMMENT =
+  "The scheduled csp-report-prune Function succeeded again. Closing this issue.";
+
+export type PruneFailureResolver = FailureResolver;
+
+// Success-path counterpart to createPruneFailureNotifier, mirroring
+// close-resolved-audit-failure.cjs (see issue #163): closes the tracked
+// issue the notifier opened once a prune run succeeds.
+export function createPruneFailureResolver(
+  client: GithubIssueClosingClient,
+): PruneFailureResolver {
+  return createFailureResolver(client, {
+    trackingLabel: PRUNE_FAILURE_LABEL,
+    issueMarker: PRUNE_FAILURE_ISSUE_MARKER,
+    resolvedCommentBody: PRUNE_RECOVERED_COMMENT,
+    commentFailedLogPrefix: RESOLVE_COMMENT_FAILED_LOG_PREFIX,
+  });
+}
+
+export function getPruneFailureResolver(): PruneFailureResolver {
+  return createPruneFailureResolver(createFetchGithubIssuesClient());
 }

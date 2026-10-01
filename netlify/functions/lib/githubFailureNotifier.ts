@@ -350,6 +350,91 @@ export function createFailureNotifier(
   };
 }
 
+// The capabilities a resolver needs: the same list/comment seam the notifier
+// uses, plus closing an issue. A separate type from GithubIssuesClient (rather
+// than another method on it) so a fake built for the notify path doesn't need
+// a `closeIssue` it never calls — same reasoning as
+// close-resolved-audit-failure.d.cts keeping its own client type.
+export type GithubIssueClosingClient = Pick<
+  GithubIssuesClient,
+  "listOpenIssuesByLabel" | "createComment"
+> & {
+  closeIssue(_issueNumber: number): Promise<void>;
+};
+
+export type FailureResolver = {
+  resolve(): Promise<void>;
+};
+
+export type FailureResolverConfig = {
+  trackingLabel: string;
+  issueMarker: string;
+  resolvedCommentBody: string;
+  // Logged when the issue closed but the courtesy comment could not be
+  // posted. Not a failed close, so it must not throw — see closeTrackedIssue.
+  commentFailedLogPrefix: string;
+};
+
+// Closes first, comments second, same asymmetry as
+// close-resolved-audit-failure.cjs: closing is the state change that matters,
+// the comment is cosmetic context. A failed comment on an issue that did
+// close is logged, not thrown, so it isn't misreported as a failed close.
+async function closeTrackedIssue(
+  client: GithubIssueClosingClient,
+  config: FailureResolverConfig,
+  issueNumber: number,
+): Promise<void> {
+  await client.closeIssue(issueNumber);
+  try {
+    await client.createComment(issueNumber, config.resolvedCommentBody);
+  } catch (commentError) {
+    console.warn(
+      config.commentFailedLogPrefix,
+      JSON.stringify({
+        issue: issueNumber,
+        message: toErrorMessage(commentError),
+      }),
+    );
+  }
+}
+
+// Counterpart to createFailureNotifier for the success path, mirroring
+// close-resolved-audit-failure.cjs: reuses the notifier's own tracked-issue
+// match (label + body marker, never a PR) so it targets exactly the issues
+// the notifier opened. Costs a single label-filtered list call on a healthy
+// run with nothing to close. Like the notifier it is left unguarded: a
+// broken closer must surface to the caller (which wraps it so it can never
+// fail a successful run). One issue failing to close doesn't stop the rest;
+// failures are collected and thrown afterward.
+export function createFailureResolver(
+  client: GithubIssueClosingClient,
+  config: FailureResolverConfig,
+): FailureResolver {
+  return {
+    async resolve() {
+      const openIssues = await client.listOpenIssuesByLabel(
+        config.trackingLabel,
+      );
+      const trackedIssues = openIssues.filter((issue) =>
+        isTrackedFailureIssue(issue, config.issueMarker),
+      );
+      const closeFailures: string[] = [];
+      for (const issue of trackedIssues) {
+        try {
+          await closeTrackedIssue(client, config, issue.number);
+        } catch (closeError) {
+          closeFailures.push(`#${issue.number}: ${toErrorMessage(closeError)}`);
+        }
+      }
+      if (closeFailures.length > 0) {
+        throw new Error(
+          `Failed to close tracked failure issue(s): ${closeFailures.join("; ")}`,
+        );
+      }
+    },
+  };
+}
+
 // The concrete adapter: talks to the GitHub REST API over `fetch`,
 // authenticated with a PAT. This is the only place that touches `fetch`/the
 // GitHub API directly, mirroring getCspReportStore()/getCspReportPruner() as
@@ -470,7 +555,8 @@ async function attachLabels(
   await labelResponse.body?.cancel().catch(() => {});
 }
 
-export function createFetchGithubIssuesClient(): GithubIssuesClient {
+export function createFetchGithubIssuesClient(): GithubIssuesClient &
+  GithubIssueClosingClient {
   return {
     async listOpenIssuesByLabel(label) {
       const response = await githubRequest(
@@ -534,6 +620,17 @@ export function createFetchGithubIssuesClient(): GithubIssuesClient {
       // posted by this point, so a rejected drain is swallowed rather than
       // propagated — otherwise a disturbed/errored stream here would
       // misreport a successfully-delivered notification as broken.
+      await response.body?.cancel().catch(() => {});
+    },
+    async closeIssue(issueNumber) {
+      const response = await githubRequest(
+        `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issueNumber}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ state: "closed", state_reason: "completed" }),
+        },
+      );
+      // Never inspected; drained for the same reason as createComment's.
       await response.body?.cancel().catch(() => {});
     },
     async listComments(issueNumber, sinceIso) {

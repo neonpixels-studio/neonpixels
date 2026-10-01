@@ -11,11 +11,15 @@ const {
   getCspReportPrunerMock,
   notifyMock,
   getPruneFailureNotifierMock,
+  resolveMock,
+  getPruneFailureResolverMock,
 } = vi.hoisted(() => ({
   pruneMock: vi.fn(),
   getCspReportPrunerMock: vi.fn(),
   notifyMock: vi.fn(),
   getPruneFailureNotifierMock: vi.fn(),
+  resolveMock: vi.fn(),
+  getPruneFailureResolverMock: vi.fn(),
 }));
 vi.mock(
   "../../../netlify/functions/lib/cspReportPruner",
@@ -32,6 +36,7 @@ vi.mock(
 );
 vi.mock("../../../netlify/functions/lib/notifyPruneFailure", () => ({
   getPruneFailureNotifier: getPruneFailureNotifierMock,
+  getPruneFailureResolver: getPruneFailureResolverMock,
 }));
 
 import cspReportPruneHandler, {
@@ -45,6 +50,7 @@ import { PRUNE_TIME_BUDGET_MS } from "../../../netlify/functions/lib/cspReportPr
 const PRUNED_LOG_PREFIX = "csp-report-pruned";
 const PRUNE_FAILED_LOG_PREFIX = "csp-report-prune-failed";
 const NOTIFY_FAILED_LOG_PREFIX = "csp-report-prune-notify-failed";
+const RESOLVE_FAILED_LOG_PREFIX = "csp-report-prune-resolve-failed";
 
 function scheduledRequest() {
   // Netlify invokes a scheduled Function with a POST carrying `{ next_run }`;
@@ -69,6 +75,10 @@ beforeEach(() => {
   getPruneFailureNotifierMock
     .mockReset()
     .mockReturnValue({ notify: notifyMock });
+  resolveMock.mockReset().mockResolvedValue(undefined);
+  getPruneFailureResolverMock
+    .mockReset()
+    .mockReturnValue({ resolve: resolveMock });
 });
 
 afterEach(() => {
@@ -99,6 +109,32 @@ describe("csp-report-prune Netlify scheduled function", () => {
     // A successful run has nothing to report — the failure notifier (see
     // #123) must only fire on the catch path below.
     expect(notifyMock).not.toHaveBeenCalled();
+    // ...and a successful run is what closes a previously-tracked issue
+    // (see #163).
+    expect(resolveMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not try to close a tracked issue when the prune run fails", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    pruneMock.mockRejectedValueOnce(new Error("blobs unavailable"));
+
+    await cspReportPruneHandler(scheduledRequest());
+
+    expect(resolveMock).not.toHaveBeenCalled();
+  });
+
+  it("still replies 200 and logs a distinct marker when closing the tracked issue breaks", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    resolveMock.mockRejectedValueOnce(new Error("github down"));
+
+    const response = await cspReportPruneHandler(scheduledRequest());
+
+    expect(response.status).toBe(200);
+    expect(warn).toHaveBeenCalledWith(
+      RESOLVE_FAILED_LOG_PREFIX,
+      JSON.stringify({ message: "github down" }),
+    );
   });
 
   it("replies 500, logs a failure marker, and notifies GitHub when the prune run fails", async () => {
