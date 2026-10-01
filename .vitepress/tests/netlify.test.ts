@@ -1087,6 +1087,25 @@ describe("parseRedirects block splitting", () => {
     },
   );
 
+  it("keeps a block together across both sub-tables in one block", () => {
+    const config = [
+      redirectBlock("/a", "https://a.example", [
+        "  status = 301",
+        "  [redirects.headers]",
+        '    X-Test = "1"',
+        "  [redirects.conditions]",
+        '    Country = ["US"]',
+      ]),
+      redirectBlock("/b", "https://b.example"),
+    ].join("\n\n");
+    const blocks = splitRedirectsBlocks(config);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toContain("X-Test");
+    expect(blocks[0]).toContain("Country");
+    expect(blocks[0]).not.toContain('"/b"');
+    expect(parseRedirects(config)[0].status).toBe(301);
+  });
+
   // TOML semantics: keys after a sub-table header belong to the sub-table,
   // so they must not be attributed to the redirect itself.
   it("does not attribute keys written after a sub-table to the redirect", () => {
@@ -1126,6 +1145,8 @@ describe("parseRedirects block splitting", () => {
     ].join("\n");
     const redirects = parseRedirects(config);
     expect(redirects).toHaveLength(2);
+    expect(splitRedirectsBlocks(config)[0]).not.toContain('"/b"');
+    expect(redirects[0].from).toBe("/a");
     expect(redirects[0].status).toBe(301);
     expect(redirects[1].from).toBe("/b");
   });
