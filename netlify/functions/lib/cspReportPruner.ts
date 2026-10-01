@@ -16,9 +16,10 @@
 //   of fabricated non-script-src reports at the public endpoint could evict
 //   genuine script-src evidence the same way real traffic ages it out. Each
 //   class is a Blobs key prefix and is listed separately (see listKeyGroups
-//   and #165), so that priority holds even on a run that couldn't finish
-//   listing the whole store: the `other` class gets its own slice of the list
-//   budget. The cap is applied even on a partial run — the partial count is
+//   and #165), so the flood-prone `other` class always gets listed (and
+//   trimmed) even when the run can't finish listing the whole store, instead
+//   of competing with every rollout key for the same truncated listing. The
+//   cap is applied even on a partial run — the partial count is
 //   still a valid lower bound on the real count, so trimming
 //   `partialCount - maxBlobs` keys can never remove more than is actually in
 //   excess.
@@ -164,37 +165,38 @@ async function listKeysUnlessOutOfTime(
 
 type KeyGroup = {
   options: GroupListOptions;
-  // Whether this group can contain `other`-class keys: the `other` prefix
-  // and the legacy root keys (which hold both classes) can, `rollout/` can't.
-  holdsOtherKeys: boolean;
+  // Whether this group can contain rollout-class keys: the `rollout/` prefix
+  // and the legacy root keys (which hold both classes) can, `other/` can't.
+  holdsRolloutKeys: boolean;
 };
 
-// Each group is one separate list() call. `other` is listed first and the
-// legacy root-level keys last, since legacy keys only shrink (nothing writes
-// them anymore). `directories: true` with no prefix returns only blobs at the
-// store root, which is exactly the unprefixed legacy keys, without walking
-// the prefixed ones a second time. Keys under any other prefix are never
-// written by this module and are not listed.
+// Each group is one separate list() call. The bounded groups come first and
+// `other`, the one a flood grows, last: groups only roll their unused time
+// forward, so `other` inherits whatever the smaller groups leave. Legacy keys
+// only shrink (nothing writes them anymore). `directories: true` with no
+// prefix returns only blobs at the store root, which is exactly the
+// unprefixed legacy keys, without walking the prefixed ones a second time.
+// Keys under any other prefix are never written by this module and are not
+// listed.
 const KEY_GROUPS: KeyGroup[] = [
   {
-    options: { prefix: keyClassPrefix(OTHER_KEY_CLASS) },
-    holdsOtherKeys: true,
-  },
-  {
     options: { prefix: keyClassPrefix(ROLLOUT_KEY_CLASS) },
-    holdsOtherKeys: false,
+    holdsRolloutKeys: true,
   },
-  { options: { directories: true }, holdsOtherKeys: true },
+  { options: { directories: true }, holdsRolloutKeys: true },
+  {
+    options: { prefix: keyClassPrefix(OTHER_KEY_CLASS) },
+    holdsRolloutKeys: false,
+  },
 ];
 
 type KeyGroups = {
   otherKeys: string[];
   rolloutKeys: string[];
-  // Whether every group that can contain `other` keys was fully listed
-  // (the `other` prefix and the legacy keys). When true, `other` keys are
-  // evicted first across the whole store even if the rollout listing was
-  // cut short. This is what #165 buys.
-  otherViewComplete: boolean;
+  // Whether every group that can contain rollout keys was fully listed
+  // (the `rollout/` prefix and the legacy keys). When false, the oldest
+  // rollout keys this run saw may not be the oldest in the store.
+  rolloutViewComplete: boolean;
   complete: boolean;
 };
 
@@ -251,9 +253,9 @@ async function listKeyGroups(
   }
   return {
     ...groupKeysByClass(listed),
-    otherViewComplete: listed.every(
+    rolloutViewComplete: listed.every(
       (listing, groupIndex) =>
-        listing.complete || !KEY_GROUPS[groupIndex].holdsOtherKeys,
+        listing.complete || !KEY_GROUPS[groupIndex].holdsRolloutKeys,
     ),
     complete: listed.every((listing) => listing.complete),
   };
@@ -338,12 +340,13 @@ async function deleteKeys(
   return { deleted, complete: start >= keys.length };
 }
 
-// Logged when overCapKeys has to spill into rollout keys while the `other`
-// view was incomplete (its prefix or the legacy keys didn't finish listing)
-// - the one case where the #135 priority ordering (non-rollout evicted before
-// rollout) isn't a property of the whole store: `other` keys this run never
-// saw may still exist and should have gone first. Not logged when `other`
-// was fully listed, even if the rollout listing was cut short. See README,
+// Logged when overCapKeys has to spill into rollout keys while the rollout
+// view was incomplete (the `rollout/` prefix or the legacy keys didn't finish
+// listing): list() order isn't guaranteed, so the oldest rollout keys this run
+// saw may not be the oldest stored, and newer script-src evidence could be
+// evicted while older evidence this run never saw survives. Not logged when
+// only the `other` listing was cut short - how many rollout keys spill depends
+// only on the rollout count, not on unseen `other` keys. See README,
 // csp-reports section, for the full caveat.
 const PARTIAL_LIST_ROLLOUT_SPILL_LOG_PREFIX =
   "csp-report-prune-rollout-evicted-on-partial-view";
@@ -359,7 +362,7 @@ function overCapKeys(
   freshOtherKeys: string[],
   freshRolloutKeys: string[],
   maxBlobs: number,
-  otherViewComplete: boolean,
+  rolloutViewComplete: boolean,
 ) {
   const overflow = freshOtherKeys.length + freshRolloutKeys.length - maxBlobs;
   if (overflow <= 0) {
@@ -369,7 +372,7 @@ function overCapKeys(
   if (fromOtherKeys.length === overflow) {
     return fromOtherKeys;
   }
-  if (!otherViewComplete) {
+  if (!rolloutViewComplete) {
     console.warn(
       PARTIAL_LIST_ROLLOUT_SPILL_LOG_PREFIX,
       JSON.stringify({ rolloutKeysListed: freshRolloutKeys.length }),
@@ -416,7 +419,7 @@ function selectKeysToDelete(
       other.freshKeys,
       rollout.freshKeys,
       maxBlobs,
-      groups.otherViewComplete,
+      groups.rolloutViewComplete,
     ),
   ];
 }

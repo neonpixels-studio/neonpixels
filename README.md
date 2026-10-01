@@ -143,10 +143,12 @@ is exhausted and the store is still over cap (see `keyClassOf` in
 [`cspReportPruner.ts`](netlify/functions/lib/cspReportPruner.ts)). The class
 is a real Blobs key prefix, so the pruner lists each class separately with
 `list({ prefix })` (plus a root-level listing for legacy keys) and gives each
-listing its own slice of the list budget (#165): the priority ordering then
-holds even when one run can't list the whole store, and the
-`csp-report-prune-rollout-evicted-on-partial-view` marker is only logged when
-eviction spills into rollout keys while the `other` view was incomplete. Keys
+listing its own slice of the list budget (#165): the pruner then
+keeps trimming the flood-prone `other` class even when one run can't list the
+whole store, and the `csp-report-prune-rollout-evicted-on-partial-view` marker
+is only logged when eviction spills into rollout keys while the rollout (or
+legacy) listing was incomplete, i.e. the oldest rollout keys seen may not be
+the oldest stored. Keys
 written before the prefix existed (`<timestamp>-<tag>-<uuid>.json` and the
 older untagged `<timestamp>-<uuid>.json`) live at the store root; they are
 still listed, counted, ordered by timestamp alongside prefixed keys, and aged

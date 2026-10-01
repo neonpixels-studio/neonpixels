@@ -109,10 +109,11 @@ function listedPage(keys: string[], options: BlobListOptions): BlobPage {
   };
 }
 
+// Group order follows KEY_GROUPS in the pruner: rollout, legacy, other.
 const GROUP_SLICE_END_MS = {
-  other: groupDeadlineMs(0, 0),
-  rollout: groupDeadlineMs(0, 1),
-  legacy: groupDeadlineMs(0, 2),
+  rollout: groupDeadlineMs(0, 0),
+  legacy: groupDeadlineMs(0, 1),
+  other: groupDeadlineMs(0, 2),
 };
 
 // Moves the clock just past one group's slice of the list budget while that
@@ -513,8 +514,7 @@ describe("createCspReportPruner", () => {
       taggedKeyFromDaysAgo(1, "other", "b"),
       taggedKeyFromDaysAgo(1, "other", "c"),
     ];
-    const neverReachedKey = taggedKeyFromDaysAgo(1, "other", "never-reached");
-    const client = budgetSpentClient([foundKeys, [neverReachedKey]]);
+    const client = truncatedGroupClient(foundKeys, "other");
     const pruner = createCspReportPruner(client, {
       retentionDays: 30,
       maxBlobs: 1,
@@ -530,14 +530,12 @@ describe("createCspReportPruner", () => {
     expect(deletedKeys(client)).toEqual([foundKeys[0], foundKeys[1]]);
   });
 
-  it("logs a marker when an incomplete `other` view forces eviction to spill into rollout keys, since unseen `other` keys may still exist", async () => {
+  it("logs a marker when an incomplete rollout view forces eviction to spill into rollout keys, since the oldest rollout key seen may not be the oldest stored", async () => {
     const rolloutKeys = [
       taggedKeyFromDaysAgo(2, "rollout", "evidence-a"),
       taggedKeyFromDaysAgo(1, "rollout", "evidence-b"),
     ];
-    // The `other` listing is cut short before it saw anything, so this run
-    // can't rule out a flood of `other` keys outside its view.
-    const client = truncatedGroupClient(rolloutKeys, "other");
+    const client = truncatedGroupClient(rolloutKeys, "rollout");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const pruner = createCspReportPruner(client, {
       retentionDays: 30,
@@ -566,9 +564,9 @@ describe("createCspReportPruner", () => {
       await pruner.prune();
 
       expect(list.mock.calls.map(([options]) => options)).toEqual([
-        { paginate: true, prefix: "other/" },
         { paginate: true, prefix: "rollout/" },
         { paginate: true, directories: true },
+        { paginate: true, prefix: "other/" },
       ]);
     });
 
@@ -599,7 +597,7 @@ describe("createCspReportPruner", () => {
       expect(deletedKeys(client)).toEqual(otherKeys);
     });
 
-    it("does not log the partial-view marker when only the rollout listing was cut short, since every `other` key was seen", async () => {
+    it("does not log the partial-view marker when only the `other` listing was cut short, since unseen `other` keys don't change which rollout keys spill", async () => {
       const otherKeys = [taggedKeyFromDaysAgo(2, "other", "a")];
       const rolloutKeys = [
         taggedKeyFromDaysAgo(4, "rollout", "evidence-a"),
@@ -607,7 +605,7 @@ describe("createCspReportPruner", () => {
       ];
       const client = truncatedGroupClient(
         [...rolloutKeys, ...otherKeys],
-        "rollout",
+        "other",
       );
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const pruner = createCspReportPruner(client, {
@@ -655,6 +653,33 @@ describe("createCspReportPruner", () => {
 
       expect(result.complete).toBe(false);
       expect(list).toHaveBeenCalledTimes(1);
+    });
+
+    it("deletes stale keys of both classes and formats first, oldest first, then the oldest fresh `other` keys over the cap", async () => {
+      const staleRollout = taggedKeyFromDaysAgo(41, "rollout", "stale");
+      const staleLegacyOther = legacyTaggedKeyFromDaysAgo(45, "other", "stale");
+      const freshOther = [
+        taggedKeyFromDaysAgo(3, "other", "a"),
+        taggedKeyFromDaysAgo(2, "other", "b"),
+        taggedKeyFromDaysAgo(1, "other", "c"),
+      ];
+      const client = fakeClient([
+        [...freshOther, staleRollout, staleLegacyOther],
+      ]);
+      const pruner = createCspReportPruner(client, {
+        retentionDays: 30,
+        maxBlobs: 1,
+      });
+
+      const result = await pruner.prune();
+
+      expect(result).toEqual({ deleted: 4, remaining: 1, complete: true });
+      expect(deletedKeys(client)).toEqual([
+        staleLegacyOther,
+        staleRollout,
+        freshOther[0],
+        freshOther[1],
+      ]);
     });
 
     it("applies retention by timestamp to both classes, not by prefix", async () => {
