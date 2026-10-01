@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, nextTick, reactive, ref } from "vue";
 import { WORDMARK_GRADIENT } from "../brand";
 import { submitNetlifyForm } from "../forms/submitNetlifyForm";
 
@@ -18,7 +18,13 @@ const HONEYPOT_FIELD_NAME = "bot-field";
 const FIELD_LABEL_CLASS =
   "text-fg-dim text-[10.5px] tracking-[0.14em] uppercase";
 const FIELD_CONTROL_CLASS =
-  "border-border bg-bg text-fg rounded-none border px-3 py-2 text-[13px]";
+  "border-border bg-bg text-fg user-invalid:border-pink aria-invalid:border-pink rounded-none border px-3 py-2 text-[13px]";
+const FIELD_ERROR_CLASS = "text-pink m-0 min-h-[1em] text-[12px]";
+
+// Intentionally permissive (matches what the browser's own type="email"
+// check accepts closely enough): the server/Netlify is the real gate, this
+// only catches obvious typos before a round trip.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/;
 
 type SubmitStatus = "idle" | "submitting" | "success" | "error";
 
@@ -28,6 +34,26 @@ const fields = reactive({ name: "", email: "", message: "" });
 // blindly fills every input it finds outs itself by populating it.
 const honeypotValue = ref("");
 const status = ref<SubmitStatus>("idle");
+
+// Errors only surface once a field has been blurred or a submit was
+// attempted, so an untouched form never opens flagged as invalid (the same
+// guarantee :user-invalid gives natively, but for browsers lacking it).
+const touched = reactive({ email: false, message: false });
+
+const emailError = computed(() => {
+  if (!touched.email) {
+    return "";
+  }
+  if (!fields.email.trim()) {
+    return "Enter your email address.";
+  }
+  return EMAIL_PATTERN.test(fields.email.trim())
+    ? ""
+    : "Enter a valid email address, like name@example.com.";
+});
+const messageError = computed(() =>
+  touched.message && !fields.message.trim() ? "Enter a message." : "",
+);
 
 // A screen reader can miss a live region that appears in the DOM at the same
 // moment as the text it's meant to announce (NVDA/VoiceOver commonly do). The
@@ -49,6 +75,22 @@ function resetFields() {
   fields.name = "";
   fields.email = "";
   fields.message = "";
+  touched.email = false;
+  touched.message = false;
+}
+
+function touchRequiredFields() {
+  touched.email = true;
+  touched.message = true;
+}
+
+function hasFieldErrors() {
+  return Boolean(emailError.value || messageError.value);
+}
+
+function focusFirstInvalidField() {
+  const selector = emailError.value ? "#contact-email" : "#contact-message";
+  document.querySelector<HTMLElement>(selector)?.focus();
 }
 
 async function handleSubmit() {
@@ -68,6 +110,12 @@ async function handleSubmit() {
     status.value = "success";
     resetFields();
     honeypotValue.value = "";
+    return;
+  }
+  touchRequiredFields();
+  if (hasFieldErrors()) {
+    await nextTick();
+    focusFirstInvalidField();
     return;
   }
   status.value = "submitting";
@@ -110,6 +158,7 @@ async function handleSubmit() {
         :name="FORM_NAME"
         method="POST"
         data-netlify="true"
+        novalidate
         :data-netlify-honeypot="HONEYPOT_FIELD_NAME"
         class="flex flex-1 flex-col gap-3 lg:max-w-[620px]"
         @submit.prevent="handleSubmit"
@@ -156,8 +205,14 @@ async function handleSubmit() {
               name="email"
               required
               autocomplete="email"
+              :aria-invalid="emailError ? 'true' : undefined"
+              :aria-describedby="emailError ? 'contact-email-error' : undefined"
               :class="FIELD_CONTROL_CLASS"
+              @blur="touched.email = true"
             />
+            <span id="contact-email-error" :class="FIELD_ERROR_CLASS">{{
+              emailError
+            }}</span>
           </label>
         </div>
 
@@ -169,8 +224,16 @@ async function handleSubmit() {
             name="message"
             rows="3"
             required
+            :aria-invalid="messageError ? 'true' : undefined"
+            :aria-describedby="
+              messageError ? 'contact-message-error' : undefined
+            "
             :class="FIELD_CONTROL_CLASS"
+            @blur="touched.message = true"
           />
+          <span id="contact-message-error" :class="FIELD_ERROR_CLASS">{{
+            messageError
+          }}</span>
         </label>
 
         <div class="flex flex-wrap items-center gap-4">

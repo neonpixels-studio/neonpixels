@@ -257,4 +257,68 @@ describe("ContactForm", () => {
     expect(wrapper.get('[role="status"]').text()).not.toBe("");
     wrapper.unmount();
   });
+
+  describe("invalid state", () => {
+    it("does not flag required fields before the visitor interacts", () => {
+      const wrapper = mount(ContactForm);
+      expect(wrapper.get("#contact-email").attributes("aria-invalid")).toBe(
+        undefined,
+      );
+      expect(wrapper.get("#contact-message").attributes("aria-invalid")).toBe(
+        undefined,
+      );
+      expect(wrapper.get("#contact-email-error").text()).toBe("");
+      wrapper.unmount();
+    });
+
+    it("flags a blurred empty email and associates the error via aria-describedby", async () => {
+      const wrapper = mount(ContactForm);
+      await wrapper.get("#contact-email").trigger("blur");
+      const email = wrapper.get("#contact-email");
+      expect(email.attributes("aria-invalid")).toBe("true");
+      expect(email.attributes("aria-describedby")).toBe("contact-email-error");
+      expect(wrapper.get("#contact-email-error").text()).toBe(
+        "Enter your email address.",
+      );
+      expect(email.classes()).toContain("aria-invalid:border-pink");
+      expect(email.classes()).toContain("user-invalid:border-pink");
+      wrapper.unmount();
+    });
+
+    it("rejects a malformed email and clears the error once it is fixed", async () => {
+      const wrapper = mount(ContactForm);
+      await wrapper.get("#contact-email").setValue("not-an-email");
+      await wrapper.get("#contact-email").trigger("blur");
+      expect(wrapper.get("#contact-email-error").text()).toContain("valid");
+      await wrapper.get("#contact-email").setValue("ada@example.com");
+      expect(wrapper.get("#contact-email").attributes("aria-invalid")).toBe(
+        undefined,
+      );
+      expect(wrapper.get("#contact-email-error").text()).toBe("");
+      wrapper.unmount();
+    });
+
+    it("blocks submission, flags both required fields, and sends nothing", async () => {
+      const wrapper = mount(ContactForm, { attachTo: document.body });
+      await wrapper.find("form").trigger("submit");
+      await flushPromises();
+
+      expect(mockedSubmitNetlifyForm).not.toHaveBeenCalled();
+      expect(wrapper.get("#contact-email").attributes("aria-invalid")).toBe(
+        "true",
+      );
+      const message = wrapper.get("#contact-message");
+      expect(message.attributes("aria-invalid")).toBe("true");
+      expect(message.attributes("aria-describedby")).toBe(
+        "contact-message-error",
+      );
+      expect(wrapper.get("#contact-message-error").text()).toBe(
+        "Enter a message.",
+      );
+      expect(document.activeElement).toBe(
+        wrapper.get("#contact-email").element,
+      );
+      wrapper.unmount();
+    });
+  });
 });
