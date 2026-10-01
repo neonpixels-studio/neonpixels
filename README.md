@@ -79,10 +79,10 @@ wired to a collector — a `Reporting-Endpoints` header plus `report-to` /
 records them to the function logs **and** persists each accepted,
 same-origin violation to [Netlify Blobs](https://docs.netlify.com/blobs/overview/)
 (store name `csp-reports`, one blob per violation, key
-`<receivedAt ISO timestamp, colons/periods replaced with dashes>-<rollout|other tag>-<uuid>.json`,
-the tag derived from whether the violation's own `effectiveDirective` belongs
-to the `script-src` family — see `isRolloutKey` below for what the tag is
-for) so the rollout signal is queryable instead of grep-only. Being public and
+`<rollout|other>/<receivedAt ISO timestamp, colons/periods replaced with dashes>-<uuid>.json`,
+the `rollout`/`other` class prefix derived from whether the violation's own
+`effectiveDirective` belongs to the `script-src` family — see
+`keyClassOf` below for what the class is for) so the rollout signal is queryable instead of grep-only. Being public and
 unauthenticated, the Function's `config` also sets a Netlify
 [rate limit](https://docs.netlify.com/manage/security/secure-access-to-sites/rate-limiting/)
 (60 requests per 60s, aggregated per IP + domain) so a single caller can't
@@ -137,9 +137,20 @@ i.e. not `script-src` family) reports are evicted oldest-first ahead of every
 rollout-tagged one, so the script-src rollout signal below can't be starved
 by an attacker flooding `/csp-report` with fabricated non-`script-src`
 reports (#135) — rollout keys are only reached once the non-rollout backlog
-is exhausted and the store is still over cap (see `isRolloutKey`/`overCapKeys`
-in [`cspReportPruner.ts`](netlify/functions/lib/cspReportPruner.ts)). A key
-written before this tagging existed is treated as rollout (protected) rather
+is exhausted and the store is still over cap (see `keyClassOf`/`overCapKeys`
+in [`cspReportPruner.ts`](netlify/functions/lib/cspReportPruner.ts)). The class
+is a real Blobs key prefix, so the pruner lists each class separately with
+`list({ prefix })` (plus a root-level listing for legacy keys) and gives each
+listing its own slice of the list budget (#165): the priority ordering then
+holds even when one run can't list the whole store, and the
+`csp-report-prune-rollout-evicted-on-partial-view` marker is only logged when
+eviction spills into rollout keys while the `other` view was incomplete. Keys
+written before the prefix existed (`<timestamp>-<tag>-<uuid>.json` and the
+older untagged `<timestamp>-<uuid>.json`) live at the store root; they are
+still listed, counted, ordered by timestamp alongside prefixed keys, and aged
+out by retention, so nothing is orphaned (the legacy handling can be removed
+one retention window after #165 ships). A key
+written before tagging existed is treated as rollout (protected) rather
 than `other`, so pre-existing evidence isn't penalized for predating the tag
 — for up to `CSP_REPORT_RETENTION_DAYS` after this shipped, that means a
 brand-new genuine non-rollout report can be evicted ahead of untagged legacy

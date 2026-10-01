@@ -1,8 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 
 import {
+  compareByReceivedAt,
   createCspReportStore,
   isRolloutKey,
+  keyClassOf,
+  keyClassPrefix,
+  receivedAtSortKey,
   sanitizeTimestamp,
   type BlobWriter,
   type StoredCspViolation,
@@ -48,13 +52,13 @@ describe("createCspReportStore", () => {
       StoredCspViolation,
     ];
     // Asserts the sanitized shape specifically (no `:` or `.` left over from
-    // the raw ISO timestamp) and the `rollout` tag (this violation's
-    // `script-src-elem` directive is rollout-relevant — see isRolloutKey) —
+    // the raw ISO timestamp) and the `rollout/` key prefix (this violation's
+    // `script-src-elem` directive is rollout-relevant - see isRolloutKey) -
     // a looser pattern here would still pass if the
-    // `.replace(/[:.]/g, "-")` sanitization or the tagging in violationKey
-    // were removed.
+    // `.replace(/[:.]/g, "-")` sanitization or the class prefix in
+    // violationKey were removed.
     expect(key).toMatch(
-      /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-rollout-[0-9a-f-]{36}\.json$/,
+      /^rollout\/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[0-9a-f-]{36}\.json$/,
     );
     expect(value.effectiveDirective).toBe("script-src-elem");
     expect(value.blockedUri).toBe("inline");
@@ -62,7 +66,7 @@ describe("createCspReportStore", () => {
     expect(() => new Date(value.receivedAt).toISOString()).not.toThrow();
   });
 
-  it("tags a non-rollout violation's key as `other` rather than `rollout`", async () => {
+  it("prefixes a non-rollout violation's key with `other/` rather than `rollout/`", async () => {
     const blobWriter = fakeBlobWriter();
     const store = createCspReportStore(blobWriter);
 
@@ -70,7 +74,7 @@ describe("createCspReportStore", () => {
 
     const [key] = blobWriter.setJSON.mock.calls[0] as [string];
     expect(key).toMatch(
-      /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-other-[0-9a-f-]{36}\.json$/,
+      /^other\/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[0-9a-f-]{36}\.json$/,
     );
   });
 
@@ -161,15 +165,78 @@ describe("isRolloutKey", () => {
     expect(isRolloutKey(legacyKey)).toBe(true);
   });
 
-  it("only excludes a key explicitly tagged `other`", () => {
+  it("only excludes a legacy key explicitly tagged `other`", () => {
     const otherTaggedKey = `${sanitizeTimestamp("2026-01-01T00:00:00.000Z")}-other-${"a".repeat(36)}.json`;
 
     expect(isRolloutKey(otherTaggedKey)).toBe(false);
   });
 
-  it("treats a key matching neither known shape (not the legacy uuid-only format, not a recognized tag) as evictable, not permanently protected", () => {
+  it("treats a key matching no known shape (not a class prefix, not the legacy uuid-only format, not a recognized legacy tag) as evictable, not permanently protected", () => {
     const malformedKey = `${sanitizeTimestamp("2026-01-01T00:00:00.000Z")}-not-a-real-shape.json`;
 
     expect(isRolloutKey(malformedKey)).toBe(false);
+  });
+});
+
+describe("keyClassOf", () => {
+  const timestamp = sanitizeTimestamp("2026-01-01T00:00:00.000Z");
+
+  it.each([
+    ["a rollout-prefixed key", `rollout/${timestamp}-uuid.json`, "rollout"],
+    ["an other-prefixed key", `other/${timestamp}-uuid.json`, "other"],
+    [
+      "a legacy rollout-tagged key",
+      `${timestamp}-rollout-${"a".repeat(36)}.json`,
+      "rollout",
+    ],
+    [
+      "a legacy other-tagged key",
+      `${timestamp}-other-${"a".repeat(36)}.json`,
+      "other",
+    ],
+    ["a legacy untagged key", `${timestamp}-${"a".repeat(36)}.json`, "rollout"],
+  ])("classifies %s", (_label, key, expected) => {
+    expect(keyClassOf(key)).toBe(expected);
+  });
+
+  it("trusts the class prefix over a conflicting legacy-looking suffix", () => {
+    expect(
+      keyClassOf(`other/${timestamp}-rollout-${"a".repeat(36)}.json`),
+    ).toBe("other");
+  });
+
+  it("builds the list prefix for a class with a trailing separator, so `other` can never match a different class sharing its leading letters", () => {
+    expect(keyClassPrefix("rollout")).toBe("rollout/");
+    expect(keyClassPrefix("other")).toBe("other/");
+  });
+});
+
+describe("receivedAtSortKey / compareByReceivedAt", () => {
+  const early = sanitizeTimestamp("2026-01-01T00:00:00.000Z");
+  const late = sanitizeTimestamp("2026-02-01T00:00:00.000Z");
+
+  it("strips a class prefix and leaves a legacy key untouched", () => {
+    expect(receivedAtSortKey(`rollout/${early}-a.json`)).toBe(
+      `${early}-a.json`,
+    );
+    expect(receivedAtSortKey(`${early}-a.json`)).toBe(`${early}-a.json`);
+  });
+
+  it("orders keys by timestamp across classes and formats, ignoring the prefix", () => {
+    const keys = [
+      `rollout/${late}-a.json`,
+      `${early}-legacy.json`,
+      `other/${late}-b.json`,
+      `other/${early}-c.json`,
+    ];
+
+    // A plain `.sort()` would group by prefix (`other/` < `rollout/`) and put
+    // the digit-leading legacy key first regardless of age.
+    expect([...keys].sort(compareByReceivedAt)).toEqual([
+      `other/${early}-c.json`,
+      `${early}-legacy.json`,
+      `rollout/${late}-a.json`,
+      `other/${late}-b.json`,
+    ]);
   });
 });

@@ -15,6 +15,7 @@ import { getStore } from "@netlify/blobs";
 import {
   CSP_REPORT_STORE_NAME,
   ROLLOUT_DIRECTIVE,
+  compareByReceivedAt,
   isRolloutDirective,
 } from "./cspReportStore";
 import type { StoredCspViolation } from "./cspReportStore";
@@ -478,17 +479,16 @@ type FetchAllResult = {
   complete: boolean;
 };
 
-// cspReportStore.ts's violationKey prefixes every key with a sanitized ISO
-// receivedAt (see RECEIVED_AT_PREFIX_LENGTH there), so a plain descending
-// string sort orders keys newest-first without parsing anything — the same
-// property cspReportPruner.ts relies on for its own oldest-first sort
-// (unsortedKeys.sort() in createCspReportPruner), just reversed. Netlify
-// Blobs' list() order is not documented as sorted (the pruner sorts its own
-// unsortedKeys rather than trusting it), so this is the only thing standing
-// between a truncated fetchAll and reading whatever order list() happened
-// to return.
+// Every key carries a sanitized ISO receivedAt after its optional class
+// prefix (see receivedAtSortKey in cspReportStore.ts), so ordering by that
+// part, descending, puts keys newest-first across both classes and the legacy
+// unprefixed keys without parsing anything. Sorting the raw key would group
+// by class prefix first and break the order. Blobs' list() order is not
+// documented as sorted (the pruner sorts its own keys rather than trusting
+// it), so this is the only thing standing between a truncated fetchAll and
+// reading whatever order list() happened to return.
 function sortNewestFirst(keys: string[]): string[] {
-  return [...keys].sort().reverse();
+  return [...keys].sort((first, second) => compareByReceivedAt(second, first));
 }
 
 // Checks the deadline in the loop condition (mirrors deleteKeys in

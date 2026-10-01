@@ -824,6 +824,42 @@ describe("createCspReportSummary", () => {
     }
   });
 
+  it("reads the newest keys first across class prefixes and legacy keys when a truncated run can only fetch one batch", async () => {
+    // Same truncation setup as the test above, but keys alternate between the
+    // `other/` prefix, the `rollout/` prefix and the legacy unprefixed shape.
+    // A plain string sort would group by prefix instead of by age, so the
+    // newest batch would not be the newest keys.
+    const keyCount = FETCH_BATCH_SIZE + 6;
+    const keyPrefixes = ["other/", "rollout/", ""];
+    const keys = Array.from({ length: keyCount }, (_, index) => {
+      const timestamp = new Date(NOW.getTime() - (keyCount - index) * 1000)
+        .toISOString()
+        .replace(/[:.]/g, "-");
+      return `${keyPrefixes[index % keyPrefixes.length]}${timestamp}-key-${index}`;
+    });
+    const newestKeys = keys.slice(keys.length - FETCH_BATCH_SIZE);
+    const oldestKeys = keys.slice(0, keys.length - FETCH_BATCH_SIZE);
+    const blobs = Object.fromEntries(keys.map((key) => [key, violation()]));
+    const client = fakeClient([keys], blobs);
+    let getCalls = 0;
+    client.get.mockImplementation(async (key: string) => {
+      getCalls += 1;
+      if (getCalls === FETCH_BATCH_SIZE) {
+        vi.setSystemTime(new Date(NOW.getTime() + SUMMARY_TIME_BUDGET_MS + 1));
+      }
+      return blobs[key];
+    });
+
+    await createCspReportSummary(client).summarize();
+
+    for (const key of newestKeys) {
+      expect(client.get).toHaveBeenCalledWith(key, expect.anything());
+    }
+    for (const key of oldestKeys) {
+      expect(client.get).not.toHaveBeenCalledWith(key, expect.anything());
+    }
+  });
+
   it("reports both listComplete: false and fetchComplete: false when an oversized store trips both budgets in the same run", async () => {
     // The realistic shape for a store consistently too large to finish in
     // one run: the list pass gets cut short by LIST_TIME_BUDGET_MS, and the
