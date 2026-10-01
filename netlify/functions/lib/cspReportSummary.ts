@@ -462,7 +462,8 @@ export const FETCH_BATCH_SIZE = 100;
 // The run's combined list+fetch budget (mirrors PRUNE_TIME_BUDGET_MS in
 // cspReportPruner.ts), split in half so a slow list() walk can't starve
 // fetchAll of its share. Kept under the adapter's HARD_TIMEOUT_MS
-// (../csp-report-summary.ts, 8000ms under it) so
+// (../csp-report-summary.ts; the gap is asserted in
+// cspReportSummaryFunction.test.ts) so
 // whatever batch is in flight when this trips has room to finish before the
 // hard timeout would instead discard the whole run (ordering asserted in
 // cspReportSummaryFunction.test.ts).

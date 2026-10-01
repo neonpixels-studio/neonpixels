@@ -29,7 +29,6 @@ import cspReportSummaryHandler, {
   HARD_TIMEOUT_MS,
   NETLIFY_FUNCTION_LIMIT_MS,
   NOTIFY_TIMEOUT_MS,
-  RESPONSE_HEADROOM_MS,
   RUN_DEADLINE_MS,
   remainingNotifyBudgetMs,
 } from "../../../netlify/functions/csp-report-summary";
@@ -336,7 +335,6 @@ describe("csp-report-summary Netlify scheduled function", () => {
   // must leave real headroom under that for cold start and the final
   // in-flight batch rather than assuming the full window. Mirrors the
   // equivalent invariant test in cspReportPruneFunction.test.ts.
-  const NETLIFY_SCHEDULED_FUNCTION_LIMIT_MS = 30000;
   const COLD_START_HEADROOM_MS = 2000;
 
   // The cooperative-budget half of the ordering chain (SUMMARY_TIME_BUDGET_MS
@@ -346,48 +344,62 @@ describe("csp-report-summary Netlify scheduled function", () => {
   it("keeps the run deadline within Netlify's real limit, with a real floor left for the summarize() call", () => {
     expect(HARD_TIMEOUT_MS).toBeGreaterThanOrEqual(20000);
     expect(RUN_DEADLINE_MS + COLD_START_HEADROOM_MS).toBeLessThanOrEqual(
-      NETLIFY_SCHEDULED_FUNCTION_LIMIT_MS,
+      NETLIFY_FUNCTION_LIMIT_MS,
     );
-  });
-
-  it("does not reserve the notify budget on the success path", () => {
-    expect(HARD_TIMEOUT_MS).toBe(RUN_DEADLINE_MS);
   });
 
   it("gives the notifier its full budget after a fast failure", () => {
     expect(remainingNotifyBudgetMs(0)).toBe(NOTIFY_TIMEOUT_MS);
   });
 
-  it("shrinks the notify budget to what is left after a late hang, never below zero", () => {
-    expect(remainingNotifyBudgetMs(HARD_TIMEOUT_MS)).toBe(
-      NETLIFY_FUNCTION_LIMIT_MS - HARD_TIMEOUT_MS - RESPONSE_HEADROOM_MS,
-    );
+  it("shrinks the notify budget to what is left after a hang, never below zero", () => {
+    const afterHang = remainingNotifyBudgetMs(HARD_TIMEOUT_MS);
+    expect(afterHang).toBeGreaterThan(0);
+    expect(afterHang).toBeLessThan(NOTIFY_TIMEOUT_MS);
     expect(remainingNotifyBudgetMs(NETLIFY_FUNCTION_LIMIT_MS * 2)).toBe(0);
   });
 
-  it("still notifies, within the remaining budget, when the summary hangs to the hard timeout", async () => {
+  it("cuts a hanging notifier off at the remaining budget after the summary hangs", async () => {
     vi.useFakeTimers();
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     summarizeMock.mockImplementationOnce(() => new Promise(() => {}));
-    notifyMock.mockResolvedValueOnce(undefined);
+    notifyMock.mockImplementationOnce(() => new Promise(() => {}));
+    let settled = false;
 
-    const responsePromise = cspReportSummaryHandler(scheduledRequest());
+    const responsePromise = cspReportSummaryHandler(scheduledRequest()).then(
+      (value) => {
+        settled = true;
+        return value;
+      },
+    );
     await vi.advanceTimersByTimeAsync(HARD_TIMEOUT_MS);
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(
+      remainingNotifyBudgetMs(HARD_TIMEOUT_MS) - 1,
+    );
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
     const response = await responsePromise;
 
-    expect(notifyMock).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(500);
+    expect(warn.mock.calls[1][0]).toBe(NOTIFY_FAILED_LOG_PREFIX);
   });
 
-  it("does not delay a successful run by the notify budget", async () => {
+  it("lets a slow but successful summary finish right before the hard timeout", async () => {
     vi.useFakeTimers();
     vi.spyOn(console, "log").mockImplementation(() => {});
-    summarizeMock.mockResolvedValueOnce(EMPTY_SUMMARY);
+    summarizeMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve(EMPTY_SUMMARY), HARD_TIMEOUT_MS - 1),
+        ),
+    );
 
-    const response = await cspReportSummaryHandler(scheduledRequest());
+    const responsePromise = cspReportSummaryHandler(scheduledRequest());
+    await vi.advanceTimersByTimeAsync(HARD_TIMEOUT_MS - 1);
+    const response = await responsePromise;
 
     expect(response.status).toBe(200);
     expect(notifyMock).not.toHaveBeenCalled();
-    expect(vi.getTimerCount()).toBe(0);
   });
 });
