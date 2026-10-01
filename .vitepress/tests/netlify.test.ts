@@ -304,14 +304,19 @@ type Redirect = {
   force?: boolean;
 };
 
-const REDIRECTS_TABLE_START = /^\s*\[\[redirects\]\]/;
+const REDIRECTS_TABLE_START = /^\s*\[\[\s*redirects\s*\]\]/;
+const REDIRECTS_SUBTABLE_START = /^\s*\[\s*redirects\s*\./;
+
+function isRedirectsSubtableStart(line: string) {
+  return REDIRECTS_SUBTABLE_START.test(line);
+}
 
 // Splits netlify.toml into the raw text of every [[redirects]] block, in file
-// order, mirroring readGlobalHeadersTable's table-slicing approach above:
-// each block runs from its `[[redirects]]` marker up to whichever comes
-// first, the next `[[redirects]]` marker or any other table start. Unlike
-// the headers blocks, redirect keys sit directly in the block (no nested
-// [values] table), so no further slicing is needed before reading keys.
+// order. Each block runs from its `[[redirects]]` marker up to the next
+// table that is NOT one of its own sub-tables, so Netlify's
+// [redirects.headers] / [redirects.conditions] stay inside the block. Header
+// matching tolerates whitespace inside the brackets, which TOML allows
+// (`[[ redirects ]]`, `[ redirects.headers ]`).
 function splitRedirectsBlocks(config: string): string[] {
   const lines = config.split("\n");
   const blocks: string[] = [];
@@ -320,11 +325,26 @@ function splitRedirectsBlocks(config: string): string[] {
       continue;
     }
     const rest = lines.slice(index + 1);
-    const nextTable = rest.findIndex((line) => ANY_TABLE_START.test(line));
+    const nextTable = rest.findIndex(
+      (line) => ANY_TABLE_START.test(line) && !isRedirectsSubtableStart(line),
+    );
     const end = nextTable === -1 ? rest.length : nextTable;
     blocks.push(rest.slice(0, end).join("\n"));
   }
   return blocks;
+}
+
+// In TOML, every key after a table header belongs to that table, so a
+// `status = 301` written after `[redirects.headers]` is a header entry, not
+// the redirect's own status (Netlify reads it the same way). The redirect's
+// own keys are therefore only the lines before the block's first sub-table
+// header; reading the whole block would also let a header named e.g. `from`
+// or `force` shadow the real key.
+function redirectOwnKeys(block: string) {
+  const lines = block.split("\n");
+  const firstSubtable = lines.findIndex((line) => ANY_TABLE_START.test(line));
+  const end = firstSubtable === -1 ? lines.length : firstSubtable;
+  return lines.slice(0, end).join("\n");
 }
 
 // Shared matcher behind all three typed readers below: anchors `key` to the
@@ -366,12 +386,15 @@ function readRedirectBooleanValue(block: string, key: string) {
 // throwing, so a caller can assert on exactly what's absent (see
 // findRedirect below for the "must exist" case).
 function parseRedirects(config: string): Redirect[] {
-  return splitRedirectsBlocks(config).map((block) => ({
-    from: readRedirectStringValue(block, "from"),
-    to: readRedirectStringValue(block, "to"),
-    status: readRedirectNumberValue(block, "status"),
-    force: readRedirectBooleanValue(block, "force"),
-  }));
+  return splitRedirectsBlocks(config).map((block) => {
+    const ownKeys = redirectOwnKeys(block);
+    return {
+      from: readRedirectStringValue(ownKeys, "from"),
+      to: readRedirectStringValue(ownKeys, "to"),
+      status: readRedirectNumberValue(ownKeys, "status"),
+      force: readRedirectBooleanValue(ownKeys, "force"),
+    };
+  });
 }
 
 // Finds the single redirect block whose `from` matches exactly, throwing
@@ -1026,6 +1049,72 @@ describe("parseRedirects block splitting", () => {
     const [redirect] = parseRedirects(config);
     expect(redirect.from).toBe("/a");
     expect(redirect.to).toBe("https://a.example");
+  });
+
+  it.each(["[redirects.headers]", "[redirects.conditions]"])(
+    "keeps the block together across a %s sub-table and still reads the next [[redirects]]",
+    (subtable) => {
+      const config = [
+        redirectBlock("/a", "https://a.example", [
+          "  status = 301",
+          "  force = true",
+          "",
+          `  ${subtable}`,
+          '    Country = ["US"]',
+        ]),
+        redirectBlock("/b", "https://b.example", ["  status = 200"]),
+      ].join("\n\n");
+      const [first, second] = parseRedirects(config);
+      expect(parseRedirects(config)).toHaveLength(2);
+      expect(first).toEqual({
+        from: "/a",
+        to: "https://a.example",
+        status: 301,
+        force: true,
+      });
+      expect(second.from).toBe("/b");
+      expect(second.status).toBe(200);
+    },
+  );
+
+  // TOML semantics: keys after a sub-table header belong to the sub-table,
+  // so they must not be attributed to the redirect itself.
+  it("does not attribute keys written after a sub-table to the redirect", () => {
+    const config = redirectBlock("/a", "https://a.example", [
+      "  [redirects.headers]",
+      "    status = 999",
+      "    force = true",
+    ]);
+    const [redirect] = parseRedirects(config);
+    expect(redirect.status).toBeUndefined();
+    expect(redirect.force).toBeUndefined();
+  });
+
+  it("ends the block at an unrelated table following a sub-table", () => {
+    const config = [
+      redirectBlock("/a", "https://a.example", [
+        "  [redirects.headers]",
+        '    X-Test = "1"',
+      ]),
+      '[[headers]]\n  for = "/*"',
+    ].join("\n\n");
+    expect(parseRedirects(config)).toHaveLength(1);
+  });
+
+  it("tolerates whitespace inside table headers", () => {
+    const config = [
+      "[[ redirects ]]",
+      '  from = "/a"',
+      "  status = 301",
+      "  [ redirects.headers ]",
+      '    X-Test = "1"',
+      "[[ redirects ]]",
+      '  from = "/b"',
+    ].join("\n");
+    const redirects = parseRedirects(config);
+    expect(redirects).toHaveLength(2);
+    expect(redirects[0].status).toBe(301);
+    expect(redirects[1].from).toBe("/b");
   });
 
   // TOML allows a value to be a single-quoted literal string as an
