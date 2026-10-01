@@ -255,6 +255,15 @@ describe("getPruneFailureResolver", () => {
     }
   });
 
+  it("rejects without calling GitHub when the token is not set", async () => {
+    delete process.env[GITHUB_TOKEN_ENV_VAR];
+
+    await expect(getPruneFailureResolver().resolve()).rejects.toThrow(
+      GITHUB_TOKEN_ENV_VAR,
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("wires the real fetch adapter to list by label, PATCH the issue closed, and comment", async () => {
     process.env[GITHUB_TOKEN_ENV_VAR] = "test-token";
     vi.mocked(fetch)

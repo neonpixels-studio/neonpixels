@@ -120,6 +120,7 @@ describe("csp-report-prune Netlify scheduled function", () => {
 
     await cspReportPruneHandler(scheduledRequest());
 
+    expect(getPruneFailureResolverMock).not.toHaveBeenCalled();
     expect(resolveMock).not.toHaveBeenCalled();
   });
 

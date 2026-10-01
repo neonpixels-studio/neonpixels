@@ -431,17 +431,15 @@ export function createFailureResolver(
       const trackedIssues = openIssues.filter((issue) =>
         isTrackedFailureIssue(issue, config.issueMarker),
       );
-      const closeFailures: string[] = [];
+      const closeResults: (string | null)[] = [];
       for (const issue of trackedIssues) {
-        const failure = await closeOrDescribeFailure(
-          client,
-          config,
-          issue.number,
+        closeResults.push(
+          await closeOrDescribeFailure(client, config, issue.number),
         );
-        if (failure) {
-          closeFailures.push(failure);
-        }
       }
+      const closeFailures = closeResults.filter(
+        (result): result is string => result !== null,
+      );
       if (closeFailures.length > 0) {
         throw new Error(
           `Failed to close tracked failure issue(s): ${closeFailures.join("; ")}`,
