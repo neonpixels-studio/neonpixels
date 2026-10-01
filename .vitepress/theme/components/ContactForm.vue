@@ -36,6 +36,7 @@ const fields = reactive({ name: "", email: "", message: "" });
 // blindly fills every input it finds outs itself by populating it.
 const honeypotValue = ref("");
 const status = ref<SubmitStatus>("idle");
+const formElement = ref<HTMLFormElement | null>(null);
 const emailInput = ref<HTMLInputElement | null>(null);
 const messageInput = ref<HTMLTextAreaElement | null>(null);
 
@@ -44,14 +45,16 @@ const messageInput = ref<HTMLTextAreaElement | null>(null);
 // guarantee :user-invalid gives natively, but for browsers lacking it).
 const touched = reactive({ email: false, message: false });
 
+const trimmedEmail = computed(() => fields.email.trim());
+
 const emailError = computed(() => {
   if (!touched.email) {
     return "";
   }
-  if (!fields.email.trim()) {
+  if (!trimmedEmail.value) {
     return "Enter your email address.";
   }
-  return EMAIL_PATTERN.test(fields.email.trim())
+  return EMAIL_PATTERN.test(trimmedEmail.value)
     ? ""
     : "Enter a valid email address, like name@example.com.";
 });
@@ -81,6 +84,9 @@ function resetFields() {
   fields.message = "";
   touched.email = false;
   touched.message = false;
+  // Clears the browser's own "user interacted" flag too, or :user-invalid
+  // would flag the freshly emptied required fields right after a success.
+  formElement.value?.reset();
 }
 
 function touchRequiredFields() {
@@ -162,6 +168,7 @@ async function handleSubmit() {
       </div>
 
       <form
+        ref="formElement"
         :name="FORM_NAME"
         method="POST"
         data-netlify="true"
@@ -220,9 +227,12 @@ async function handleSubmit() {
                 @blur="touched.email = true"
               />
             </label>
-            <span :id="EMAIL_ERROR_ID" :class="FIELD_ERROR_CLASS">{{
-              emailError
-            }}</span>
+            <span
+              :id="EMAIL_ERROR_ID"
+              aria-live="polite"
+              :class="FIELD_ERROR_CLASS"
+              >{{ emailError }}</span
+            >
           </div>
         </div>
 
@@ -242,9 +252,12 @@ async function handleSubmit() {
               @blur="touched.message = true"
             />
           </label>
-          <span :id="MESSAGE_ERROR_ID" :class="FIELD_ERROR_CLASS">{{
-            messageError
-          }}</span>
+          <span
+            :id="MESSAGE_ERROR_ID"
+            aria-live="polite"
+            :class="FIELD_ERROR_CLASS"
+            >{{ messageError }}</span
+          >
         </div>
 
         <div class="flex flex-wrap items-center gap-4">

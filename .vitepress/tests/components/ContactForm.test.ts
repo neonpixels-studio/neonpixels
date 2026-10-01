@@ -259,6 +259,36 @@ describe("ContactForm", () => {
   });
 
   describe("invalid state", () => {
+    it("shows no errors on the freshly cleared form after a successful send", async () => {
+      mockedSubmitNetlifyForm.mockResolvedValue(undefined);
+      const wrapper = mount(ContactForm);
+      await fillFields(wrapper, {
+        email: "ada@example.com",
+        message: "hello",
+      });
+      await wrapper.get("#contact-email").trigger("blur");
+      await wrapper.get("#contact-message").trigger("blur");
+      await wrapper.find("form").trigger("submit");
+      await flushPromises();
+      expect(wrapper.get("#contact-email-error").text()).toBe("");
+      expect(wrapper.get("#contact-message-error").text()).toBe("");
+      expect(wrapper.get("#contact-email").attributes("aria-invalid")).toBe(
+        undefined,
+      );
+      wrapper.unmount();
+    });
+
+    it("announces field errors politely", () => {
+      const wrapper = mount(ContactForm);
+      expect(wrapper.get("#contact-email-error").attributes("aria-live")).toBe(
+        "polite",
+      );
+      expect(
+        wrapper.get("#contact-message-error").attributes("aria-live"),
+      ).toBe("polite");
+      wrapper.unmount();
+    });
+
     it("keeps the error text out of the field's label so the accessible name stays clean", async () => {
       const wrapper = mount(ContactForm);
       await wrapper.get("#contact-email").trigger("blur");
