@@ -346,6 +346,7 @@ describe("csp-report-summary Netlify scheduled function", () => {
   it("keeps the run deadline within Netlify's real limit, with a real floor left for the summarize() call", () => {
     expect(HARD_TIMEOUT_MS).toBeGreaterThanOrEqual(20000);
     expect(NETLIFY_FUNCTION_LIMIT_MS).toBe(NETLIFY_REAL_LIMIT_MS);
+    expect(COLD_START_HEADROOM_MS).toBeGreaterThanOrEqual(2000);
     expect(RUN_DEADLINE_MS + COLD_START_HEADROOM_MS).toBeLessThanOrEqual(
       NETLIFY_REAL_LIMIT_MS,
     );
@@ -408,18 +409,19 @@ describe("csp-report-summary Netlify scheduled function", () => {
     );
   });
 
-  it("lets a slow but successful summary finish right before the hard timeout", async () => {
+  it("lets a slow but successful summary run past the old notify-reserved 23s ceiling", async () => {
+    const SLOW_SUCCESS_MS = 24000;
     vi.useFakeTimers();
     vi.spyOn(console, "log").mockImplementation(() => {});
     summarizeMock.mockImplementationOnce(
       () =>
         new Promise((resolve) =>
-          setTimeout(() => resolve(EMPTY_SUMMARY), HARD_TIMEOUT_MS - 1),
+          setTimeout(() => resolve(EMPTY_SUMMARY), SLOW_SUCCESS_MS),
         ),
     );
 
     const responsePromise = cspReportSummaryHandler(scheduledRequest());
-    await vi.advanceTimersByTimeAsync(HARD_TIMEOUT_MS - 1);
+    await vi.advanceTimersByTimeAsync(SLOW_SUCCESS_MS);
     const response = await responsePromise;
 
     expect(response.status).toBe(200);
