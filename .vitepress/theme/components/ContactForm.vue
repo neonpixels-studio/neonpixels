@@ -20,6 +20,8 @@ const FIELD_LABEL_CLASS =
 const FIELD_CONTROL_CLASS =
   "border-border bg-bg text-fg user-invalid:border-pink aria-invalid:border-pink rounded-none border px-3 py-2 text-[13px]";
 const FIELD_ERROR_CLASS = "text-pink m-0 min-h-[1em] text-[12px]";
+const EMAIL_ERROR_ID = "contact-email-error";
+const MESSAGE_ERROR_ID = "contact-message-error";
 
 // Intentionally permissive (matches what the browser's own type="email"
 // check accepts closely enough): the server/Netlify is the real gate, this
@@ -34,6 +36,8 @@ const fields = reactive({ name: "", email: "", message: "" });
 // blindly fills every input it finds outs itself by populating it.
 const honeypotValue = ref("");
 const status = ref<SubmitStatus>("idle");
+const emailInput = ref<HTMLInputElement | null>(null);
+const messageInput = ref<HTMLTextAreaElement | null>(null);
 
 // Errors only surface once a field has been blurred or a submit was
 // attempted, so an untouched form never opens flagged as invalid (the same
@@ -89,8 +93,8 @@ function hasFieldErrors() {
 }
 
 function focusFirstInvalidField() {
-  const selector = emailError.value ? "#contact-email" : "#contact-message";
-  document.querySelector<HTMLElement>(selector)?.focus();
+  const firstInvalid = emailError.value ? emailInput : messageInput;
+  firstInvalid.value?.focus();
 }
 
 async function handleSubmit() {
@@ -120,7 +124,10 @@ async function handleSubmit() {
   }
   status.value = "submitting";
   try {
-    await submitNetlifyForm({ formName: FORM_NAME, fields: { ...fields } });
+    await submitNetlifyForm({
+      formName: FORM_NAME,
+      fields: { ...fields, email: fields.email.trim() },
+    });
     status.value = "success";
     resetFields();
   } catch (error) {
@@ -196,45 +203,49 @@ async function handleSubmit() {
               :class="FIELD_CONTROL_CLASS"
             />
           </label>
-          <label for="contact-email" class="flex flex-col gap-[6px] sm:flex-1">
-            <span :class="FIELD_LABEL_CLASS">email</span>
-            <input
-              id="contact-email"
-              v-model="fields.email"
-              type="email"
-              name="email"
-              required
-              autocomplete="email"
-              :aria-invalid="emailError ? 'true' : undefined"
-              :aria-describedby="emailError ? 'contact-email-error' : undefined"
-              :class="FIELD_CONTROL_CLASS"
-              @blur="touched.email = true"
-            />
-            <span id="contact-email-error" :class="FIELD_ERROR_CLASS">{{
+          <div class="flex flex-col gap-[6px] sm:flex-1">
+            <label for="contact-email" class="flex flex-col gap-[6px]">
+              <span :class="FIELD_LABEL_CLASS">email</span>
+              <input
+                id="contact-email"
+                ref="emailInput"
+                v-model="fields.email"
+                type="email"
+                name="email"
+                required
+                autocomplete="email"
+                :aria-invalid="emailError ? 'true' : undefined"
+                :aria-describedby="emailError ? EMAIL_ERROR_ID : undefined"
+                :class="FIELD_CONTROL_CLASS"
+                @blur="touched.email = true"
+              />
+            </label>
+            <span :id="EMAIL_ERROR_ID" :class="FIELD_ERROR_CLASS">{{
               emailError
             }}</span>
-          </label>
+          </div>
         </div>
 
-        <label for="contact-message" class="flex flex-col gap-[6px]">
-          <span :class="FIELD_LABEL_CLASS">message</span>
-          <textarea
-            id="contact-message"
-            v-model="fields.message"
-            name="message"
-            rows="3"
-            required
-            :aria-invalid="messageError ? 'true' : undefined"
-            :aria-describedby="
-              messageError ? 'contact-message-error' : undefined
-            "
-            :class="FIELD_CONTROL_CLASS"
-            @blur="touched.message = true"
-          />
-          <span id="contact-message-error" :class="FIELD_ERROR_CLASS">{{
+        <div class="flex flex-col gap-[6px]">
+          <label for="contact-message" class="flex flex-col gap-[6px]">
+            <span :class="FIELD_LABEL_CLASS">message</span>
+            <textarea
+              id="contact-message"
+              ref="messageInput"
+              v-model="fields.message"
+              name="message"
+              rows="3"
+              required
+              :aria-invalid="messageError ? 'true' : undefined"
+              :aria-describedby="messageError ? MESSAGE_ERROR_ID : undefined"
+              :class="FIELD_CONTROL_CLASS"
+              @blur="touched.message = true"
+            />
+          </label>
+          <span :id="MESSAGE_ERROR_ID" :class="FIELD_ERROR_CLASS">{{
             messageError
           }}</span>
-        </label>
+        </div>
 
         <div class="flex flex-wrap items-center gap-4">
           <button

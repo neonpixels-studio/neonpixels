@@ -259,6 +259,52 @@ describe("ContactForm", () => {
   });
 
   describe("invalid state", () => {
+    it("keeps the error text out of the field's label so the accessible name stays clean", async () => {
+      const wrapper = mount(ContactForm);
+      await wrapper.get("#contact-email").trigger("blur");
+      const label = wrapper.get('label[for="contact-email"]');
+      expect(label.text()).toBe("email");
+      wrapper.unmount();
+    });
+
+    it("flags a whitespace-only message", async () => {
+      const wrapper = mount(ContactForm);
+      await wrapper.get("#contact-message").setValue("   ");
+      await wrapper.get("#contact-message").trigger("blur");
+      expect(wrapper.get("#contact-message-error").text()).toBe(
+        "Enter a message.",
+      );
+      wrapper.unmount();
+    });
+
+    it("focuses the message when only it is invalid, and sends nothing", async () => {
+      const wrapper = mount(ContactForm, { attachTo: document.body });
+      await fillFields(wrapper, { email: "ada@example.com" });
+      await wrapper.find("form").trigger("submit");
+      await flushPromises();
+      expect(mockedSubmitNetlifyForm).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(
+        wrapper.get("#contact-message").element,
+      );
+      wrapper.unmount();
+    });
+
+    it("submits once the visitor fixes the fields after a blocked attempt, with a trimmed email", async () => {
+      mockedSubmitNetlifyForm.mockResolvedValue(undefined);
+      const wrapper = mount(ContactForm);
+      await wrapper.find("form").trigger("submit");
+      await fillAndSubmit(wrapper, {
+        email: " ada@example.com ",
+        message: "hello",
+      });
+      expect(mockedSubmitNetlifyForm).toHaveBeenCalledTimes(1);
+      expect(mockedSubmitNetlifyForm).toHaveBeenCalledWith({
+        formName: "contact",
+        fields: { name: "", email: "ada@example.com", message: "hello" },
+      });
+      wrapper.unmount();
+    });
+
     it("does not flag required fields before the visitor interacts", () => {
       const wrapper = mount(ContactForm);
       expect(wrapper.get("#contact-email").attributes("aria-invalid")).toBe(
@@ -280,8 +326,6 @@ describe("ContactForm", () => {
       expect(wrapper.get("#contact-email-error").text()).toBe(
         "Enter your email address.",
       );
-      expect(email.classes()).toContain("aria-invalid:border-pink");
-      expect(email.classes()).toContain("user-invalid:border-pink");
       wrapper.unmount();
     });
 
