@@ -3,7 +3,6 @@ import { describe, it, expect, vi } from "vitest";
 import {
   compareByReceivedAt,
   createCspReportStore,
-  isRolloutKey,
   keyClassOf,
   keyClassPrefix,
   receivedAtSortKey,
@@ -53,7 +52,7 @@ describe("createCspReportStore", () => {
     ];
     // Asserts the sanitized shape specifically (no `:` or `.` left over from
     // the raw ISO timestamp) and the `rollout/` key prefix (this violation's
-    // `script-src-elem` directive is rollout-relevant - see isRolloutKey) -
+    // `script-src-elem` directive is rollout-relevant - see keyClassOf) -
     // a looser pattern here would still pass if the
     // `.replace(/[:.]/g, "-")` sanitization or the class prefix in
     // violationKey were removed.
@@ -140,42 +139,21 @@ describe("createCspReportStore", () => {
   });
 });
 
-describe("isRolloutKey", () => {
-  it("recognizes a key written for a rollout-relevant violation", async () => {
-    const blobWriter = fakeBlobWriter();
-    const store = createCspReportStore(blobWriter);
-    await store.persist([violation({ effectiveDirective: "script-src" })]);
-    const [key] = blobWriter.setJSON.mock.calls[0] as [string];
+describe("keys written by persist", () => {
+  it.each([
+    ["script-src", "rollout"],
+    ["connect-src", "other"],
+  ])(
+    "classify a %s violation's key as %s",
+    async (effectiveDirective, expected) => {
+      const blobWriter = fakeBlobWriter();
+      const store = createCspReportStore(blobWriter);
+      await store.persist([violation({ effectiveDirective })]);
+      const [key] = blobWriter.setJSON.mock.calls[0] as [string];
 
-    expect(isRolloutKey(key)).toBe(true);
-  });
-
-  it("does not recognize a key written for a non-rollout violation", async () => {
-    const blobWriter = fakeBlobWriter();
-    const store = createCspReportStore(blobWriter);
-    await store.persist([violation({ effectiveDirective: "connect-src" })]);
-    const [key] = blobWriter.setJSON.mock.calls[0] as [string];
-
-    expect(isRolloutKey(key)).toBe(false);
-  });
-
-  it("treats a key that predates tagging as protected (rollout), the safer direction for evidence the pruner can't positively classify as irrelevant", () => {
-    const legacyKey = `${sanitizeTimestamp("2026-01-01T00:00:00.000Z")}-${"a".repeat(36)}.json`;
-
-    expect(isRolloutKey(legacyKey)).toBe(true);
-  });
-
-  it("only excludes a legacy key explicitly tagged `other`", () => {
-    const otherTaggedKey = `${sanitizeTimestamp("2026-01-01T00:00:00.000Z")}-other-${"a".repeat(36)}.json`;
-
-    expect(isRolloutKey(otherTaggedKey)).toBe(false);
-  });
-
-  it("treats a key matching no known shape (not a class prefix, not the legacy uuid-only format, not a recognized legacy tag) as evictable, not permanently protected", () => {
-    const malformedKey = `${sanitizeTimestamp("2026-01-01T00:00:00.000Z")}-not-a-real-shape.json`;
-
-    expect(isRolloutKey(malformedKey)).toBe(false);
-  });
+      expect(keyClassOf(key)).toBe(expected);
+    },
+  );
 });
 
 describe("keyClassOf", () => {
@@ -197,6 +175,14 @@ describe("keyClassOf", () => {
     ["a legacy untagged key", `${timestamp}-${"a".repeat(36)}.json`, "rollout"],
   ])("classifies %s", (_label, key, expected) => {
     expect(keyClassOf(key)).toBe(expected);
+  });
+
+  it("treats a legacy untagged key as protected (rollout), the safer direction for evidence the pruner can't positively classify as irrelevant", () => {
+    expect(keyClassOf(`${timestamp}-${"a".repeat(36)}.json`)).toBe("rollout");
+  });
+
+  it("treats a key matching no known shape as `other` (evictable), not permanently protected", () => {
+    expect(keyClassOf(`${timestamp}-not-a-real-shape.json`)).toBe("other");
   });
 
   it("trusts the class prefix over a conflicting legacy-looking suffix", () => {

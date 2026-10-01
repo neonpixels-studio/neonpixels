@@ -44,7 +44,7 @@ export function sanitizeTimestamp(isoTimestamp: string): string {
 // enforcing `script-src` in netlify.toml. Owned here (the key-encoding
 // module) rather than in cspReportSummary.ts, because the write path below
 // now needs the same classification to tag each stored key — see
-// isRolloutKey and #135. cspReportSummary.ts imports both from here.
+// keyClassOf and #135. cspReportSummary.ts imports both from here.
 export const ROLLOUT_DIRECTIVE = "script-src";
 
 // Browsers report the specific sub-directive a violation matched
@@ -148,10 +148,6 @@ export function keyClassOf(key: string): KeyClass {
     return OTHER_KEY_CLASS;
   }
   return isLegacyRolloutKey(key) ? ROLLOUT_KEY_CLASS : OTHER_KEY_CLASS;
-}
-
-export function isRolloutKey(key: string): boolean {
-  return keyClassOf(key) === ROLLOUT_KEY_CLASS;
 }
 
 // The key with any class prefix removed, so it starts with the fixed-width

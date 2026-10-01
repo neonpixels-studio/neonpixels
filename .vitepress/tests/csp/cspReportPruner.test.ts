@@ -10,6 +10,7 @@ import {
   MAX_RETENTION_DAYS,
   MAX_MAX_BLOBS,
   DELETE_BATCH_SIZE,
+  groupDeadlineMs,
   LIST_TIME_BUDGET_MS,
   PRUNE_TIME_BUDGET_MS,
   type BlobListOptions,
@@ -82,12 +83,14 @@ function keysMatchingListOptions(
     : prefixed;
 }
 
+type FakePrunerClient = BlobPrunerClient & {
+  delete: ReturnType<typeof vi.fn>;
+};
+
 // A BlobPrunerClient backed by an in-memory key list, split across the given
 // pages, and a real delete mock, so tests assert both the final result and
 // exactly which keys were deleted, without touching `@netlify/blobs`.
-function fakeClient(
-  pages: string[][],
-): BlobPrunerClient & { delete: ReturnType<typeof vi.fn> } {
+function fakeClient(pages: string[][]): FakePrunerClient {
   const deleteMock = vi.fn().mockResolvedValue(undefined);
   return {
     async *list(options) {
@@ -106,11 +109,10 @@ function listedPage(keys: string[], options: BlobListOptions): BlobPage {
   };
 }
 
-const LIST_GROUP_COUNT = 3;
 const GROUP_SLICE_END_MS = {
-  other: Math.floor(LIST_TIME_BUDGET_MS / LIST_GROUP_COUNT),
-  rollout: Math.floor((LIST_TIME_BUDGET_MS * 2) / LIST_GROUP_COUNT),
-  legacy: LIST_TIME_BUDGET_MS,
+  other: groupDeadlineMs(0, 0),
+  rollout: groupDeadlineMs(0, 1),
+  legacy: groupDeadlineMs(0, 2),
 };
 
 // Moves the clock just past one group's slice of the list budget while that
@@ -120,7 +122,7 @@ const GROUP_SLICE_END_MS = {
 function truncatedGroupClient(
   keys: string[],
   truncatedGroup: keyof typeof GROUP_SLICE_END_MS,
-): BlobPrunerClient & { delete: ReturnType<typeof vi.fn> } {
+): FakePrunerClient {
   const groupPrefix = {
     other: keyClassPrefix("other"),
     rollout: keyClassPrefix("rollout"),
@@ -150,9 +152,7 @@ function truncatedGroupClient(
 // Simulates a slow first page over a large store: the clock jumps past the
 // whole list budget as listing starts, so every group stops after its first
 // page - but the delete pass still has its own remaining budget to work with.
-function budgetSpentClient(
-  pages: string[][],
-): BlobPrunerClient & { delete: ReturnType<typeof vi.fn> } {
+function budgetSpentClient(pages: string[][]): FakePrunerClient {
   return {
     delete: vi.fn().mockResolvedValue(undefined),
     async *list(options) {

@@ -57,6 +57,7 @@ export type BlobListOptions = {
   prefix?: string;
   directories?: boolean;
 };
+type GroupListOptions = Omit<BlobListOptions, "paginate">;
 export type BlobPrunerClient = {
   list(_options: BlobListOptions): AsyncIterable<BlobPage>;
   delete(_key: string): Promise<void>;
@@ -133,7 +134,7 @@ type ListedKeys = { keys: string[]; complete: boolean };
 // list in one run still leaves time for the delete pass below.
 async function listKeys(
   client: BlobPrunerClient,
-  options: Omit<BlobListOptions, "paginate">,
+  options: GroupListOptions,
   deadlineMs: number,
 ): Promise<ListedKeys> {
   const keys: string[] = [];
@@ -152,7 +153,7 @@ async function listKeys(
 // LIST_TIME_BUDGET_MS by a page per remaining group.
 async function listKeysUnlessOutOfTime(
   client: BlobPrunerClient,
-  options: Omit<BlobListOptions, "paginate">,
+  options: GroupListOptions,
   deadlineMs: number,
 ): Promise<ListedKeys> {
   if (isPastDeadline(deadlineMs)) {
@@ -162,7 +163,7 @@ async function listKeysUnlessOutOfTime(
 }
 
 type KeyGroup = {
-  options: Omit<BlobListOptions, "paginate">;
+  options: GroupListOptions;
   // Whether this group can contain `other`-class keys: the `other` prefix
   // and the legacy root keys (which hold both classes) can, `rollout/` can't.
   holdsOtherKeys: boolean;
@@ -198,9 +199,14 @@ type KeyGroups = {
 };
 
 // Splits the list budget into equal cumulative slices, one per group, so a
-// group that finishes early rolls its unused time forward and a huge group
-// can never starve the ones after it of their first page.
-function groupDeadlineMs(listStartMs: number, groupIndex: number): number {
+// group that finishes early rolls its unused time forward to the next. A
+// group whose first page overruns the next group's slice still causes that
+// group to be skipped (see listKeysUnlessOutOfTime). Exported so tests move
+// the clock relative to the real slice boundaries.
+export function groupDeadlineMs(
+  listStartMs: number,
+  groupIndex: number,
+): number {
   return (
     listStartMs +
     Math.floor((LIST_TIME_BUDGET_MS * (groupIndex + 1)) / KEY_GROUPS.length)
