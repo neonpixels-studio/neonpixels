@@ -92,14 +92,58 @@ function fakeClient(
   return {
     async *list(options) {
       for (const page of pages) {
-        yield {
-          blobs: keysMatchingListOptions(page, options).map(
-            (key) => ({ key }) as BlobPage["blobs"][number],
-          ),
-        };
+        yield listedPage(page, options);
       }
     },
     delete: deleteMock,
+  };
+}
+
+// One list() page as real Blobs would return it for these options.
+function listedPage(keys: string[], options: BlobListOptions): BlobPage {
+  return {
+    blobs: keysMatchingListOptions(keys, options).map((key) => ({ key })),
+  };
+}
+
+const LIST_GROUP_COUNT = 3;
+const GROUP_SLICE_END_MS = {
+  other: Math.floor(LIST_TIME_BUDGET_MS / LIST_GROUP_COUNT),
+  rollout: Math.floor((LIST_TIME_BUDGET_MS * 2) / LIST_GROUP_COUNT),
+  legacy: LIST_TIME_BUDGET_MS,
+};
+
+// Moves the clock just past one group's slice of the list budget while that
+// group is being listed, and serves one more page that a truncated listing
+// never reaches. The other groups still have budget left, so exactly one
+// group comes back incomplete.
+function truncatedGroupClient(
+  keys: string[],
+  truncatedGroup: keyof typeof GROUP_SLICE_END_MS,
+): BlobPrunerClient & { delete: ReturnType<typeof vi.fn> } {
+  const groupPrefix = {
+    other: keyClassPrefix("other"),
+    rollout: keyClassPrefix("rollout"),
+    legacy: undefined,
+  }[truncatedGroup];
+  return {
+    delete: vi.fn().mockResolvedValue(undefined),
+    async *list(options) {
+      const isTruncatedListing =
+        options.prefix === groupPrefix &&
+        Boolean(options.directories) === (truncatedGroup === "legacy");
+      if (!isTruncatedListing) {
+        yield listedPage(keys, options);
+        return;
+      }
+      vi.setSystemTime(
+        new Date(NOW.getTime() + GROUP_SLICE_END_MS[truncatedGroup] + 1),
+      );
+      yield listedPage(keys, options);
+      yield {
+        blobs: [{ key: taggedKeyFromDaysAgo(1, "other", "never-seen") }],
+      };
+    },
   };
 }
 
@@ -114,9 +158,7 @@ function budgetSpentClient(
     async *list(options) {
       vi.setSystemTime(new Date(NOW.getTime() + LIST_TIME_BUDGET_MS + 1));
       for (const page of pages) {
-        yield {
-          blobs: keysMatchingListOptions(page, options).map((key) => ({ key })),
-        };
+        yield listedPage(page, options);
       }
     },
   };
@@ -493,9 +535,9 @@ describe("createCspReportPruner", () => {
       taggedKeyFromDaysAgo(2, "rollout", "evidence-a"),
       taggedKeyFromDaysAgo(1, "rollout", "evidence-b"),
     ];
-    // Every group's listing is cut short, so the `other` prefix (which saw
-    // nothing) can't rule out a flood of `other` keys outside this run's view.
-    const client = budgetSpentClient([rolloutKeys]);
+    // The `other` listing is cut short before it saw anything, so this run
+    // can't rule out a flood of `other` keys outside its view.
+    const client = truncatedGroupClient(rolloutKeys, "other");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const pruner = createCspReportPruner(client, {
       retentionDays: 30,
@@ -513,35 +555,6 @@ describe("createCspReportPruner", () => {
   });
 
   describe("per-class listing (#165)", () => {
-    // Moves the clock past the rollout group's slice of the list budget (but
-    // not the legacy group's) as the rollout prefix is listed, so the
-    // rollout listing is cut short while `other` and the legacy keys finish.
-    function rolloutTruncatedClient(
-      keys: string[],
-    ): BlobPrunerClient & { delete: ReturnType<typeof vi.fn> } {
-      const rolloutSliceMs = Math.floor((LIST_TIME_BUDGET_MS * 2) / 3);
-      return {
-        delete: vi.fn().mockResolvedValue(undefined),
-        async *list(options) {
-          const isRolloutListing = options.prefix === keyClassPrefix("rollout");
-          if (isRolloutListing) {
-            vi.setSystemTime(new Date(NOW.getTime() + rolloutSliceMs + 1));
-          }
-          yield {
-            blobs: keysMatchingListOptions(keys, options).map((key) => ({
-              key,
-            })),
-          };
-          if (!isRolloutListing) {
-            return;
-          }
-          yield {
-            blobs: [{ key: taggedKeyFromDaysAgo(1, "rollout", "never-seen") }],
-          };
-        },
-      };
-    }
-
     it("lists each key class by its own prefix, then the unprefixed legacy keys", async () => {
       const client = fakeClient([]);
       const list = vi.spyOn(client, "list");
@@ -569,7 +582,10 @@ describe("createCspReportPruner", () => {
         taggedKeyFromDaysAgo(4, "rollout", "evidence-b"),
         taggedKeyFromDaysAgo(1, "rollout", "evidence-c"),
       ];
-      const client = rolloutTruncatedClient([...rolloutKeys, ...otherKeys]);
+      const client = truncatedGroupClient(
+        [...rolloutKeys, ...otherKeys],
+        "rollout",
+      );
       const pruner = createCspReportPruner(client, {
         retentionDays: 30,
         maxBlobs: 3,
@@ -589,7 +605,10 @@ describe("createCspReportPruner", () => {
         taggedKeyFromDaysAgo(4, "rollout", "evidence-a"),
         taggedKeyFromDaysAgo(3, "rollout", "evidence-b"),
       ];
-      const client = rolloutTruncatedClient([...rolloutKeys, ...otherKeys]);
+      const client = truncatedGroupClient(
+        [...rolloutKeys, ...otherKeys],
+        "rollout",
+      );
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const pruner = createCspReportPruner(client, {
         retentionDays: 30,
@@ -600,6 +619,42 @@ describe("createCspReportPruner", () => {
 
       expect(deletedKeys(client)).toEqual([...otherKeys, rolloutKeys[0]]);
       expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("logs the partial-view marker when only the legacy listing was cut short, since legacy keys can hold `other` keys too", async () => {
+      const rolloutKeys = [
+        taggedKeyFromDaysAgo(2, "rollout", "evidence-a"),
+        taggedKeyFromDaysAgo(1, "rollout", "evidence-b"),
+      ];
+      const client = truncatedGroupClient(rolloutKeys, "legacy");
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const pruner = createCspReportPruner(client, {
+        retentionDays: 30,
+        maxBlobs: 1,
+      });
+
+      const result = await pruner.prune();
+
+      expect(result.complete).toBe(false);
+      expect(deletedKeys(client)).toEqual([rolloutKeys[0]]);
+      expect(warn).toHaveBeenCalledWith(
+        "csp-report-prune-rollout-evicted-on-partial-view",
+        JSON.stringify({ rolloutKeysListed: 2 }),
+      );
+    });
+
+    it("skips the remaining group listings once the list budget is spent instead of paying one more request per group", async () => {
+      const client = budgetSpentClient([[]]);
+      const list = vi.spyOn(client, "list");
+      const pruner = createCspReportPruner(client, {
+        retentionDays: 30,
+        maxBlobs: 10,
+      });
+
+      const result = await pruner.prune();
+
+      expect(result.complete).toBe(false);
+      expect(list).toHaveBeenCalledTimes(1);
     });
 
     it("applies retention by timestamp to both classes, not by prefix", async () => {
@@ -731,12 +786,7 @@ describe("createCspReportPruner", () => {
     const client: BlobPrunerClient & { delete: typeof deleteMock } = {
       delete: deleteMock,
       async *list(options) {
-        yield {
-          blobs: keysMatchingListOptions(
-            [...staleKeys, ...freshKeys],
-            options,
-          ).map((key) => ({ key })),
-        };
+        yield listedPage([...staleKeys, ...freshKeys], options);
       },
     };
     const pruner = createCspReportPruner(client, {
@@ -771,9 +821,7 @@ describe("createCspReportPruner", () => {
     const client: BlobPrunerClient & { delete: typeof deleteMock } = {
       delete: deleteMock,
       async *list(options) {
-        yield {
-          blobs: keysMatchingListOptions(keys, options).map((key) => ({ key })),
-        };
+        yield listedPage(keys, options);
       },
     };
     const pruner = createCspReportPruner(client, {
@@ -812,9 +860,7 @@ describe("createCspReportPruner", () => {
     const client: BlobPrunerClient & { delete: typeof deleteMock } = {
       delete: deleteMock,
       async *list(options) {
-        yield {
-          blobs: keysMatchingListOptions(keys, options).map((key) => ({ key })),
-        };
+        yield listedPage(keys, options);
       },
     };
     const pruner = createCspReportPruner(client, {

@@ -146,15 +146,44 @@ async function listKeys(
   return { keys, complete: true };
 }
 
+// A group whose slice of the budget is already gone before it starts is
+// skipped (incomplete) rather than costing one more list() request, so a slow
+// earlier group can't push the run's total listing time past
+// LIST_TIME_BUDGET_MS by a page per remaining group.
+async function listKeysUnlessOutOfTime(
+  client: BlobPrunerClient,
+  options: Omit<BlobListOptions, "paginate">,
+  deadlineMs: number,
+): Promise<ListedKeys> {
+  if (isPastDeadline(deadlineMs)) {
+    return { keys: [], complete: false };
+  }
+  return listKeys(client, options, deadlineMs);
+}
+
+type KeyGroup = {
+  options: Omit<BlobListOptions, "paginate">;
+  // Whether this group can contain `other`-class keys: the `other` prefix
+  // and the legacy root keys (which hold both classes) can, `rollout/` can't.
+  holdsOtherKeys: boolean;
+};
+
 // Each group is one separate list() call. `other` is listed first and the
 // legacy root-level keys last, since legacy keys only shrink (nothing writes
 // them anymore). `directories: true` with no prefix returns only blobs at the
 // store root, which is exactly the unprefixed legacy keys, without walking
-// the prefixed ones a second time.
-const KEY_GROUPS: { options: Omit<BlobListOptions, "paginate"> }[] = [
-  { options: { prefix: keyClassPrefix(OTHER_KEY_CLASS) } },
-  { options: { prefix: keyClassPrefix(ROLLOUT_KEY_CLASS) } },
-  { options: { directories: true } },
+// the prefixed ones a second time. Keys under any other prefix are never
+// written by this module and are not listed.
+const KEY_GROUPS: KeyGroup[] = [
+  {
+    options: { prefix: keyClassPrefix(OTHER_KEY_CLASS) },
+    holdsOtherKeys: true,
+  },
+  {
+    options: { prefix: keyClassPrefix(ROLLOUT_KEY_CLASS) },
+    holdsOtherKeys: false,
+  },
+  { options: { directories: true }, holdsOtherKeys: true },
 ];
 
 type KeyGroups = {
@@ -207,18 +236,20 @@ async function listKeyGroups(
   const listed: ListedKeys[] = [];
   for (const [groupIndex, group] of KEY_GROUPS.entries()) {
     listed.push(
-      await listKeys(
+      await listKeysUnlessOutOfTime(
         client,
         group.options,
         groupDeadlineMs(listStartMs, groupIndex),
       ),
     );
   }
-  const [otherListing, , legacyListing] = listed;
   return {
     ...groupKeysByClass(listed),
-    otherViewComplete: otherListing.complete && legacyListing.complete,
-    complete: listed.every((group) => group.complete),
+    otherViewComplete: listed.every(
+      (listing, groupIndex) =>
+        listing.complete || !KEY_GROUPS[groupIndex].holdsOtherKeys,
+    ),
+    complete: listed.every((listing) => listing.complete),
   };
 }
 
