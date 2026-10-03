@@ -44,7 +44,7 @@ export function sanitizeTimestamp(isoTimestamp: string): string {
 // enforcing `script-src` in netlify.toml. Owned here (the key-encoding
 // module) rather than in cspReportSummary.ts, because the write path below
 // now needs the same classification to tag each stored key — see
-// isRolloutKey and #135. cspReportSummary.ts imports both from here.
+// keyClassOf and #135. cspReportSummary.ts imports both from here.
 export const ROLLOUT_DIRECTIVE = "script-src";
 
 // Browsers report the specific sub-directive a violation matched
@@ -60,79 +60,118 @@ export function isRolloutDirective(directive: string): boolean {
   );
 }
 
-// Keys are `<sanitized ISO receivedAt>-<tag>-<uuid>.json`. The sanitized
-// timestamp is fixed-width, so this is how both this module and
-// cspReportPruner.ts locate where the timestamp ends and the tag begins,
-// without parsing each key back into a Date. Exported so the pruner and this
-// module can never drift apart on what "the timestamp part" means. Declared
-// before the functions that read it (violationKey, isRolloutKey) so those
-// read top-to-bottom.
+// Keys are `<class>/<sanitized ISO receivedAt>-<uuid>.json`, where `<class>`
+// is `rollout` or `other` (see directiveClass). The class is a real Blobs key
+// prefix, not a mid-key tag, so cspReportPruner.ts can `list({ prefix })`
+// one class at a time: eviction priority between the classes then holds even
+// when a single run can't list the whole store (#165). Declared before the
+// functions that read them so those read top-to-bottom.
+export const ROLLOUT_KEY_CLASS = "rollout";
+export const OTHER_KEY_CLASS = "other";
+export type KeyClass = typeof ROLLOUT_KEY_CLASS | typeof OTHER_KEY_CLASS;
+
+const KEY_CLASSES: KeyClass[] = [ROLLOUT_KEY_CLASS, OTHER_KEY_CLASS];
+const KEY_CLASS_SEPARATOR = "/";
+
+// The exact string to pass as `list({ prefix })` to list one class.
+export function keyClassPrefix(keyClass: KeyClass): string {
+  return `${keyClass}${KEY_CLASS_SEPARATOR}`;
+}
+
+// The sanitized timestamp is fixed-width, so this is how both this module and
+// cspReportPruner.ts locate where the timestamp ends without parsing each key
+// back into a Date. Exported so the pruner and this module can never drift
+// apart on what "the timestamp part" means.
 export const RECEIVED_AT_PREFIX_LENGTH = sanitizeTimestamp(
   new Date(0).toISOString(),
 ).length;
 
-// Only OTHER_KEY_TAG is matched against explicitly (see isRolloutKey) — a
-// key tagged ROLLOUT_KEY_TAG and an untagged legacy key (written before this
-// tagging existed) both end up treated as rollout, so the two constants
-// aren't symmetric consumers of the same check. ROLLOUT_KEY_TAG still exists
-// so a written key states its classification explicitly rather than only by
-// omission, which matters for reading raw Blobs keys during an incident.
-const ROLLOUT_KEY_TAG = "rollout";
-const OTHER_KEY_TAG = "other";
-type KeyTag = typeof ROLLOUT_KEY_TAG | typeof OTHER_KEY_TAG;
-
-// Tag embedded in every stored key (see violationKey) so the pruner can tell
-// a rollout-relevant violation from any other report using only what list()
-// already returns — a get()-per-key classification pass would blow the
-// pruner's own time budget on a store large enough to need pruning (see
-// cspReportPruner.ts and overCapKeys there for what this buys against the
-// #135 eviction-flood). The tag is derived from the violation's own
-// self-reported `effectiveDirective`, the same field browsers (and anyone
-// posting to this public, unauthenticated endpoint) supply — this narrows
-// the flood this defends against to one that doesn't also forge the
-// directive; it is not a forgery-proof boundary, the same tradeoff
-// isOwnOriginViolation documents in csp-report.ts for `documentUrl`. The
-// fail-closed gate in summarizeRollout (cspReportSummary.ts) is what still
-// holds even against a directive-forging flood.
-function directiveTag(violation: CspViolation): KeyTag {
+// The class tag derived from the violation's own self-reported
+// `effectiveDirective`, the same field browsers (and anyone posting to this
+// public, unauthenticated endpoint) supply. It lets the pruner tell a
+// rollout-relevant violation from any other report using only what list()
+// already returns, so a get()-per-key classification pass never blows the
+// pruner's time budget (see cspReportPruner.ts and overCapKeys there for what
+// this buys against the #135 eviction-flood). This narrows the flood to one
+// that doesn't also forge the directive; it is not a forgery-proof boundary,
+// the same tradeoff isOwnOriginViolation documents in csp-report.ts for
+// `documentUrl`. The fail-closed gate in summarizeRollout
+// (cspReportSummary.ts) is what still holds even against a directive-forging
+// flood.
+function directiveClass(violation: CspViolation): KeyClass {
   return isRolloutDirective(violation.effectiveDirective)
-    ? ROLLOUT_KEY_TAG
-    : OTHER_KEY_TAG;
+    ? ROLLOUT_KEY_CLASS
+    : OTHER_KEY_CLASS;
 }
 
-// Fixed-width-prefix, then a fixed-set tag, then the uuid: the tag rides
-// directly after RECEIVED_AT_PREFIX_LENGTH so it can be read with a plain
-// string slice (see isRolloutKey), not a full parse.
 function violationKey(receivedAt: string, violation: CspViolation): string {
-  return `${sanitizeTimestamp(receivedAt)}-${directiveTag(violation)}-${randomUUID()}.json`;
+  return `${keyClassPrefix(directiveClass(violation))}${sanitizeTimestamp(receivedAt)}-${randomUUID()}.json`;
 }
 
-// A legacy key predates the `-<tag>-` segment: just `-<uuid>.json` straight
-// after the timestamp (see violationKey's shape before this tagging
-// existed). Matched positively, rather than "not other", so only the two
-// shapes this module has ever actually written classify as rollout by
-// default — see isRolloutKey below for why that distinction matters.
+// Keys written before #165 carry no class prefix, so they sit at the root of
+// the store. Two shapes were ever written: `<timestamp>-<tag>-<uuid>.json`
+// (tagged, #135) and `<timestamp>-<uuid>.json` (untagged, pre-#135). The
+// suffix after the fixed-width timestamp is what tells them apart. Only
+// retention ages these out now (nothing writes them), so this whole legacy
+// path can be deleted one retention window after #165 ships.
+const LEGACY_TAGGED_ROLLOUT_KEY_SUFFIX = `-${ROLLOUT_KEY_CLASS}-`;
 const LEGACY_UNTAGGED_KEY_SUFFIX = /^-[0-9a-f-]{36}\.json$/;
 
-// Exported so cspReportPruner.ts can classify a listed key without a Blobs
-// get() per key. Rollout-tagged and legacy-untagged keys (written before
-// this tagging existed) both count as rollout — the safer default for
-// evidence the pruner can't positively rule out as irrelevant, bounded by
-// retention (ages every key out regardless of tag) and by overCapKeys' spill
-// branch (still trims to maxBlobs once every `other`-tagged key is gone).
-// Anything matching neither known shape — a future format, a different
-// producer, a truncated/corrupted key — falls to `other` instead of
-// inheriting that protection by default: unlike a legacy key (a shape this
-// module wrote and fully understands), an unrecognized one isn't provably
-// safe to protect, and defaulting it to "protected" would make it
-// permanently unprunable by the count cap. See README, csp-reports section,
-// for the fuller trade-off.
-export function isRolloutKey(key: string): boolean {
+// Classified positively, rather than "not other", so only the two shapes this
+// module has ever actually written count as rollout. Rollout-tagged and
+// untagged legacy keys both count as rollout: the safer default for evidence
+// the pruner can't positively rule out as irrelevant, bounded by retention
+// (ages every key out regardless of class) and by overCapKeys' spill branch
+// (still trims to maxBlobs once every `other` key is gone). Anything matching
+// neither shape (a future format, a different producer, a corrupted key)
+// falls to `other` instead of inheriting that protection by default: an
+// unrecognized key isn't provably safe to protect, and defaulting it to
+// "protected" would make it permanently unprunable by the count cap.
+function isLegacyRolloutKey(key: string): boolean {
   const suffix = key.slice(RECEIVED_AT_PREFIX_LENGTH);
   return (
-    suffix.startsWith(`-${ROLLOUT_KEY_TAG}-`) ||
+    suffix.startsWith(LEGACY_TAGGED_ROLLOUT_KEY_SUFFIX) ||
     LEGACY_UNTAGGED_KEY_SUFFIX.test(suffix)
   );
+}
+
+function hasKeyClassPrefix(key: string, keyClass: KeyClass): boolean {
+  return key.startsWith(keyClassPrefix(keyClass));
+}
+
+// Classifies any key in the store, prefixed or legacy, without a Blobs get().
+export function keyClassOf(key: string): KeyClass {
+  if (hasKeyClassPrefix(key, ROLLOUT_KEY_CLASS)) {
+    return ROLLOUT_KEY_CLASS;
+  }
+  if (hasKeyClassPrefix(key, OTHER_KEY_CLASS)) {
+    return OTHER_KEY_CLASS;
+  }
+  return isLegacyRolloutKey(key) ? ROLLOUT_KEY_CLASS : OTHER_KEY_CLASS;
+}
+
+// The key with any class prefix removed, so it starts with the fixed-width
+// timestamp for both formats. Plain string comparison of two of these orders
+// keys chronologically across classes (and across prefixed/legacy keys)
+// without parsing a Date. Both the pruner's cutoff check and the summary's
+// newest-first sort depend on it.
+export function receivedAtSortKey(key: string): string {
+  const keyClass = KEY_CLASSES.find((candidate) =>
+    hasKeyClassPrefix(key, candidate),
+  );
+  return keyClass === undefined
+    ? key
+    : key.slice(keyClassPrefix(keyClass).length);
+}
+
+// Comparator for oldest-first ordering across mixed key formats.
+export function compareByReceivedAt(first: string, second: string): number {
+  const firstSortKey = receivedAtSortKey(first);
+  const secondSortKey = receivedAtSortKey(second);
+  if (firstSortKey === secondSortKey) {
+    return 0;
+  }
+  return firstSortKey < secondSortKey ? -1 : 1;
 }
 
 function writeViolation(blobWriter: BlobWriter, receivedAt: string) {
