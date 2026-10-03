@@ -118,39 +118,54 @@ function logSummary(summary: CspReportSummary): void {
   );
 }
 
-// Netlify scheduled Functions have a hard 30s execution limit. The summary
-// budget and the notify budget below are sequential, not independent —
-// notify only ever runs after summarize() has already failed — so they must
-// share one combined ceiling under 30s rather than each separately assuming
-// the full window. Mirrors RUN_DEADLINE_MS/HARD_TIMEOUT_MS/NOTIFY_TIMEOUT_MS
-// in csp-report-prune.ts: RUN_DEADLINE_MS is the combined ceiling (2s
-// headroom for cold start and the final in-flight batch); HARD_TIMEOUT_MS is
-// what's left for summarize() once NOTIFY_TIMEOUT_MS is reserved for the
-// notify call that might follow it.
-export const RUN_DEADLINE_MS = 28000;
+// Netlify's real scheduled-Function execution limit.
+export const NETLIFY_FUNCTION_LIMIT_MS = 30000;
 
-// A short, separate budget for the GitHub notification call: this only runs
-// after summarize() has already failed (possibly after consuming all of
-// HARD_TIMEOUT_MS itself), so it must not be able to push the combined run
-// past RUN_DEADLINE_MS. A timeout here is caught and logged the same as any
-// other notify failure — the next daily run's own failure (if the issue
-// persists) gets another chance to notify.
+// Cold start and module load happen before the handler's own clock starts,
+// so they are carved out of the limit rather than measured.
+export const COLD_START_HEADROOM_MS = 2000;
+
+// The combined ceiling for the whole run (summarize + any failure notify).
+export const RUN_DEADLINE_MS =
+  NETLIFY_FUNCTION_LIMIT_MS - COLD_START_HEADROOM_MS;
+
+// Kept free after notify so the 500 response can still be returned.
+export const RESPONSE_HEADROOM_MS = 500;
+
+// Upper bound for the GitHub notification call, which only runs after
+// summarize() has already failed. The budget actually used is the smaller of
+// this and what is left of RUN_DEADLINE_MS (see remainingNotifyBudgetMs), so
+// a fast failure (e.g. a Blobs outage) gets the full amount. A timeout here
+// is caught and logged the same as any other notify failure.
 export const NOTIFY_TIMEOUT_MS = 5000;
+
+// The notify window guaranteed even when summarize() hangs all the way to
+// HARD_TIMEOUT_MS. Only the hang backstop gives this up front; a successful
+// run that finishes under it is unaffected, and a fast failure still gets
+// the full NOTIFY_TIMEOUT_MS.
+const HANG_NOTIFY_WINDOW_MS = 3000;
 
 // cspReportSummary's own list/fetch passes have cooperative time budgets
 // (see LIST_TIME_BUDGET_MS / SUMMARY_TIME_BUDGET_MS in
-// lib/cspReportSummary.ts for the full ordering invariant against this
-// constant) that return a real, partial summary (complete: false) rather
-// than nothing once a store is too large to finish in one run — but those
-// checks only happen between pages/batches, so a single hung get() or
-// list() page could still run past them unnoticed. This hard timeout is the
-// backstop for exactly that case (mirrors HARD_TIMEOUT_MS in
-// csp-report-prune.ts): it always wins the race against Netlify's real 30s
-// scheduled-Function limit (even after reserving NOTIFY_TIMEOUT_MS for the
-// notify call that follows a failure), so a genuine hang still produces a
-// logged csp-report-summary-failed marker instead of the run being silently
-// killed with nothing written to the logs.
-export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - NOTIFY_TIMEOUT_MS;
+// lib/cspReportSummary.ts for the ordering invariant against this constant)
+// that return a real, partial summary (complete: false) rather than nothing
+// once a store is too large to finish in one run, but those checks only
+// happen between pages/batches, so a single hung get() or list() page could
+// still run past them unnoticed. This hard timeout is the backstop for
+// exactly that case: it always wins the race against Netlify's real limit,
+// so a genuine hang still produces a logged csp-report-summary-failed marker
+// and leaves a short window to notify. Unlike csp-report-prune.ts, which
+// still reserves the full NOTIFY_TIMEOUT_MS, the notify budget here shrinks
+// to fit what is left.
+export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - HANG_NOTIFY_WINDOW_MS;
+
+export function remainingNotifyBudgetMs(elapsedMs: number): number {
+  const remaining = RUN_DEADLINE_MS - elapsedMs;
+  return Math.max(
+    0,
+    Math.min(NOTIFY_TIMEOUT_MS, remaining - RESPONSE_HEADROOM_MS),
+  );
+}
 
 // Best-effort: a broken notifier (bad/missing PRUNE_FAILURE_GITHUB_TOKEN,
 // GitHub API outage, hang past NOTIFY_TIMEOUT_MS) must not crash the handler
@@ -160,11 +175,20 @@ export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - NOTIFY_TIMEOUT_MS;
 // notifyPruneFailureQuietly in csp-report-prune.ts.
 async function notifySummaryFailureQuietly(
   summaryErrorMessage: string,
+  runStartedAt: number,
 ): Promise<void> {
+  const budgetMs = remainingNotifyBudgetMs(Date.now() - runStartedAt);
+  if (budgetMs <= 0) {
+    console.warn(
+      NOTIFY_FAILED_LOG_PREFIX,
+      JSON.stringify({ message: "no time left to notify" }),
+    );
+    return;
+  }
   try {
     await withTimeout(
       getSummaryFailureNotifier().notify(summaryErrorMessage),
-      NOTIFY_TIMEOUT_MS,
+      budgetMs,
       "csp report summary failure notify",
     );
   } catch (notifyError) {
@@ -176,6 +200,7 @@ async function notifySummaryFailureQuietly(
 }
 
 export default async (_request: Request): Promise<Response> => {
+  const runStartedAt = Date.now();
   try {
     const summary = await withTimeout(
       getCspReportSummary().summarize(),
@@ -188,7 +213,7 @@ export default async (_request: Request): Promise<Response> => {
   } catch (error) {
     const message = errorMessage(error);
     console.warn(SUMMARY_FAILED_LOG_PREFIX, JSON.stringify({ message }));
-    await notifySummaryFailureQuietly(message);
+    await notifySummaryFailureQuietly(message, runStartedAt);
     return new Response(null, { status: HTTP_INTERNAL_SERVER_ERROR });
   }
 };

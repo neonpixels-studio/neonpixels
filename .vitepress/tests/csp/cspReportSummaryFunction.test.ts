@@ -25,10 +25,14 @@ vi.mock("../../../netlify/functions/lib/notifySummaryFailure", () => ({
 }));
 
 import cspReportSummaryHandler, {
+  COLD_START_HEADROOM_MS,
   config,
   HARD_TIMEOUT_MS,
+  NETLIFY_FUNCTION_LIMIT_MS,
   NOTIFY_TIMEOUT_MS,
+  RESPONSE_HEADROOM_MS,
   RUN_DEADLINE_MS,
+  remainingNotifyBudgetMs,
 } from "../../../netlify/functions/csp-report-summary";
 
 const SUMMARIZED_LOG_PREFIX = "csp-report-summarized";
@@ -333,8 +337,7 @@ describe("csp-report-summary Netlify scheduled function", () => {
   // must leave real headroom under that for cold start and the final
   // in-flight batch rather than assuming the full window. Mirrors the
   // equivalent invariant test in cspReportPruneFunction.test.ts.
-  const NETLIFY_SCHEDULED_FUNCTION_LIMIT_MS = 30000;
-  const COLD_START_HEADROOM_MS = 2000;
+  const NETLIFY_REAL_LIMIT_MS = 30000;
 
   // The cooperative-budget half of the ordering chain (SUMMARY_TIME_BUDGET_MS
   // vs. HARD_TIMEOUT_MS) is pinned by the margin tests above; this pins
@@ -342,8 +345,86 @@ describe("csp-report-summary Netlify scheduled function", () => {
   // NOTIFY_TIMEOUT_MS can't squeeze summarize() arbitrarily thin.
   it("keeps the run deadline within Netlify's real limit, with a real floor left for the summarize() call", () => {
     expect(HARD_TIMEOUT_MS).toBeGreaterThanOrEqual(20000);
+    expect(NETLIFY_FUNCTION_LIMIT_MS).toBe(NETLIFY_REAL_LIMIT_MS);
+    expect(COLD_START_HEADROOM_MS).toBeGreaterThanOrEqual(2000);
     expect(RUN_DEADLINE_MS + COLD_START_HEADROOM_MS).toBeLessThanOrEqual(
-      NETLIFY_SCHEDULED_FUNCTION_LIMIT_MS,
+      NETLIFY_REAL_LIMIT_MS,
     );
+  });
+
+  it("gives the notifier its full budget after a fast failure", () => {
+    expect(remainingNotifyBudgetMs(0)).toBe(NOTIFY_TIMEOUT_MS);
+  });
+
+  it("shrinks the notify budget to what is left after a hang, never below zero", () => {
+    const afterHang = remainingNotifyBudgetMs(HARD_TIMEOUT_MS);
+    expect(afterHang).toBe(2500);
+    expect(
+      HARD_TIMEOUT_MS + afterHang + RESPONSE_HEADROOM_MS,
+    ).toBeLessThanOrEqual(RUN_DEADLINE_MS);
+    expect(remainingNotifyBudgetMs(NETLIFY_FUNCTION_LIMIT_MS * 2)).toBe(0);
+  });
+
+  it("cuts a hanging notifier off at the remaining budget after the summary hangs", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    summarizeMock.mockImplementationOnce(() => new Promise(() => {}));
+    notifyMock.mockImplementationOnce(() => new Promise(() => {}));
+    let settled = false;
+
+    const responsePromise = cspReportSummaryHandler(scheduledRequest()).then(
+      (value) => {
+        settled = true;
+        return value;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(HARD_TIMEOUT_MS);
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(
+      remainingNotifyBudgetMs(HARD_TIMEOUT_MS) - 1,
+    );
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(500);
+    expect(warn.mock.calls[1][0]).toBe(NOTIFY_FAILED_LOG_PREFIX);
+  });
+
+  it("skips the notifier and logs when no time is left after the failure", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    summarizeMock.mockImplementationOnce(() => {
+      vi.setSystemTime(Date.now() + RUN_DEADLINE_MS);
+      return Promise.reject(new Error("blocked event loop"));
+    });
+
+    const response = await cspReportSummaryHandler(scheduledRequest());
+
+    expect(response.status).toBe(500);
+    expect(notifyMock).not.toHaveBeenCalled();
+    expect(warn.mock.calls[1][0]).toBe(NOTIFY_FAILED_LOG_PREFIX);
+    expect(JSON.parse(warn.mock.calls[1][1] as string).message).toBe(
+      "no time left to notify",
+    );
+  });
+
+  it("lets a slow but successful summary run past the old notify-reserved 23s ceiling", async () => {
+    const SLOW_SUCCESS_MS = 24000;
+    vi.useFakeTimers();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    summarizeMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve(EMPTY_SUMMARY), SLOW_SUCCESS_MS),
+        ),
+    );
+
+    const responsePromise = cspReportSummaryHandler(scheduledRequest());
+    await vi.advanceTimersByTimeAsync(SLOW_SUCCESS_MS);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(200);
+    expect(notifyMock).not.toHaveBeenCalled();
   });
 });
