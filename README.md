@@ -212,6 +212,19 @@ before the first failure — create it once
 — since this notifier only applies the label to issues it creates, it never
 creates the label itself.
 
+The reverse direction mirrors
+[`.github/scripts/close-resolved-audit-failure.cjs`](.github/scripts/close-resolved-audit-failure.cjs)
+(see issue #163): after a _successful_ prune run, the handler closes any open
+tracked `csp-prune-failure` issue (same label plus body-marker match) with a
+recovery comment, via `createPruneFailureResolver` in
+`notifyPruneFailure.ts`. A healthy run costs one label-filtered GitHub list
+call. It is best-effort, like the notifier: a failure (e.g. missing
+`PRUNE_FAILURE_GITHUB_TOKEN`) is logged as `csp-report-prune-resolve-failed`
+and never changes the run's 200 response. The PAT's existing Issues: write
+permission covers it. Like the audit workflow, a prune that alternates between
+failing and succeeding opens a fresh issue per failure once the previous one
+has been auto-closed.
+
 Writing and pruning the store still left no way to read it back, so the
 rollout question it exists to answer — has `script-src` actually stopped
 firing — could only be checked by grepping raw per-violation log lines. A

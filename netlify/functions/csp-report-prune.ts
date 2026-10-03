@@ -1,6 +1,9 @@
 import { errorMessage } from "./lib/errorMessage";
 import { getCspReportPruner } from "./lib/cspReportPruner";
-import { getPruneFailureNotifier } from "./lib/notifyPruneFailure";
+import {
+  getPruneFailureNotifier,
+  getPruneFailureResolver,
+} from "./lib/notifyPruneFailure";
 import { withTimeout } from "./lib/withTimeout";
 
 // Netlify scheduled Function (v2) that prunes the csp-reports Blobs store on
@@ -25,6 +28,11 @@ const PRUNE_FAILED_LOG_PREFIX = "csp-report-prune-failed";
 // (PRUNE_FAILED_LOG_PREFIX, logged above it) is the real signal, and is
 // already written by the time this can fail. See #123.
 const NOTIFY_FAILED_LOG_PREFIX = "csp-report-prune-notify-failed";
+
+// Logged when closing a resolved prune-failure issue breaks (missing token,
+// GitHub outage, timeout). Like NOTIFY_FAILED_LOG_PREFIX, this must never
+// change the response: the prune itself already succeeded. See #163.
+const RESOLVE_FAILED_LOG_PREFIX = "csp-report-prune-resolve-failed";
 
 const HTTP_OK = 200;
 const HTTP_INTERNAL_SERVER_ERROR = 500;
@@ -84,6 +92,25 @@ async function notifyPruneFailureQuietly(
   }
 }
 
+// Best-effort, same contract as notifyPruneFailureQuietly: a successful
+// prune run must never fail because the issue closer broke. Shares
+// NOTIFY_TIMEOUT_MS since it also runs after prune() has used up to
+// HARD_TIMEOUT_MS, and must stay within RUN_DEADLINE_MS.
+async function resolvePruneFailureQuietly(): Promise<void> {
+  try {
+    await withTimeout(
+      getPruneFailureResolver().resolve(),
+      NOTIFY_TIMEOUT_MS,
+      "csp report prune failure resolve",
+    );
+  } catch (resolveError) {
+    console.warn(
+      RESOLVE_FAILED_LOG_PREFIX,
+      JSON.stringify({ message: errorMessage(resolveError) }),
+    );
+  }
+}
+
 export default async (_request: Request): Promise<Response> => {
   try {
     const result = await withTimeout(
@@ -92,13 +119,14 @@ export default async (_request: Request): Promise<Response> => {
       "csp report prune run",
     );
     console.log(PRUNED_LOG_PREFIX, JSON.stringify(result));
-    return new Response(null, { status: HTTP_OK });
   } catch (error) {
     const message = errorMessage(error);
     console.warn(PRUNE_FAILED_LOG_PREFIX, JSON.stringify({ message }));
     await notifyPruneFailureQuietly(message);
     return new Response(null, { status: HTTP_INTERNAL_SERVER_ERROR });
   }
+  await resolvePruneFailureQuietly();
+  return new Response(null, { status: HTTP_OK });
 };
 
 export const config = { schedule: "@hourly" };
