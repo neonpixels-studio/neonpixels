@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, reactive, ref } from "vue";
 import { WORDMARK_GRADIENT } from "../brand";
 import { submitNetlifyForm } from "../forms/submitNetlifyForm";
 
@@ -18,7 +18,15 @@ const HONEYPOT_FIELD_NAME = "bot-field";
 const FIELD_LABEL_CLASS =
   "text-fg-dim text-[10.5px] tracking-[0.14em] uppercase";
 const FIELD_CONTROL_CLASS =
-  "border-border bg-bg text-fg rounded-none border px-3 py-2 text-[13px]";
+  "border-border bg-bg text-fg user-invalid:border-pink aria-invalid:border-pink rounded-none border px-3 py-2 text-[13px]";
+const FIELD_ERROR_CLASS = "text-pink m-0 min-h-[1em] text-[12px]";
+const EMAIL_ERROR_ID = "contact-email-error";
+const MESSAGE_ERROR_ID = "contact-message-error";
+
+// Intentionally permissive (matches what the browser's own type="email"
+// check accepts closely enough): the server/Netlify is the real gate, this
+// only catches obvious typos before a round trip.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/;
 
 type SubmitStatus = "idle" | "submitting" | "success" | "error";
 
@@ -28,6 +36,38 @@ const fields = reactive({ name: "", email: "", message: "" });
 // blindly fills every input it finds outs itself by populating it.
 const honeypotValue = ref("");
 const status = ref<SubmitStatus>("idle");
+// novalidate only after hydration: before it (or with JS off) @submit.prevent
+// isn't attached and the form posts natively, so the static HTML must keep the
+// browser's required/type=email blocking.
+const isHydrated = ref(false);
+onMounted(() => {
+  isHydrated.value = true;
+});
+const formElement = ref<HTMLFormElement | null>(null);
+const emailInput = ref<HTMLInputElement | null>(null);
+const messageInput = ref<HTMLTextAreaElement | null>(null);
+
+// Errors only surface once a field has been blurred or a submit was
+// attempted, so an untouched form never opens flagged as invalid (the same
+// guarantee :user-invalid gives natively, but for browsers lacking it).
+const touched = reactive({ email: false, message: false });
+
+const trimmedEmail = computed(() => fields.email.trim());
+
+const emailError = computed(() => {
+  if (!touched.email) {
+    return "";
+  }
+  if (!trimmedEmail.value) {
+    return "Enter your email address.";
+  }
+  return EMAIL_PATTERN.test(trimmedEmail.value)
+    ? ""
+    : "Enter a valid email address, like name@example.com.";
+});
+const messageError = computed(() =>
+  touched.message && !fields.message.trim() ? "Enter a message." : "",
+);
 
 // A screen reader can miss a live region that appears in the DOM at the same
 // moment as the text it's meant to announce (NVDA/VoiceOver commonly do). The
@@ -49,6 +89,25 @@ function resetFields() {
   fields.name = "";
   fields.email = "";
   fields.message = "";
+  touched.email = false;
+  touched.message = false;
+  // Clears the browser's own "user interacted" flag too, or :user-invalid
+  // would flag the freshly emptied required fields right after a success.
+  formElement.value?.reset();
+}
+
+function touchRequiredFields() {
+  touched.email = true;
+  touched.message = true;
+}
+
+function hasFieldErrors() {
+  return Boolean(emailError.value || messageError.value);
+}
+
+function focusFirstInvalidField() {
+  const firstInvalid = emailError.value ? emailInput : messageInput;
+  firstInvalid.value?.focus();
 }
 
 async function handleSubmit() {
@@ -70,9 +129,18 @@ async function handleSubmit() {
     honeypotValue.value = "";
     return;
   }
+  touchRequiredFields();
+  if (hasFieldErrors()) {
+    await nextTick();
+    focusFirstInvalidField();
+    return;
+  }
   status.value = "submitting";
   try {
-    await submitNetlifyForm({ formName: FORM_NAME, fields: { ...fields } });
+    await submitNetlifyForm({
+      formName: FORM_NAME,
+      fields: { ...fields, email: fields.email.trim() },
+    });
     status.value = "success";
     resetFields();
   } catch (error) {
@@ -107,9 +175,11 @@ async function handleSubmit() {
       </div>
 
       <form
+        ref="formElement"
         :name="FORM_NAME"
         method="POST"
         data-netlify="true"
+        :novalidate="isHydrated || undefined"
         :data-netlify-honeypot="HONEYPOT_FIELD_NAME"
         class="flex flex-1 flex-col gap-3 lg:max-w-[620px]"
         @submit.prevent="handleSubmit"
@@ -147,31 +217,55 @@ async function handleSubmit() {
               :class="FIELD_CONTROL_CLASS"
             />
           </label>
-          <label for="contact-email" class="flex flex-col gap-[6px] sm:flex-1">
-            <span :class="FIELD_LABEL_CLASS">email</span>
-            <input
-              id="contact-email"
-              v-model="fields.email"
-              type="email"
-              name="email"
-              required
-              autocomplete="email"
-              :class="FIELD_CONTROL_CLASS"
-            />
-          </label>
+          <div class="flex flex-col gap-[6px] sm:flex-1">
+            <label for="contact-email" class="flex flex-col gap-[6px]">
+              <span :class="FIELD_LABEL_CLASS">email</span>
+              <input
+                id="contact-email"
+                ref="emailInput"
+                v-model="fields.email"
+                type="email"
+                name="email"
+                required
+                autocomplete="email"
+                :aria-invalid="emailError ? 'true' : undefined"
+                :aria-describedby="emailError ? EMAIL_ERROR_ID : undefined"
+                :class="FIELD_CONTROL_CLASS"
+                @blur="touched.email = true"
+              />
+            </label>
+            <span
+              :id="EMAIL_ERROR_ID"
+              aria-live="polite"
+              :class="FIELD_ERROR_CLASS"
+              >{{ emailError }}</span
+            >
+          </div>
         </div>
 
-        <label for="contact-message" class="flex flex-col gap-[6px]">
-          <span :class="FIELD_LABEL_CLASS">message</span>
-          <textarea
-            id="contact-message"
-            v-model="fields.message"
-            name="message"
-            rows="3"
-            required
-            :class="FIELD_CONTROL_CLASS"
-          />
-        </label>
+        <div class="flex flex-col gap-[6px]">
+          <label for="contact-message" class="flex flex-col gap-[6px]">
+            <span :class="FIELD_LABEL_CLASS">message</span>
+            <textarea
+              id="contact-message"
+              ref="messageInput"
+              v-model="fields.message"
+              name="message"
+              rows="3"
+              required
+              :aria-invalid="messageError ? 'true' : undefined"
+              :aria-describedby="messageError ? MESSAGE_ERROR_ID : undefined"
+              :class="FIELD_CONTROL_CLASS"
+              @blur="touched.message = true"
+            />
+          </label>
+          <span
+            :id="MESSAGE_ERROR_ID"
+            aria-live="polite"
+            :class="FIELD_ERROR_CLASS"
+            >{{ messageError }}</span
+          >
+        </div>
 
         <div class="flex flex-wrap items-center gap-4">
           <button

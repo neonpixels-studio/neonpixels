@@ -257,4 +257,152 @@ describe("ContactForm", () => {
     expect(wrapper.get('[role="status"]').text()).not.toBe("");
     wrapper.unmount();
   });
+
+  describe("invalid state", () => {
+    it("only disables native validation once hydrated, so the no-JS post stays validated", async () => {
+      const wrapper = mount(ContactForm);
+      await flushPromises();
+      expect(wrapper.get("form").attributes("novalidate")).toBeDefined();
+      wrapper.unmount();
+    });
+
+    it("shows no errors on the freshly cleared form after a successful send", async () => {
+      mockedSubmitNetlifyForm.mockResolvedValue(undefined);
+      const resetSpy = vi.spyOn(HTMLFormElement.prototype, "reset");
+      const wrapper = mount(ContactForm);
+      await fillFields(wrapper, {
+        email: "ada@example.com",
+        message: "hello",
+      });
+      await wrapper.get("#contact-email").trigger("blur");
+      await wrapper.get("#contact-message").trigger("blur");
+      await wrapper.find("form").trigger("submit");
+      await flushPromises();
+      expect(resetSpy).toHaveBeenCalledTimes(1);
+      resetSpy.mockRestore();
+      expect(wrapper.get("#contact-email-error").text()).toBe("");
+      expect(wrapper.get("#contact-message-error").text()).toBe("");
+      expect(wrapper.get("#contact-email").attributes("aria-invalid")).toBe(
+        undefined,
+      );
+      wrapper.unmount();
+    });
+
+    it("announces field errors politely", () => {
+      const wrapper = mount(ContactForm);
+      expect(wrapper.get("#contact-email-error").attributes("aria-live")).toBe(
+        "polite",
+      );
+      expect(
+        wrapper.get("#contact-message-error").attributes("aria-live"),
+      ).toBe("polite");
+      wrapper.unmount();
+    });
+
+    it("keeps the error text out of the field's label so the accessible name stays clean", async () => {
+      const wrapper = mount(ContactForm);
+      await wrapper.get("#contact-email").trigger("blur");
+      const label = wrapper.get('label[for="contact-email"]');
+      expect(label.text()).toBe("email");
+      wrapper.unmount();
+    });
+
+    it("flags a whitespace-only message", async () => {
+      const wrapper = mount(ContactForm);
+      await wrapper.get("#contact-message").setValue("   ");
+      await wrapper.get("#contact-message").trigger("blur");
+      expect(wrapper.get("#contact-message-error").text()).toBe(
+        "Enter a message.",
+      );
+      wrapper.unmount();
+    });
+
+    it("focuses the message when only it is invalid, and sends nothing", async () => {
+      const wrapper = mount(ContactForm, { attachTo: document.body });
+      await fillFields(wrapper, { email: "ada@example.com" });
+      await wrapper.find("form").trigger("submit");
+      await flushPromises();
+      expect(mockedSubmitNetlifyForm).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(
+        wrapper.get("#contact-message").element,
+      );
+      wrapper.unmount();
+    });
+
+    it("submits once the visitor fixes the fields after a blocked attempt, with a trimmed email", async () => {
+      mockedSubmitNetlifyForm.mockResolvedValue(undefined);
+      const wrapper = mount(ContactForm);
+      await wrapper.find("form").trigger("submit");
+      await fillAndSubmit(wrapper, {
+        email: " ada@example.com ",
+        message: "hello",
+      });
+      expect(mockedSubmitNetlifyForm).toHaveBeenCalledTimes(1);
+      expect(mockedSubmitNetlifyForm).toHaveBeenCalledWith({
+        formName: "contact",
+        fields: { name: "", email: "ada@example.com", message: "hello" },
+      });
+      wrapper.unmount();
+    });
+
+    it("does not flag required fields before the visitor interacts", () => {
+      const wrapper = mount(ContactForm);
+      expect(wrapper.get("#contact-email").attributes("aria-invalid")).toBe(
+        undefined,
+      );
+      expect(wrapper.get("#contact-message").attributes("aria-invalid")).toBe(
+        undefined,
+      );
+      expect(wrapper.get("#contact-email-error").text()).toBe("");
+      wrapper.unmount();
+    });
+
+    it("flags a blurred empty email and associates the error via aria-describedby", async () => {
+      const wrapper = mount(ContactForm);
+      await wrapper.get("#contact-email").trigger("blur");
+      const email = wrapper.get("#contact-email");
+      expect(email.attributes("aria-invalid")).toBe("true");
+      expect(email.attributes("aria-describedby")).toBe("contact-email-error");
+      expect(wrapper.get("#contact-email-error").text()).toBe(
+        "Enter your email address.",
+      );
+      wrapper.unmount();
+    });
+
+    it("rejects a malformed email and clears the error once it is fixed", async () => {
+      const wrapper = mount(ContactForm);
+      await wrapper.get("#contact-email").setValue("not-an-email");
+      await wrapper.get("#contact-email").trigger("blur");
+      expect(wrapper.get("#contact-email-error").text()).toContain("valid");
+      await wrapper.get("#contact-email").setValue("ada@example.com");
+      expect(wrapper.get("#contact-email").attributes("aria-invalid")).toBe(
+        undefined,
+      );
+      expect(wrapper.get("#contact-email-error").text()).toBe("");
+      wrapper.unmount();
+    });
+
+    it("blocks submission, flags both required fields, and sends nothing", async () => {
+      const wrapper = mount(ContactForm, { attachTo: document.body });
+      await wrapper.find("form").trigger("submit");
+      await flushPromises();
+
+      expect(mockedSubmitNetlifyForm).not.toHaveBeenCalled();
+      expect(wrapper.get("#contact-email").attributes("aria-invalid")).toBe(
+        "true",
+      );
+      const message = wrapper.get("#contact-message");
+      expect(message.attributes("aria-invalid")).toBe("true");
+      expect(message.attributes("aria-describedby")).toBe(
+        "contact-message-error",
+      );
+      expect(wrapper.get("#contact-message-error").text()).toBe(
+        "Enter a message.",
+      );
+      expect(document.activeElement).toBe(
+        wrapper.get("#contact-email").element,
+      );
+      wrapper.unmount();
+    });
+  });
 });
