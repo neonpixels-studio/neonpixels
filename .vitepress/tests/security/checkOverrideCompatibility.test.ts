@@ -30,7 +30,7 @@ function lockfileWithConsumer(consumerRange: string): Lockfile {
 }
 
 describe("readOverriddenPackageNames", () => {
-  it("returns only top-level string overrides, skipping nested scopes", () => {
+  it("skips nested overrides scoped to a parent", () => {
     expect(
       readOverriddenPackageNames({
         vitepress: { vite: "^6.4.3" },
@@ -53,6 +53,15 @@ describe("readOverriddenPackageNames", () => {
     expect(
       readOverriddenPackageNames({
         "brace-expansion": { ".": "5.0.12", child: "1.0.0" },
+      }),
+    ).toEqual(["brace-expansion"]);
+  });
+
+  it("lists a package once when a bare key and a selector key both target it", () => {
+    expect(
+      readOverriddenPackageNames({
+        "brace-expansion": "5.0.12",
+        "brace-expansion@^1": "5.0.12",
       }),
     ).toEqual(["brace-expansion"]);
   });
@@ -213,6 +222,27 @@ describe("runOverrideCompatibilityCli", () => {
         "node_modules/legacy-glob declares brace-expansion@^2.0.1",
       ),
     );
+  });
+});
+
+describe("runOverrideCompatibilityCli with an unusable lockfile", () => {
+  it("throws instead of passing when the lockfile has no packages map", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "override-compat-"));
+    try {
+      writeFileSync(
+        join(workDir, "package.json"),
+        JSON.stringify({ overrides: { "brace-expansion": "^5.0.12" } }),
+      );
+      writeFileSync(
+        join(workDir, "package-lock.json"),
+        JSON.stringify({ lockfileVersion: 1, dependencies: {} }),
+      );
+      expect(() => runOverrideCompatibilityCli(workDir)).toThrow(
+        /no "packages" map/,
+      );
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
   });
 });
 

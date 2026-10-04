@@ -80,9 +80,10 @@ function isBlanketOverride(value: unknown) {
 export function readOverriddenPackageNames(
   overrides: Record<string, unknown> | undefined,
 ) {
-  return Object.entries(overrides ?? {})
+  const names = Object.entries(overrides ?? {})
     .filter(([, value]) => isBlanketOverride(value))
     .map(([key]) => packageNameFromOverrideKey(key));
+  return [...new Set(names)];
 }
 
 function parentPath(packagePath: string) {
@@ -184,11 +185,22 @@ function readJson(path: string) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
+// A lockfileVersion 1 file or a truncated one has no `packages` map; comparing
+// against nothing would report PASS without checking anything.
+function assertLockfileHasPackages(lockfile: Lockfile) {
+  if (Object.keys(lockfile.packages ?? {}).length === 0) {
+    throw new Error(
+      `${LOCKFILE_NAME} has no "packages" map (lockfileVersion >= 2 required)`,
+    );
+  }
+}
+
 // Exported separately from main() so a test can assert on the exit code
 // without spawning a `node` subprocess.
 export function runOverrideCompatibilityCli(rootDir: string): number {
   const packageJson = readJson(resolve(rootDir, PACKAGE_JSON_NAME));
   const lockfile: Lockfile = readJson(resolve(rootDir, LOCKFILE_NAME));
+  assertLockfileHasPackages(lockfile);
   const overriddenPackages = readOverriddenPackageNames(packageJson.overrides);
   const incompatibilities = findIncompatibleConsumers(
     lockfile,
