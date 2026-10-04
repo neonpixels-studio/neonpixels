@@ -85,6 +85,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # `overrides` in package.json (e.g. brace-expansion -> v5) is applied
+      # silently: a future dependency bump that pulls in a consumer declaring
+      # an older, incompatible major (minimatch 3 wants brace-expansion ^1)
+      # would be forced onto v5 with no install-time or audit signal. This
+      # compares each consumer's declared range in package-lock.json against
+      # the version actually installed and fails on a mismatch.
+      - name: Check overrides do not mask an incompatible major
+        run: npm run check:overrides
+
       - name: Audit summary (report only, never fails)
         run: npm audit || true
 

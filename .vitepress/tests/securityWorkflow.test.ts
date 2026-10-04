@@ -115,6 +115,23 @@ describe("audit job", () => {
     const auditJob = readJob("audit");
     expect(findJobPermissions(auditJob)).toBeUndefined();
   });
+
+  // Without this step, an `overrides` entry can silently force a consumer
+  // onto an incompatible major (see .vitepress/security/
+  // checkOverrideCompatibility.ts). The check's logic is behavior-tested in
+  // checkOverrideCompatibility.test.ts; this confirms the audit job runs it,
+  // after the install that provides the `semver` module the script imports.
+  it("runs the override compatibility check after installing dependencies", () => {
+    const auditJob = readJob("audit");
+    const step = readStep(
+      auditJob,
+      "Check overrides do not mask an incompatible major",
+    );
+    expect(step).toMatch(/run:\s*npm run check:overrides\s*$/m);
+    expect(auditJob.indexOf("Install dependencies")).toBeLessThan(
+      auditJob.indexOf("Check overrides do not mask an incompatible major"),
+    );
+  });
 });
 
 describe("notify-audit-failure job", () => {
