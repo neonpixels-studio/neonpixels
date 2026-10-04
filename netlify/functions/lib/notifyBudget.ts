@@ -1,3 +1,6 @@
+import { errorMessage } from "./errorMessage";
+import { withTimeout } from "./withTimeout";
+
 // Time budget shared by the scheduled Functions that notify GitHub after a
 // failed run (csp-report-prune.ts, csp-report-summary.ts). Both run under the
 // same Netlify limit and both notify only after the main work has already
@@ -32,21 +35,32 @@ export function remainingNotifyBudgetMs(elapsedMs: number): number {
   );
 }
 
-export const NO_TIME_LEFT_MESSAGE = "no time left to notify";
+export const NO_TIME_LEFT_MESSAGE = "no time left in run budget";
 
-// Budget for a best-effort GitHub call that runs after the main work. Logs
-// under `failedLogPrefix` when nothing is left, so every caller shares the
-// same skip message and a `<= 0` check is all that remains at the call site.
-export function claimNotifyBudgetMs(
+// Runs a best-effort GitHub call (failure notify or resolve) inside whatever
+// is left of the run budget. Never throws: a skipped or failed call is logged
+// under `failedLogPrefix` so it can't change the handler's response. `call`
+// is a thunk so nothing is constructed when the budget is already gone.
+export async function runWithinNotifyBudget(
   runStartedAt: number,
   failedLogPrefix: string,
-): number {
+  label: string,
+  call: () => Promise<unknown>,
+): Promise<void> {
   const budgetMs = remainingNotifyBudgetMs(Date.now() - runStartedAt);
   if (budgetMs <= 0) {
     console.warn(
       failedLogPrefix,
       JSON.stringify({ message: NO_TIME_LEFT_MESSAGE }),
     );
+    return;
   }
-  return budgetMs;
+  try {
+    await withTimeout(call(), budgetMs, label);
+  } catch (error) {
+    console.warn(
+      failedLogPrefix,
+      JSON.stringify({ message: errorMessage(error) }),
+    );
+  }
 }

@@ -3,7 +3,7 @@ import { getCspReportPruner } from "./lib/cspReportPruner";
 import {
   NOTIFY_TIMEOUT_MS,
   RUN_DEADLINE_MS,
-  claimNotifyBudgetMs,
+  runWithinNotifyBudget,
 } from "./lib/notifyBudget";
 import {
   getPruneFailureNotifier,
@@ -68,7 +68,7 @@ const HTTP_INTERNAL_SERVER_ERROR = 500;
 export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - NOTIFY_TIMEOUT_MS;
 
 // Best-effort: a broken notifier (bad/missing PRUNE_FAILURE_GITHUB_TOKEN,
-// GitHub API outage, hang past NOTIFY_TIMEOUT_MS) must not crash the handler
+// GitHub API outage, hang past the remaining notify budget) must not crash the handler
 // or turn the real 500 (the prune failure this reports) into an unhandled
 // exception — see NOTIFY_FAILED_LOG_PREFIX above. A single flat try/catch
 // (no nested control flow inside the handler's own catch block).
@@ -76,22 +76,12 @@ async function notifyPruneFailureQuietly(
   pruneErrorMessage: string,
   runStartedAt: number,
 ): Promise<void> {
-  const budgetMs = claimNotifyBudgetMs(runStartedAt, NOTIFY_FAILED_LOG_PREFIX);
-  if (budgetMs <= 0) {
-    return;
-  }
-  try {
-    await withTimeout(
-      getPruneFailureNotifier().notify(pruneErrorMessage),
-      budgetMs,
-      "csp report prune failure notify",
-    );
-  } catch (notifyError) {
-    console.warn(
-      NOTIFY_FAILED_LOG_PREFIX,
-      JSON.stringify({ message: errorMessage(notifyError) }),
-    );
-  }
+  await runWithinNotifyBudget(
+    runStartedAt,
+    NOTIFY_FAILED_LOG_PREFIX,
+    "csp report prune failure notify",
+    () => getPruneFailureNotifier().notify(pruneErrorMessage),
+  );
 }
 
 // Best-effort, same contract as notifyPruneFailureQuietly: a successful
@@ -99,22 +89,12 @@ async function notifyPruneFailureQuietly(
 // notify budget since it also runs after prune() has used up to
 // HARD_TIMEOUT_MS, and must stay within RUN_DEADLINE_MS.
 async function resolvePruneFailureQuietly(runStartedAt: number): Promise<void> {
-  const budgetMs = claimNotifyBudgetMs(runStartedAt, RESOLVE_FAILED_LOG_PREFIX);
-  if (budgetMs <= 0) {
-    return;
-  }
-  try {
-    await withTimeout(
-      getPruneFailureResolver().resolve(),
-      budgetMs,
-      "csp report prune failure resolve",
-    );
-  } catch (resolveError) {
-    console.warn(
-      RESOLVE_FAILED_LOG_PREFIX,
-      JSON.stringify({ message: errorMessage(resolveError) }),
-    );
-  }
+  await runWithinNotifyBudget(
+    runStartedAt,
+    RESOLVE_FAILED_LOG_PREFIX,
+    "csp report prune failure resolve",
+    () => getPruneFailureResolver().resolve(),
+  );
 }
 
 export default async (_request: Request): Promise<Response> => {

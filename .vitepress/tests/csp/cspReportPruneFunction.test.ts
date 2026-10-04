@@ -44,6 +44,7 @@ import cspReportPruneHandler, {
   HARD_TIMEOUT_MS,
 } from "../../../netlify/functions/csp-report-prune";
 import {
+  NO_TIME_LEFT_MESSAGE,
   NOTIFY_TIMEOUT_MS,
   RUN_DEADLINE_MS,
   remainingNotifyBudgetMs,
@@ -300,7 +301,7 @@ describe("csp-report-prune Netlify scheduled function", () => {
     expect(notifyMock).not.toHaveBeenCalled();
     expect(warn.mock.calls[1][0]).toBe(NOTIFY_FAILED_LOG_PREFIX);
     expect(JSON.parse(warn.mock.calls[1][1] as string).message).toBe(
-      "no time left to notify",
+      NO_TIME_LEFT_MESSAGE,
     );
   });
 
@@ -375,6 +376,9 @@ describe("csp-report-prune Netlify scheduled function", () => {
     expect(response.status).toBe(200);
     expect(resolveMock).not.toHaveBeenCalled();
     expect(warn.mock.calls[0][0]).toBe(RESOLVE_FAILED_LOG_PREFIX);
+    expect(JSON.parse(warn.mock.calls[0][1] as string).message).toBe(
+      NO_TIME_LEFT_MESSAGE,
+    );
   });
 
   // Netlify scheduled Functions hard-cap execution at 30s; RUN_DEADLINE_MS

@@ -3,7 +3,7 @@ import {
   type CspReportSummary,
 } from "./lib/cspReportSummary";
 import { errorMessage } from "./lib/errorMessage";
-import { RUN_DEADLINE_MS, remainingNotifyBudgetMs } from "./lib/notifyBudget";
+import { RUN_DEADLINE_MS, runWithinNotifyBudget } from "./lib/notifyBudget";
 import { getSummaryFailureNotifier } from "./lib/notifySummaryFailure";
 import { withTimeout } from "./lib/withTimeout";
 
@@ -141,7 +141,7 @@ const HANG_NOTIFY_WINDOW_MS = 3000;
 export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - HANG_NOTIFY_WINDOW_MS;
 
 // Best-effort: a broken notifier (bad/missing PRUNE_FAILURE_GITHUB_TOKEN,
-// GitHub API outage, hang past NOTIFY_TIMEOUT_MS) must not crash the handler
+// GitHub API outage, hang past the remaining notify budget) must not crash the handler
 // or turn the real 500 (the summary failure this reports) into an unhandled
 // exception — see NOTIFY_FAILED_LOG_PREFIX above. A single flat try/catch
 // (no nested control flow inside the handler's own catch block), mirroring
@@ -150,22 +150,12 @@ async function notifySummaryFailureQuietly(
   summaryErrorMessage: string,
   runStartedAt: number,
 ): Promise<void> {
-  const budgetMs = claimNotifyBudgetMs(runStartedAt, NOTIFY_FAILED_LOG_PREFIX);
-  if (budgetMs <= 0) {
-    return;
-  }
-  try {
-    await withTimeout(
-      getSummaryFailureNotifier().notify(summaryErrorMessage),
-      budgetMs,
-      "csp report summary failure notify",
-    );
-  } catch (notifyError) {
-    console.warn(
-      NOTIFY_FAILED_LOG_PREFIX,
-      JSON.stringify({ message: errorMessage(notifyError) }),
-    );
-  }
+  await runWithinNotifyBudget(
+    runStartedAt,
+    NOTIFY_FAILED_LOG_PREFIX,
+    "csp report summary failure notify",
+    () => getSummaryFailureNotifier().notify(summaryErrorMessage),
+  );
 }
 
 export default async (_request: Request): Promise<Response> => {

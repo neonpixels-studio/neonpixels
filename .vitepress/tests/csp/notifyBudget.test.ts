@@ -5,7 +5,8 @@ import {
   NOTIFY_TIMEOUT_MS,
   RESPONSE_HEADROOM_MS,
   RUN_DEADLINE_MS,
-  claimNotifyBudgetMs,
+  NO_TIME_LEFT_MESSAGE,
+  runWithinNotifyBudget,
   remainingNotifyBudgetMs,
 } from "../../../netlify/functions/lib/notifyBudget";
 
@@ -42,31 +43,74 @@ describe("notifyBudget", () => {
     expect(remainingNotifyBudgetMs(NETLIFY_FUNCTION_LIMIT_MS * 2)).toBe(0);
   });
 
-  describe("claimNotifyBudgetMs", () => {
+  describe("runWithinNotifyBudget", () => {
     afterEach(() => {
       vi.useRealTimers();
       vi.restoreAllMocks();
     });
 
-    it("returns the remaining budget without logging while time is left", () => {
+    it("runs the call and logs nothing while time is left", async () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const call = vi.fn().mockResolvedValue(undefined);
 
-      expect(claimNotifyBudgetMs(Date.now(), "test-failed")).toBe(
-        NOTIFY_TIMEOUT_MS,
-      );
+      await runWithinNotifyBudget(Date.now(), "test-failed", "test call", call);
+
+      expect(call).toHaveBeenCalledTimes(1);
       expect(warn).not.toHaveBeenCalled();
     });
 
-    it("returns zero and logs under the given prefix once the deadline has passed", () => {
+    it("skips the call and logs under the given prefix once the deadline has passed", async () => {
       vi.useFakeTimers();
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const call = vi.fn().mockResolvedValue(undefined);
       const runStartedAt = Date.now();
       vi.setSystemTime(runStartedAt + RUN_DEADLINE_MS);
 
-      expect(claimNotifyBudgetMs(runStartedAt, "test-failed")).toBe(0);
+      await runWithinNotifyBudget(
+        runStartedAt,
+        "test-failed",
+        "test call",
+        call,
+      );
+
+      expect(call).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(
         "test-failed",
-        JSON.stringify({ message: "no time left to notify" }),
+        JSON.stringify({ message: NO_TIME_LEFT_MESSAGE }),
+      );
+    });
+
+    it("swallows and logs a rejected call", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const call = vi.fn().mockRejectedValue(new Error("github down"));
+
+      await expect(
+        runWithinNotifyBudget(Date.now(), "test-failed", "test call", call),
+      ).resolves.toBeUndefined();
+
+      expect(warn).toHaveBeenCalledWith(
+        "test-failed",
+        JSON.stringify({ message: "github down" }),
+      );
+    });
+
+    it("gives up on a hanging call at the remaining budget", async () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const call = vi.fn(() => new Promise<never>(() => {}));
+      const promise = runWithinNotifyBudget(
+        Date.now(),
+        "test-failed",
+        "test call",
+        call,
+      );
+
+      await vi.advanceTimersByTimeAsync(NOTIFY_TIMEOUT_MS);
+      await promise;
+
+      expect(warn.mock.calls[0][0]).toBe("test-failed");
+      expect(JSON.parse(warn.mock.calls[0][1] as string).message).toMatch(
+        /exceeded/,
       );
     });
   });
