@@ -642,6 +642,21 @@ describe("createCspReportPruner", () => {
       ]);
     });
 
+    it("still warns about prefixes seen on a root listing cut short by its time budget", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const client = truncatedGroupClient([unknownKey], "legacy");
+
+      const result = await createCspReportPruner(client, {
+        retentionDays: 30,
+        maxBlobs: 10,
+      }).prune();
+
+      expect(result.complete).toBe(false);
+      expect(unrecognizedWarnings(warn).map((call) => call[1])).toEqual([
+        JSON.stringify({ prefix: "stray/" }),
+      ]);
+    });
+
     it("never deletes keys under an unrecognized prefix, however old", async () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       const client = fakeClient([[unknownKey]]);
