@@ -61,6 +61,8 @@ const SITEMAP_FILE = "sitemap.xml";
 const SETTLE_TIMEOUT_MS = 10_000;
 const SETTLE_POLL_MS = 50;
 const HTTPS_PROTOCOL = "https:";
+const SITE_ORIGIN_URL = "https://neonpixels.dev";
+const HOME_TITLE = "Neon Pixels — We build the missing apps";
 
 const JSON_LD_BLOCK_PATTERN =
   /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g;
@@ -575,11 +577,24 @@ describe("hero font preload", () => {
         ogTitle,
       );
     });
+  });
 
-    it("keeps the homepage canonical as the bare domain", () => {
-      expect(new URL(canonicalHref(builtHead)!).pathname).toBe("/");
-      expect(canonicalHref(builtHead)).toBe(
-        metaContent(builtHead, OG_ATTRIBUTE, "og:url"),
+  describe("homepage per-page metadata", () => {
+    it("keeps the canonical as the bare domain, matching og:url", () => {
+      expect(canonicalHref(builtHead)).toBe(SITE_ORIGIN_URL);
+      expect(metaContent(builtHead, OG_ATTRIBUTE, "og:url")).toBe(
+        SITE_ORIGIN_URL,
+      );
+    });
+
+    it("keeps the tagline as og:title and twitter:title, distinct from the image alt", () => {
+      const ogTitle = metaContent(builtHead, OG_ATTRIBUTE, "og:title");
+      expect(ogTitle).toBe(HOME_TITLE);
+      expect(metaContent(builtHead, TWITTER_ATTRIBUTE, "twitter:title")).toBe(
+        HOME_TITLE,
+      );
+      expect(metaContent(builtHead, OG_ATTRIBUTE, "og:image:alt")).not.toBe(
+        ogTitle,
       );
     });
   });

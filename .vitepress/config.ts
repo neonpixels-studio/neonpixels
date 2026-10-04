@@ -162,7 +162,7 @@ export default defineConfig({
       siteUrl: SITE_URL,
       relativePath: pageData.relativePath,
       cleanUrls: siteConfig.cleanUrls ?? false,
-      title: pageData.title,
+      title: pageData.title || siteConfig.site.title,
     });
   },
   vite: {
