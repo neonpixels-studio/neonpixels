@@ -601,6 +601,18 @@ describe("createCspReportPruner", () => {
       ]);
     });
 
+    it("warns once for a prefix that appears on several root listing pages", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const client = fakeClient([[unknownKey], ["stray/another.json"]]);
+
+      await createCspReportPruner(client, {
+        retentionDays: 30,
+        maxBlobs: 10,
+      }).prune();
+
+      expect(unrecognizedWarnings(warn)).toHaveLength(1);
+    });
+
     it("does not warn when only rollout/, other/ and root keys exist", async () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const client = fakeClient([

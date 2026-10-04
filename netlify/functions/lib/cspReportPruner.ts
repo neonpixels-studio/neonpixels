@@ -253,6 +253,8 @@ function groupKeysByClass(listed: ListedKeys[]): {
 // parsed from it) is unknown, and "older than retention" could delete data a
 // human or another tool put there on purpose. A warning keeps it visible
 // without that risk; an operator can clear or adopt the prefix deliberately.
+// Best-effort: it only sees directories from the root listing, so a run that
+// skips or cuts short that listing reports `complete: false` instead.
 export const UNRECOGNIZED_PREFIX_LOG_PREFIX =
   "csp-report-prune-unrecognized-prefix";
 
