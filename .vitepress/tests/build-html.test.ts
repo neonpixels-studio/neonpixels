@@ -61,6 +61,8 @@ const SITEMAP_FILE = "sitemap.xml";
 const SETTLE_TIMEOUT_MS = 10_000;
 const SETTLE_POLL_MS = 50;
 const HTTPS_PROTOCOL = "https:";
+const SITE_ORIGIN_URL = "https://neonpixels.dev";
+const HOME_TITLE = "Neon Pixels — We build the missing apps";
 
 const JSON_LD_BLOCK_PATTERN =
   /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g;
@@ -540,6 +542,76 @@ describe("hero font preload", () => {
     );
     expect(privacyHtml).toContain("Privacy Policy");
     expect(privacyHtml).toContain("Google Analytics");
+  });
+
+  // Issue #174: canonical/og:url/og:title used to be global, so /privacy
+  // claimed the homepage as its canonical and got the homepage's social card.
+  describe("privacy.html per-page metadata", () => {
+    let privacyHead = "";
+
+    beforeAll(() => {
+      privacyHead = extractHead(
+        readFileSync(resolve(buildOutDir, "privacy.html"), "utf8"),
+      );
+    });
+
+    it("canonicalizes to itself, not the homepage", () => {
+      const href = canonicalHref(privacyHead);
+      expect(href).not.toBeNull();
+      expect(href).not.toBe(canonicalHref(builtHead));
+      expect(new URL(href!).pathname).toMatch(/^\/privacy(\.html)?$/);
+    });
+
+    it("canonicalizes to a URL the sitemap also lists", () => {
+      const sitemap = readFileSync(resolve(buildOutDir, SITEMAP_FILE), "utf8");
+      expect(sitemap).toContain(`<loc>${canonicalHref(privacyHead)}</loc>`);
+    });
+
+    it("points og:url at the canonical URL", () => {
+      expect(metaContent(privacyHead, OG_ATTRIBUTE, "og:url")).toBe(
+        canonicalHref(privacyHead),
+      );
+    });
+
+    it("uses the privacy page title for og:title and twitter:title", () => {
+      const homeTitle = metaContent(builtHead, OG_ATTRIBUTE, "og:title");
+      const ogTitle = metaContent(privacyHead, OG_ATTRIBUTE, "og:title");
+      expect(ogTitle).toContain("Privacy Policy");
+      expect(ogTitle).not.toBe(homeTitle);
+      expect(metaContent(privacyHead, TWITTER_ATTRIBUTE, "twitter:title")).toBe(
+        ogTitle,
+      );
+    });
+  });
+
+  describe("404 page metadata", () => {
+    it("does not canonicalize the 404 page to itself", () => {
+      const notFoundHead = extractHead(
+        readFileSync(resolve(buildOutDir, NOT_FOUND_HTML_FILE), "utf8"),
+      );
+      expect(canonicalHref(notFoundHead)).toBeNull();
+      expect(metaContent(notFoundHead, OG_ATTRIBUTE, "og:url")).toBeNull();
+    });
+  });
+
+  describe("homepage per-page metadata", () => {
+    it("keeps the canonical as the bare domain, matching og:url", () => {
+      expect(canonicalHref(builtHead)).toBe(SITE_ORIGIN_URL);
+      expect(metaContent(builtHead, OG_ATTRIBUTE, "og:url")).toBe(
+        SITE_ORIGIN_URL,
+      );
+    });
+
+    it("keeps the tagline as og:title and twitter:title, distinct from the image alt", () => {
+      const ogTitle = metaContent(builtHead, OG_ATTRIBUTE, "og:title");
+      expect(ogTitle).toBe(HOME_TITLE);
+      expect(metaContent(builtHead, TWITTER_ATTRIBUTE, "twitter:title")).toBe(
+        HOME_TITLE,
+      );
+      expect(metaContent(builtHead, OG_ATTRIBUTE, "og:image:alt")).not.toBe(
+        ogTitle,
+      );
+    });
   });
 });
 
