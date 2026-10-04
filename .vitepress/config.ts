@@ -4,12 +4,12 @@ import tailwindcss from "@tailwindcss/vite";
 import { writeReportOnlyHeaders } from "./csp/writeReportOnlyHeaders";
 import { writeFontPreloadLink } from "./fonts/writeFontPreloadLink";
 import { getNoindexHeaderLines } from "./robots/getNoindexHeaderLines";
+import { buildPageSeoHead } from "./seo/buildPageSeoHead";
 import { PROJECTS, type Project } from "./theme/data/projects";
 
 const SITE_URL = "https://neonpixels.dev";
 const DESCRIPTION =
   "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, FarFlung, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
-const OG_TITLE = "Neon Pixels — We build the missing apps";
 const OG_IMAGE = `${SITE_URL}/images/social-card.png`;
 const OG_IMAGE_ALT =
   "Neon Pixels wordmark on a dark grid, with the pixel logo mark and the four project names — grimicorn.dev, farflung.io, basin.fm, markpost.io — glowing in lime, cyan, amber and pink.";
@@ -105,14 +105,13 @@ export default defineConfig({
     // .vitepress/theme/analytics/ and csp-head-crosscheck.test.ts).
     //
     // Fonts are self-hosted — see .vitepress/theme/index.ts
-    // Canonical + theme color
-    ["link", { rel: "canonical", href: SITE_URL }],
+    // Canonical, og:url, og:title and twitter:title are per-page: see
+    // transformHead below.
+    // Theme color
     ["meta", { name: "theme-color", content: "#08080a" }],
     // Open Graph
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:locale", content: "en_US" }],
-    ["meta", { property: "og:url", content: SITE_URL }],
-    ["meta", { property: "og:title", content: OG_TITLE }],
     ["meta", { property: "og:description", content: DESCRIPTION }],
     ["meta", { property: "og:image", content: OG_IMAGE }],
     ["meta", { property: "og:image:width", content: "1200" }],
@@ -120,7 +119,6 @@ export default defineConfig({
     ["meta", { property: "og:image:alt", content: OG_IMAGE_ALT }],
     // Twitter Card
     ["meta", { name: "twitter:card", content: "summary_large_image" }],
-    ["meta", { name: "twitter:title", content: OG_TITLE }],
     ["meta", { name: "twitter:description", content: DESCRIPTION }],
     ["meta", { name: "twitter:image", content: OG_IMAGE }],
     ["meta", { name: "twitter:image:alt", content: OG_IMAGE_ALT }],
@@ -156,6 +154,17 @@ export default defineConfig({
     ["meta", { name: "apple-mobile-web-app-title", content: "Neon Pixels" }],
     ["link", { rel: "manifest", href: "/images/site.webmanifest?v=20260808" }],
   ],
+  transformHead({ pageData, siteConfig }) {
+    if (pageData.isNotFound) {
+      return [];
+    }
+    return buildPageSeoHead({
+      siteUrl: SITE_URL,
+      relativePath: pageData.relativePath,
+      cleanUrls: siteConfig.cleanUrls ?? false,
+      title: pageData.title,
+    });
+  },
   vite: {
     // tailwindcss() is typed against the top-level Vite 8 (required by Vitest),
     // while VitePress bundles its own Vite 6 (pinned via the `overrides` block

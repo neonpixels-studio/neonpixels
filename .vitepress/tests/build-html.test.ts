@@ -541,6 +541,48 @@ describe("hero font preload", () => {
     expect(privacyHtml).toContain("Privacy Policy");
     expect(privacyHtml).toContain("Google Analytics");
   });
+
+  // Issue #174: canonical/og:url/og:title used to be global, so /privacy
+  // claimed the homepage as its canonical and got the homepage's social card.
+  describe("privacy.html per-page metadata", () => {
+    let privacyHead = "";
+
+    beforeAll(() => {
+      privacyHead = extractHead(
+        readFileSync(resolve(buildOutDir, "privacy.html"), "utf8"),
+      );
+    });
+
+    it("canonicalizes to itself, not the homepage", () => {
+      const href = canonicalHref(privacyHead);
+      expect(href).not.toBeNull();
+      expect(href).not.toBe(canonicalHref(builtHead));
+      expect(new URL(href!).pathname).toMatch(/^\/privacy(\.html)?$/);
+    });
+
+    it("points og:url at the canonical URL", () => {
+      expect(metaContent(privacyHead, OG_ATTRIBUTE, "og:url")).toBe(
+        canonicalHref(privacyHead),
+      );
+    });
+
+    it("uses the privacy page title for og:title and twitter:title", () => {
+      const homeTitle = metaContent(builtHead, OG_ATTRIBUTE, "og:title");
+      const ogTitle = metaContent(privacyHead, OG_ATTRIBUTE, "og:title");
+      expect(ogTitle).toContain("Privacy Policy");
+      expect(ogTitle).not.toBe(homeTitle);
+      expect(metaContent(privacyHead, TWITTER_ATTRIBUTE, "twitter:title")).toBe(
+        ogTitle,
+      );
+    });
+
+    it("keeps the homepage canonical as the bare domain", () => {
+      expect(new URL(canonicalHref(builtHead)!).pathname).toBe("/");
+      expect(canonicalHref(builtHead)).toBe(
+        metaContent(builtHead, OG_ATTRIBUTE, "og:url"),
+      );
+    });
+  });
 });
 
 // Netlify's contact-form support (issue #150) works by having a bot scan the

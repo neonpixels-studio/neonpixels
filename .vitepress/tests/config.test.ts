@@ -297,7 +297,7 @@ describe("Open Graph image metadata", () => {
     const altText = findMetaContent("og:image:alt");
     expect(altText.trim().length).toBeGreaterThanOrEqual(MIN_IMAGE_ALT_LENGTH);
     expect(altText.trim().length).toBeLessThanOrEqual(MAX_IMAGE_ALT_LENGTH);
-    expect(altText).not.toBe(findMetaContent("og:title"));
+    expect(altText).not.toBe(config.title);
     expect(altText).not.toBe(findMetaContent("og:description"));
     expect(findMetaContent("twitter:image:alt")).toBe(altText);
   });
