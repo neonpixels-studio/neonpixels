@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   COLD_START_HEADROOM_MS,
   NETLIFY_FUNCTION_LIMIT_MS,
   NOTIFY_TIMEOUT_MS,
   RESPONSE_HEADROOM_MS,
   RUN_DEADLINE_MS,
+  claimNotifyBudgetMs,
   remainingNotifyBudgetMs,
 } from "../../../netlify/functions/lib/notifyBudget";
 
@@ -39,5 +40,34 @@ describe("notifyBudget", () => {
   it("returns zero, never negative, once the deadline has passed", () => {
     expect(remainingNotifyBudgetMs(RUN_DEADLINE_MS)).toBe(0);
     expect(remainingNotifyBudgetMs(NETLIFY_FUNCTION_LIMIT_MS * 2)).toBe(0);
+  });
+
+  describe("claimNotifyBudgetMs", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it("returns the remaining budget without logging while time is left", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      expect(claimNotifyBudgetMs(Date.now(), "test-failed")).toBe(
+        NOTIFY_TIMEOUT_MS,
+      );
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("returns zero and logs under the given prefix once the deadline has passed", () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const runStartedAt = Date.now();
+      vi.setSystemTime(runStartedAt + RUN_DEADLINE_MS);
+
+      expect(claimNotifyBudgetMs(runStartedAt, "test-failed")).toBe(0);
+      expect(warn).toHaveBeenCalledWith(
+        "test-failed",
+        JSON.stringify({ message: "no time left to notify" }),
+      );
+    });
   });
 });

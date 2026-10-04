@@ -150,12 +150,8 @@ async function notifySummaryFailureQuietly(
   summaryErrorMessage: string,
   runStartedAt: number,
 ): Promise<void> {
-  const budgetMs = remainingNotifyBudgetMs(Date.now() - runStartedAt);
+  const budgetMs = claimNotifyBudgetMs(runStartedAt, NOTIFY_FAILED_LOG_PREFIX);
   if (budgetMs <= 0) {
-    console.warn(
-      NOTIFY_FAILED_LOG_PREFIX,
-      JSON.stringify({ message: "no time left to notify" }),
-    );
     return;
   }
   try {

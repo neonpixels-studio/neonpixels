@@ -31,3 +31,22 @@ export function remainingNotifyBudgetMs(elapsedMs: number): number {
     Math.min(NOTIFY_TIMEOUT_MS, remaining - RESPONSE_HEADROOM_MS),
   );
 }
+
+export const NO_TIME_LEFT_MESSAGE = "no time left to notify";
+
+// Budget for a best-effort GitHub call that runs after the main work. Logs
+// under `failedLogPrefix` when nothing is left, so every caller shares the
+// same skip message and a `<= 0` check is all that remains at the call site.
+export function claimNotifyBudgetMs(
+  runStartedAt: number,
+  failedLogPrefix: string,
+): number {
+  const budgetMs = remainingNotifyBudgetMs(Date.now() - runStartedAt);
+  if (budgetMs <= 0) {
+    console.warn(
+      failedLogPrefix,
+      JSON.stringify({ message: NO_TIME_LEFT_MESSAGE }),
+    );
+  }
+  return budgetMs;
+}

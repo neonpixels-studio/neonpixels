@@ -305,9 +305,8 @@ describe("csp-report-prune Netlify scheduled function", () => {
   });
 
   it("gives up on a hanging resolver and still replies 200", async () => {
-    // Same NOTIFY_TIMEOUT_MS budget as the notifier: the resolver runs after
-    // prune() has possibly used HARD_TIMEOUT_MS, so it must stay inside
-    // RUN_DEADLINE_MS.
+    // Gets the full NOTIFY_TIMEOUT_MS here because the run is fresh; the
+    // shrinking case after a slow prune is covered below.
     vi.useFakeTimers();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -321,6 +320,61 @@ describe("csp-report-prune Netlify scheduled function", () => {
     expect(warn.mock.calls[0][0]).toBe(RESOLVE_FAILED_LOG_PREFIX);
     const logged = JSON.parse(warn.mock.calls[0][1] as string);
     expect(logged.message).toMatch(/exceeded/);
+  });
+
+  it("cuts a hanging resolver off at the remaining budget after a slow successful prune", async () => {
+    // Fails if the resolver ignores the shared budget: a prune finishing just
+    // under HARD_TIMEOUT_MS must not hand the resolver a full
+    // NOTIFY_TIMEOUT_MS that runs into the response headroom.
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const slowPruneMs = HARD_TIMEOUT_MS - 1;
+    pruneMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () => resolve({ deleted: 0, remaining: 0, complete: true }),
+            slowPruneMs,
+          ),
+        ),
+    );
+    resolveMock.mockImplementationOnce(() => new Promise(() => {}));
+    const resolverBudgetMs = remainingNotifyBudgetMs(slowPruneMs);
+    expect(resolverBudgetMs).toBeLessThan(NOTIFY_TIMEOUT_MS);
+    let settled = false;
+
+    const responsePromise = cspReportPruneHandler(scheduledRequest()).then(
+      (value) => {
+        settled = true;
+        return value;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(slowPruneMs);
+    expect(resolveMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(resolverBudgetMs - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(200);
+    expect(warn.mock.calls[0][0]).toBe(RESOLVE_FAILED_LOG_PREFIX);
+  });
+
+  it("skips the resolver and logs when no time is left after the prune run", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    pruneMock.mockImplementationOnce(() => {
+      vi.setSystemTime(Date.now() + RUN_DEADLINE_MS);
+      return Promise.resolve({ deleted: 0, remaining: 0, complete: true });
+    });
+
+    const response = await cspReportPruneHandler(scheduledRequest());
+
+    expect(response.status).toBe(200);
+    expect(resolveMock).not.toHaveBeenCalled();
+    expect(warn.mock.calls[0][0]).toBe(RESOLVE_FAILED_LOG_PREFIX);
   });
 
   // Netlify scheduled Functions hard-cap execution at 30s; RUN_DEADLINE_MS

@@ -3,7 +3,7 @@ import { getCspReportPruner } from "./lib/cspReportPruner";
 import {
   NOTIFY_TIMEOUT_MS,
   RUN_DEADLINE_MS,
-  remainingNotifyBudgetMs,
+  claimNotifyBudgetMs,
 } from "./lib/notifyBudget";
 import {
   getPruneFailureNotifier,
@@ -76,12 +76,8 @@ async function notifyPruneFailureQuietly(
   pruneErrorMessage: string,
   runStartedAt: number,
 ): Promise<void> {
-  const budgetMs = remainingNotifyBudgetMs(Date.now() - runStartedAt);
+  const budgetMs = claimNotifyBudgetMs(runStartedAt, NOTIFY_FAILED_LOG_PREFIX);
   if (budgetMs <= 0) {
-    console.warn(
-      NOTIFY_FAILED_LOG_PREFIX,
-      JSON.stringify({ message: "no time left to notify" }),
-    );
     return;
   }
   try {
@@ -99,14 +95,18 @@ async function notifyPruneFailureQuietly(
 }
 
 // Best-effort, same contract as notifyPruneFailureQuietly: a successful
-// prune run must never fail because the issue closer broke. Shares
-// NOTIFY_TIMEOUT_MS since it also runs after prune() has used up to
+// prune run must never fail because the issue closer broke. Shares the
+// notify budget since it also runs after prune() has used up to
 // HARD_TIMEOUT_MS, and must stay within RUN_DEADLINE_MS.
-async function resolvePruneFailureQuietly(): Promise<void> {
+async function resolvePruneFailureQuietly(runStartedAt: number): Promise<void> {
+  const budgetMs = claimNotifyBudgetMs(runStartedAt, RESOLVE_FAILED_LOG_PREFIX);
+  if (budgetMs <= 0) {
+    return;
+  }
   try {
     await withTimeout(
       getPruneFailureResolver().resolve(),
-      NOTIFY_TIMEOUT_MS,
+      budgetMs,
       "csp report prune failure resolve",
     );
   } catch (resolveError) {
@@ -132,7 +132,7 @@ export default async (_request: Request): Promise<Response> => {
     await notifyPruneFailureQuietly(message, runStartedAt);
     return new Response(null, { status: HTTP_INTERNAL_SERVER_ERROR });
   }
-  await resolvePruneFailureQuietly();
+  await resolvePruneFailureQuietly(runStartedAt);
   return new Response(null, { status: HTTP_OK });
 };
 
