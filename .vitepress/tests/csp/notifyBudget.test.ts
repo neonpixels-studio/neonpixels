@@ -72,7 +72,7 @@ describe("notifyBudget", () => {
       vi.setSystemTime(runStartedAt + RUN_DEADLINE_MS);
 
       await runWithinNotifyBudget({
-        runStartedAt: runStartedAt,
+        runStartedAt,
         failedLogPrefix: "test-failed",
         label: "test call",
         call,
@@ -129,14 +129,20 @@ describe("notifyBudget", () => {
       vi.useFakeTimers();
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const call = vi.fn(() => new Promise<never>(() => {}));
+      let settled = false;
       const promise = runWithinNotifyBudget({
         runStartedAt: Date.now(),
         failedLogPrefix: "test-failed",
         label: "test call",
         call,
+      }).then(() => {
+        settled = true;
       });
 
-      await vi.advanceTimersByTimeAsync(NOTIFY_TIMEOUT_MS);
+      await vi.advanceTimersByTimeAsync(NOTIFY_TIMEOUT_MS - 1);
+      expect(call).toHaveBeenCalledTimes(1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
       await promise;
 
       expect(warn.mock.calls[0][0]).toBe("test-failed");

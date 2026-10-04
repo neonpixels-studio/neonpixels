@@ -37,11 +37,6 @@ export function remainingNotifyBudgetMs(elapsedMs: number): number {
 
 export const NO_TIME_LEFT_MESSAGE = "no time left in run budget";
 
-// Runs a best-effort GitHub call (failure notify or resolve) inside whatever
-// is left of the run budget. Never throws: a skipped or failed call is logged
-// under `failedLogPrefix` so it can't change the handler's response. `call`
-// is a thunk so nothing is constructed when the budget is already gone, and a
-// synchronous throw from it (e.g. a missing token) is caught like a rejection.
 export interface NotifyBudgetOptions {
   runStartedAt: number;
   failedLogPrefix: string;
@@ -49,6 +44,11 @@ export interface NotifyBudgetOptions {
   call: () => Promise<unknown>;
 }
 
+// Runs a best-effort GitHub call (failure notify or resolve) inside whatever
+// is left of the run budget. Never throws: a skipped or failed call is logged
+// under `failedLogPrefix` so it can't change the handler's response. `call`
+// is a thunk so nothing is constructed when the budget is already gone, and a
+// synchronous throw from it (e.g. a missing token) is caught like a rejection.
 export async function runWithinNotifyBudget({
   runStartedAt,
   failedLogPrefix,
