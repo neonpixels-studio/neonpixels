@@ -53,7 +53,12 @@ describe("notifyBudget", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const call = vi.fn().mockResolvedValue(undefined);
 
-      await runWithinNotifyBudget(Date.now(), "test-failed", "test call", call);
+      await runWithinNotifyBudget({
+        runStartedAt: Date.now(),
+        failedLogPrefix: "test-failed",
+        label: "test call",
+        call,
+      });
 
       expect(call).toHaveBeenCalledTimes(1);
       expect(warn).not.toHaveBeenCalled();
@@ -66,12 +71,12 @@ describe("notifyBudget", () => {
       const runStartedAt = Date.now();
       vi.setSystemTime(runStartedAt + RUN_DEADLINE_MS);
 
-      await runWithinNotifyBudget(
-        runStartedAt,
-        "test-failed",
-        "test call",
+      await runWithinNotifyBudget({
+        runStartedAt: runStartedAt,
+        failedLogPrefix: "test-failed",
+        label: "test call",
         call,
-      );
+      });
 
       expect(call).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(
@@ -85,7 +90,12 @@ describe("notifyBudget", () => {
       const call = vi.fn().mockRejectedValue(new Error("github down"));
 
       await expect(
-        runWithinNotifyBudget(Date.now(), "test-failed", "test call", call),
+        runWithinNotifyBudget({
+          runStartedAt: Date.now(),
+          failedLogPrefix: "test-failed",
+          label: "test call",
+          call,
+        }),
       ).resolves.toBeUndefined();
 
       expect(warn).toHaveBeenCalledWith(
@@ -94,16 +104,37 @@ describe("notifyBudget", () => {
       );
     });
 
+    it("swallows and logs a call that throws synchronously", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const call = vi.fn(() => {
+        throw new Error("missing token");
+      });
+
+      await expect(
+        runWithinNotifyBudget({
+          runStartedAt: Date.now(),
+          failedLogPrefix: "test-failed",
+          label: "test call",
+          call,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(warn).toHaveBeenCalledWith(
+        "test-failed",
+        JSON.stringify({ message: "missing token" }),
+      );
+    });
+
     it("gives up on a hanging call at the remaining budget", async () => {
       vi.useFakeTimers();
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const call = vi.fn(() => new Promise<never>(() => {}));
-      const promise = runWithinNotifyBudget(
-        Date.now(),
-        "test-failed",
-        "test call",
+      const promise = runWithinNotifyBudget({
+        runStartedAt: Date.now(),
+        failedLogPrefix: "test-failed",
+        label: "test call",
         call,
-      );
+      });
 
       await vi.advanceTimersByTimeAsync(NOTIFY_TIMEOUT_MS);
       await promise;

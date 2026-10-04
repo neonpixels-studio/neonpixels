@@ -68,20 +68,21 @@ const HTTP_INTERNAL_SERVER_ERROR = 500;
 export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - NOTIFY_TIMEOUT_MS;
 
 // Best-effort: a broken notifier (bad/missing PRUNE_FAILURE_GITHUB_TOKEN,
-// GitHub API outage, hang past the remaining notify budget) must not crash the handler
-// or turn the real 500 (the prune failure this reports) into an unhandled
-// exception — see NOTIFY_FAILED_LOG_PREFIX above. A single flat try/catch
-// (no nested control flow inside the handler's own catch block).
+// GitHub API outage, hang past the remaining notify budget) must not crash
+// the handler or turn the real 500 (the prune failure this reports) into an
+// unhandled exception — see NOTIFY_FAILED_LOG_PREFIX above. Delegates to
+// runWithinNotifyBudget, which never throws, so the handler's catch block
+// stays flat.
 async function notifyPruneFailureQuietly(
   pruneErrorMessage: string,
   runStartedAt: number,
 ): Promise<void> {
-  await runWithinNotifyBudget(
+  await runWithinNotifyBudget({
     runStartedAt,
-    NOTIFY_FAILED_LOG_PREFIX,
-    "csp report prune failure notify",
-    () => getPruneFailureNotifier().notify(pruneErrorMessage),
-  );
+    failedLogPrefix: NOTIFY_FAILED_LOG_PREFIX,
+    label: "csp report prune failure notify",
+    call: () => getPruneFailureNotifier().notify(pruneErrorMessage),
+  });
 }
 
 // Best-effort, same contract as notifyPruneFailureQuietly: a successful
@@ -89,12 +90,12 @@ async function notifyPruneFailureQuietly(
 // notify budget since it also runs after prune() has used up to
 // HARD_TIMEOUT_MS, and must stay within RUN_DEADLINE_MS.
 async function resolvePruneFailureQuietly(runStartedAt: number): Promise<void> {
-  await runWithinNotifyBudget(
+  await runWithinNotifyBudget({
     runStartedAt,
-    RESOLVE_FAILED_LOG_PREFIX,
-    "csp report prune failure resolve",
-    () => getPruneFailureResolver().resolve(),
-  );
+    failedLogPrefix: RESOLVE_FAILED_LOG_PREFIX,
+    label: "csp report prune failure resolve",
+    call: () => getPruneFailureResolver().resolve(),
+  });
 }
 
 export default async (_request: Request): Promise<Response> => {
