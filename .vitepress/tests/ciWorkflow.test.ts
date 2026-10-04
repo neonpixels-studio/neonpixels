@@ -33,7 +33,7 @@ describe("ci.yml permissions", () => {
   it("grants only contents: read", () => {
     const permissions = findTopLevelBlock("permissions") ?? "";
     expect(permissions).toMatch(/^\s+contents:\s*read\s*$/m);
-    expect(permissions.match(/^\s+\S+:/gm)).toHaveLength(1);
+    expect(permissions.match(/^\s+\S+:/gm) ?? []).toHaveLength(1);
   });
 
   it("has no job-level permissions override", () => {
