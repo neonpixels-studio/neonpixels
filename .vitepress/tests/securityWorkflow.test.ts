@@ -120,7 +120,7 @@ describe("audit job", () => {
   // onto an incompatible major (see .vitepress/security/
   // checkOverrideCompatibility.ts). The check's logic is behavior-tested in
   // checkOverrideCompatibility.test.ts; this confirms the audit job runs it,
-  // after the install that produces the lockfile state it reads.
+  // after the install that provides the `semver` module the script imports.
   it("runs the override compatibility check after installing dependencies", () => {
     const auditJob = readJob("audit");
     const step = readStep(
