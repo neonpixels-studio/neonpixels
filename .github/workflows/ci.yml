@@ -12,7 +12,7 @@ permissions:
 # Superseded PR runs are cancelled. Push runs get a per-commit group so no
 # main build is ever cancelled or replaced in a queue.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

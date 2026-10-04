@@ -51,7 +51,7 @@ describe("ci.yml concurrency", () => {
 
   it("groups runs per PR number, falling back to the commit SHA", () => {
     expect(concurrency()).toMatch(
-      /^\s+group:\s*.*github\.event\.pull_request\.number\s*\|\|\s*github\.sha\b/m,
+      /^\s+group:\s*\$\{\{\s*github\.workflow\s*\}\}-\$\{\{\s*github\.event\.pull_request\.number\s*\|\|\s*github\.sha\s*\}\}\s*$/m,
     );
   });
 
