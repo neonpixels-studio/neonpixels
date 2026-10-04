@@ -25,17 +25,18 @@ The site is a single custom-themed page. The theme lives in `.vitepress/theme`:
 
 ## Scripts
 
-| Script              | What it does                                  |
-| ------------------- | --------------------------------------------- |
-| `npm run dev`       | Start the local dev server                    |
-| `npm run build`     | Build the static site to `.vitepress/dist`    |
-| `npm run preview`   | Preview the production build locally          |
-| `npm test`          | Run the test suite in watch mode              |
-| `npm run test:ci`   | Run the test suite once                       |
-| `npm run typecheck` | Type-check with `vue-tsc`                     |
-| `npm run lint`      | Check formatting (Prettier) and lint (ESLint) |
-| `npm run lint:fix`  | Auto-fix formatting and lint issues           |
-| `npm run audit`     | Audit production dependencies                 |
+| Script                    | What it does                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------ |
+| `npm run dev`             | Start the local dev server                                                     |
+| `npm run build`           | Build the static site to `.vitepress/dist`                                     |
+| `npm run preview`         | Preview the production build locally                                           |
+| `npm test`                | Run the test suite in watch mode                                               |
+| `npm run test:ci`         | Run the test suite once                                                        |
+| `npm run typecheck`       | Type-check with `vue-tsc`                                                      |
+| `npm run lint`            | Check formatting (Prettier) and lint (ESLint)                                  |
+| `npm run lint:fix`        | Auto-fix formatting and lint issues                                            |
+| `npm run audit`           | Audit production dependencies                                                  |
+| `npm run check:overrides` | Fail if a package.json override forces a consumer onto an incompatible version |
 
 ## Testing
 
