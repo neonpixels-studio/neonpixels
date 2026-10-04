@@ -45,7 +45,10 @@ import {
 } from "./cspReportStore";
 
 export type BlobListEntry = { key: string };
-export type BlobPage = { blobs: BlobListEntry[] };
+// `directories` is only populated by the real store for a `directories: true`
+// listing (the sub-prefixes found at that level); optional so fakes for
+// prefix listings can omit it.
+export type BlobPage = { blobs: BlobListEntry[]; directories?: string[] };
 
 // The two Blobs capabilities pruning needs, so tests can inject a fake
 // without mocking the `@netlify/blobs` module (mirrors BlobWriter's seam in
@@ -128,7 +131,12 @@ function isPastDeadline(deadlineMs: number): boolean {
   return Date.now() > deadlineMs;
 }
 
-type ListedKeys = { keys: string[]; complete: boolean };
+type ListedKeys = {
+  keys: string[];
+  // Sub-prefixes reported by a `directories: true` listing; empty otherwise.
+  directories: string[];
+  complete: boolean;
+};
 
 // Walks every list() page up to its own deadline. Stops early
 // (complete: false) rather than exceeding it, so a store too large to fully
@@ -139,13 +147,15 @@ async function listKeys(
   deadlineMs: number,
 ): Promise<ListedKeys> {
   const keys: string[] = [];
+  const directories: string[] = [];
   for await (const page of client.list({ paginate: true, ...options })) {
     keys.push(...page.blobs.map((blob) => blob.key));
+    directories.push(...(page.directories ?? []));
     if (isPastDeadline(deadlineMs)) {
-      return { keys, complete: false };
+      return { keys, directories, complete: false };
     }
   }
-  return { keys, complete: true };
+  return { keys, directories, complete: true };
 }
 
 // A group whose slice of the budget is already gone before it starts is
@@ -158,7 +168,7 @@ async function listKeysUnlessOutOfTime(
   deadlineMs: number,
 ): Promise<ListedKeys> {
   if (isPastDeadline(deadlineMs)) {
-    return { keys: [], complete: false };
+    return { keys: [], directories: [], complete: false };
   }
   return listKeys(client, options, deadlineMs);
 }
@@ -177,7 +187,8 @@ type KeyGroup = {
 // prefix returns only blobs at the store root, which is exactly the
 // unprefixed legacy keys, without walking the prefixed ones a second time.
 // Keys under any other prefix are never written by this module and are not
-// listed.
+// listed or pruned; the root listing's `directories` is used to surface them
+// (see warnUnrecognizedPrefixes).
 const KEY_GROUPS: KeyGroup[] = [
   {
     options: { prefix: keyClassPrefix(ROLLOUT_KEY_CLASS) },
@@ -237,6 +248,41 @@ function groupKeysByClass(listed: ListedKeys[]): {
   };
 }
 
+// Why unrecognized prefixes are only warned about, not pruned: nothing in this
+// module writes them, so their key shape (and whether a timestamp can even be
+// parsed from it) is unknown, and "older than retention" could delete data a
+// human or another tool put there on purpose. A warning keeps it visible
+// without that risk; an operator can clear or adopt the prefix deliberately.
+// Best-effort: it only sees directories from the root listing, so a run that
+// skips or cuts short that listing reports `complete: false` instead.
+export const UNRECOGNIZED_PREFIX_LOG_PREFIX =
+  "csp-report-prune-unrecognized-prefix";
+
+const RECOGNIZED_PREFIXES = new Set([
+  keyClassPrefix(ROLLOUT_KEY_CLASS),
+  keyClassPrefix(OTHER_KEY_CLASS),
+]);
+
+// Directory entries are normalized to a trailing slash so they compare
+// against keyClassPrefix whether or not Blobs includes it.
+function asPrefix(directory: string): string {
+  return directory.endsWith("/") ? directory : `${directory}/`;
+}
+
+function unrecognizedPrefixes(listed: ListedKeys[]): string[] {
+  const prefixes = listed
+    .flatMap((group) => group.directories)
+    .map(asPrefix)
+    .filter((prefix) => !RECOGNIZED_PREFIXES.has(prefix));
+  return [...new Set(prefixes)].sort();
+}
+
+function warnUnrecognizedPrefixes(listed: ListedKeys[]): void {
+  for (const prefix of unrecognizedPrefixes(listed)) {
+    console.warn(UNRECOGNIZED_PREFIX_LOG_PREFIX, JSON.stringify({ prefix }));
+  }
+}
+
 async function listKeyGroups(
   client: BlobPrunerClient,
   listStartMs: number,
@@ -251,6 +297,7 @@ async function listKeyGroups(
       ),
     );
   }
+  warnUnrecognizedPrefixes(listed);
   return {
     ...groupKeysByClass(listed),
     rolloutViewComplete: listed.every(
