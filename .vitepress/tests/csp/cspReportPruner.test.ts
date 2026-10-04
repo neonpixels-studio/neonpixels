@@ -10,6 +10,7 @@ import {
   MAX_RETENTION_DAYS,
   MAX_MAX_BLOBS,
   DELETE_BATCH_SIZE,
+  UNRECOGNIZED_PREFIX_LOG_PREFIX,
   groupDeadlineMs,
   LIST_TIME_BUDGET_MS,
   PRUNE_TIME_BUDGET_MS,
@@ -102,11 +103,24 @@ function fakeClient(pages: string[][]): FakePrunerClient {
   };
 }
 
+// The distinct first-level prefixes (with trailing slash) among the keys, as a
+// `directories: true` listing reports them.
+function directoriesOf(keys: string[]): string[] {
+  const prefixes = keys
+    .filter((key) => key.includes("/"))
+    .map((key) => `${key.split("/")[0]}/`);
+  return [...new Set(prefixes)];
+}
+
 // One list() page as real Blobs would return it for these options.
 function listedPage(keys: string[], options: BlobListOptions): BlobPage {
-  return {
+  const page: BlobPage = {
     blobs: keysMatchingListOptions(keys, options).map((key) => ({ key })),
   };
+  if (options.directories) {
+    page.directories = directoriesOf(keys);
+  }
+  return page;
 }
 
 // Group order follows KEY_GROUPS in the pruner: rollout, legacy, other.
@@ -550,6 +564,97 @@ describe("createCspReportPruner", () => {
       "csp-report-prune-rollout-evicted-on-partial-view",
       JSON.stringify({ rolloutKeysListed: 2 }),
     );
+  });
+
+  describe("unrecognized key prefixes (#178)", () => {
+    const unknownKey = "stray/2020-01-01T00-00-00-000Z-x.json";
+
+    function unrecognizedWarnings(warn: {
+      mock: { calls: unknown[][] };
+    }): unknown[][] {
+      return warn.mock.calls.filter(
+        (call) => call[0] === UNRECOGNIZED_PREFIX_LOG_PREFIX,
+      );
+    }
+
+    it("warns once per unrecognized prefix found in the root listing", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const client = fakeClient([
+        [
+          unknownKey,
+          "stray/another.json",
+          "zzz/one.json",
+          taggedKeyFromDaysAgo(1, "other", "a"),
+          taggedKeyFromDaysAgo(1, "rollout", "b"),
+        ],
+      ]);
+      const pruner = createCspReportPruner(client, {
+        retentionDays: 30,
+        maxBlobs: 10,
+      });
+
+      await pruner.prune();
+
+      expect(unrecognizedWarnings(warn).map((call) => call[1])).toEqual([
+        JSON.stringify({ prefix: "stray/" }),
+        JSON.stringify({ prefix: "zzz/" }),
+      ]);
+    });
+
+    it("does not warn when only rollout/, other/ and root keys exist", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const client = fakeClient([
+        [
+          taggedKeyFromDaysAgo(1, "other", "a"),
+          taggedKeyFromDaysAgo(1, "rollout", "b"),
+          keyFromDaysAgo(1, "legacy"),
+        ],
+      ]);
+      const pruner = createCspReportPruner(client, {
+        retentionDays: 30,
+        maxBlobs: 10,
+      });
+
+      await pruner.prune();
+
+      expect(unrecognizedWarnings(warn)).toEqual([]);
+    });
+
+    it("recognizes known prefixes whether or not Blobs includes the trailing slash", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const client: BlobPrunerClient = {
+        delete: vi.fn().mockResolvedValue(undefined),
+        async *list(options) {
+          yield {
+            blobs: [],
+            directories: options.directories ? ["rollout", "other", "odd"] : [],
+          };
+        },
+      };
+
+      await createCspReportPruner(client, {
+        retentionDays: 30,
+        maxBlobs: 10,
+      }).prune();
+
+      expect(unrecognizedWarnings(warn).map((call) => call[1])).toEqual([
+        JSON.stringify({ prefix: "odd/" }),
+      ]);
+    });
+
+    it("never deletes keys under an unrecognized prefix, however old", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const client = fakeClient([[unknownKey]]);
+      const pruner = createCspReportPruner(client, {
+        retentionDays: 30,
+        maxBlobs: 10,
+      });
+
+      const result = await pruner.prune();
+
+      expect(deletedKeys(client)).toEqual([]);
+      expect(result.deleted).toBe(0);
+    });
   });
 
   describe("per-class listing (#165)", () => {
