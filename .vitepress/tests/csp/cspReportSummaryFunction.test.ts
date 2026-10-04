@@ -25,15 +25,18 @@ vi.mock("../../../netlify/functions/lib/notifySummaryFailure", () => ({
 }));
 
 import cspReportSummaryHandler, {
-  COLD_START_HEADROOM_MS,
   config,
   HARD_TIMEOUT_MS,
+} from "../../../netlify/functions/csp-report-summary";
+import {
+  COLD_START_HEADROOM_MS,
+  NO_TIME_LEFT_MESSAGE,
   NETLIFY_FUNCTION_LIMIT_MS,
   NOTIFY_TIMEOUT_MS,
   RESPONSE_HEADROOM_MS,
   RUN_DEADLINE_MS,
   remainingNotifyBudgetMs,
-} from "../../../netlify/functions/csp-report-summary";
+} from "../../../netlify/functions/lib/notifyBudget";
 
 const SUMMARIZED_LOG_PREFIX = "csp-report-summarized";
 const SUMMARY_BREAKDOWN_LOG_PREFIX = "csp-report-summary-breakdown";
@@ -405,7 +408,7 @@ describe("csp-report-summary Netlify scheduled function", () => {
     expect(notifyMock).not.toHaveBeenCalled();
     expect(warn.mock.calls[1][0]).toBe(NOTIFY_FAILED_LOG_PREFIX);
     expect(JSON.parse(warn.mock.calls[1][1] as string).message).toBe(
-      "no time left to notify",
+      NO_TIME_LEFT_MESSAGE,
     );
   });
 

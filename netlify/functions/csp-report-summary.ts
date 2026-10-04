@@ -3,6 +3,7 @@ import {
   type CspReportSummary,
 } from "./lib/cspReportSummary";
 import { errorMessage } from "./lib/errorMessage";
+import { RUN_DEADLINE_MS, runWithinNotifyBudget } from "./lib/notifyBudget";
 import { getSummaryFailureNotifier } from "./lib/notifySummaryFailure";
 import { withTimeout } from "./lib/withTimeout";
 
@@ -118,27 +119,6 @@ function logSummary(summary: CspReportSummary): void {
   );
 }
 
-// Netlify's real scheduled-Function execution limit.
-export const NETLIFY_FUNCTION_LIMIT_MS = 30000;
-
-// Cold start and module load happen before the handler's own clock starts,
-// so they are carved out of the limit rather than measured.
-export const COLD_START_HEADROOM_MS = 2000;
-
-// The combined ceiling for the whole run (summarize + any failure notify).
-export const RUN_DEADLINE_MS =
-  NETLIFY_FUNCTION_LIMIT_MS - COLD_START_HEADROOM_MS;
-
-// Kept free after notify so the 500 response can still be returned.
-export const RESPONSE_HEADROOM_MS = 500;
-
-// Upper bound for the GitHub notification call, which only runs after
-// summarize() has already failed. The budget actually used is the smaller of
-// this and what is left of RUN_DEADLINE_MS (see remainingNotifyBudgetMs), so
-// a fast failure (e.g. a Blobs outage) gets the full amount. A timeout here
-// is caught and logged the same as any other notify failure.
-export const NOTIFY_TIMEOUT_MS = 5000;
-
 // The notify window guaranteed even when summarize() hangs all the way to
 // HARD_TIMEOUT_MS. Only the hang backstop gives this up front; a successful
 // run that finishes under it is unaffected, and a fast failure still gets
@@ -155,48 +135,27 @@ const HANG_NOTIFY_WINDOW_MS = 3000;
 // exactly that case: it always wins the race against Netlify's real limit,
 // so a genuine hang still produces a logged csp-report-summary-failed marker
 // and leaves a short window to notify. Unlike csp-report-prune.ts, which
-// still reserves the full NOTIFY_TIMEOUT_MS, the notify budget here shrinks
-// to fit what is left.
+// reserves the full NOTIFY_TIMEOUT_MS up front, the notify window here is
+// smaller (HANG_NOTIFY_WINDOW_MS); both shrink the actual notify budget to
+// fit what is left via remainingNotifyBudgetMs.
 export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - HANG_NOTIFY_WINDOW_MS;
 
-export function remainingNotifyBudgetMs(elapsedMs: number): number {
-  const remaining = RUN_DEADLINE_MS - elapsedMs;
-  return Math.max(
-    0,
-    Math.min(NOTIFY_TIMEOUT_MS, remaining - RESPONSE_HEADROOM_MS),
-  );
-}
-
 // Best-effort: a broken notifier (bad/missing PRUNE_FAILURE_GITHUB_TOKEN,
-// GitHub API outage, hang past NOTIFY_TIMEOUT_MS) must not crash the handler
-// or turn the real 500 (the summary failure this reports) into an unhandled
-// exception — see NOTIFY_FAILED_LOG_PREFIX above. A single flat try/catch
-// (no nested control flow inside the handler's own catch block), mirroring
-// notifyPruneFailureQuietly in csp-report-prune.ts.
+// GitHub API outage, hang past the remaining notify budget) must not crash
+// the handler or turn the real 500 (the summary failure this reports) into an
+// unhandled exception — see NOTIFY_FAILED_LOG_PREFIX above. Delegates to
+// runWithinNotifyBudget, which never throws, so the handler's catch block
+// stays flat. Mirrors notifyPruneFailureQuietly in csp-report-prune.ts.
 async function notifySummaryFailureQuietly(
   summaryErrorMessage: string,
   runStartedAt: number,
 ): Promise<void> {
-  const budgetMs = remainingNotifyBudgetMs(Date.now() - runStartedAt);
-  if (budgetMs <= 0) {
-    console.warn(
-      NOTIFY_FAILED_LOG_PREFIX,
-      JSON.stringify({ message: "no time left to notify" }),
-    );
-    return;
-  }
-  try {
-    await withTimeout(
-      getSummaryFailureNotifier().notify(summaryErrorMessage),
-      budgetMs,
-      "csp report summary failure notify",
-    );
-  } catch (notifyError) {
-    console.warn(
-      NOTIFY_FAILED_LOG_PREFIX,
-      JSON.stringify({ message: errorMessage(notifyError) }),
-    );
-  }
+  await runWithinNotifyBudget({
+    runStartedAt,
+    failedLogPrefix: NOTIFY_FAILED_LOG_PREFIX,
+    label: "csp report summary failure notify",
+    call: () => getSummaryFailureNotifier().notify(summaryErrorMessage),
+  });
 }
 
 export default async (_request: Request): Promise<Response> => {
