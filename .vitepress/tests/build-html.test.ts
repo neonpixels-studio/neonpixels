@@ -562,6 +562,19 @@ describe("hero font preload", () => {
       expect(new URL(href!).pathname).toMatch(/^\/privacy(\.html)?$/);
     });
 
+    it("canonicalizes to a URL the sitemap also lists", () => {
+      const sitemap = readFileSync(resolve(buildOutDir, SITEMAP_FILE), "utf8");
+      expect(sitemap).toContain(`<loc>${canonicalHref(privacyHead)}</loc>`);
+    });
+
+    it("does not canonicalize the 404 page to itself", () => {
+      const notFoundHead = extractHead(
+        readFileSync(resolve(buildOutDir, NOT_FOUND_HTML_FILE), "utf8"),
+      );
+      expect(canonicalHref(notFoundHead)).toBeNull();
+      expect(metaContent(notFoundHead, OG_ATTRIBUTE, "og:url")).toBeNull();
+    });
+
     it("points og:url at the canonical URL", () => {
       expect(metaContent(privacyHead, OG_ATTRIBUTE, "og:url")).toBe(
         canonicalHref(privacyHead),
