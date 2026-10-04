@@ -42,9 +42,12 @@ vi.mock("../../../netlify/functions/lib/notifyPruneFailure", () => ({
 import cspReportPruneHandler, {
   config,
   HARD_TIMEOUT_MS,
+} from "../../../netlify/functions/csp-report-prune";
+import {
   NOTIFY_TIMEOUT_MS,
   RUN_DEADLINE_MS,
-} from "../../../netlify/functions/csp-report-prune";
+  remainingNotifyBudgetMs,
+} from "../../../netlify/functions/lib/notifyBudget";
 import { PRUNE_TIME_BUDGET_MS } from "../../../netlify/functions/lib/cspReportPruner";
 
 const PRUNED_LOG_PREFIX = "csp-report-pruned";
@@ -228,19 +231,30 @@ describe("csp-report-prune Netlify scheduled function", () => {
     expect(logged.message).toMatch(/exceeded/);
   });
 
-  it("gives up on a hanging notifier and still replies 500", async () => {
-    // The notifier has its own short budget (NOTIFY_TIMEOUT_MS), separate
-    // from the pruner's HARD_TIMEOUT_MS: it only runs after a prune failure,
-    // so it must not be able to push the whole run past Netlify's real 30s
-    // scheduled-Function limit — see NOTIFY_TIMEOUT_MS in
-    // csp-report-prune.ts.
+  it("cuts a hanging notifier off at the remaining budget after the prune run hangs", async () => {
+    // After a hang to HARD_TIMEOUT_MS the notifier only gets what is left of
+    // RUN_DEADLINE_MS (minus response headroom), not the full
+    // NOTIFY_TIMEOUT_MS. Fails if the handler ignores the shared budget and
+    // passes a fixed timeout.
     vi.useFakeTimers();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    pruneMock.mockRejectedValueOnce(new Error("blobs unavailable"));
+    pruneMock.mockImplementationOnce(() => new Promise(() => {}));
     notifyMock.mockImplementationOnce(() => new Promise(() => {}));
+    const afterHangBudgetMs = remainingNotifyBudgetMs(HARD_TIMEOUT_MS);
+    expect(afterHangBudgetMs).toBeLessThan(NOTIFY_TIMEOUT_MS);
+    let settled = false;
 
-    const responsePromise = cspReportPruneHandler(scheduledRequest());
-    await vi.advanceTimersByTimeAsync(NOTIFY_TIMEOUT_MS);
+    const responsePromise = cspReportPruneHandler(scheduledRequest()).then(
+      (value) => {
+        settled = true;
+        return value;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(HARD_TIMEOUT_MS);
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(afterHangBudgetMs - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
     const response = await responsePromise;
 
     expect(response.status).toBe(500);
@@ -248,6 +262,46 @@ describe("csp-report-prune Netlify scheduled function", () => {
     expect(warn.mock.calls[1][0]).toBe(NOTIFY_FAILED_LOG_PREFIX);
     const logged = JSON.parse(warn.mock.calls[1][1] as string);
     expect(logged.message).toMatch(/exceeded/);
+  });
+
+  it("gives a hanging notifier its full NOTIFY_TIMEOUT_MS after a fast failure", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    pruneMock.mockRejectedValueOnce(new Error("blobs unavailable"));
+    notifyMock.mockImplementationOnce(() => new Promise(() => {}));
+    let settled = false;
+
+    const responsePromise = cspReportPruneHandler(scheduledRequest()).then(
+      (value) => {
+        settled = true;
+        return value;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(NOTIFY_TIMEOUT_MS - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(500);
+    expect(warn.mock.calls[1][0]).toBe(NOTIFY_FAILED_LOG_PREFIX);
+  });
+
+  it("skips the notifier and logs when no time is left after the failure", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    pruneMock.mockImplementationOnce(() => {
+      vi.setSystemTime(Date.now() + RUN_DEADLINE_MS);
+      return Promise.reject(new Error("blocked event loop"));
+    });
+
+    const response = await cspReportPruneHandler(scheduledRequest());
+
+    expect(response.status).toBe(500);
+    expect(notifyMock).not.toHaveBeenCalled();
+    expect(warn.mock.calls[1][0]).toBe(NOTIFY_FAILED_LOG_PREFIX);
+    expect(JSON.parse(warn.mock.calls[1][1] as string).message).toBe(
+      "no time left to notify",
+    );
   });
 
   it("gives up on a hanging resolver and still replies 200", async () => {

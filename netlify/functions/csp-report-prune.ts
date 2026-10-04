@@ -1,6 +1,11 @@
 import { errorMessage } from "./lib/errorMessage";
 import { getCspReportPruner } from "./lib/cspReportPruner";
 import {
+  NOTIFY_TIMEOUT_MS,
+  RUN_DEADLINE_MS,
+  remainingNotifyBudgetMs,
+} from "./lib/notifyBudget";
+import {
   getPruneFailureNotifier,
   getPruneFailureResolver,
 } from "./lib/notifyPruneFailure";
@@ -38,26 +43,16 @@ const HTTP_OK = 200;
 const HTTP_INTERNAL_SERVER_ERROR = 500;
 
 // Netlify scheduled Functions have a hard 30s execution limit. The prune
-// budget and the notify budget below are sequential, not independent —
-// notify only ever runs after prune() has already failed — so they must
-// share one combined ceiling under 30s rather than each separately assuming
-// the full window. RUN_DEADLINE_MS is that combined ceiling (2s headroom for
-// cold start and the final in-flight batch); HARD_TIMEOUT_MS is what's left
-// for prune() once NOTIFY_TIMEOUT_MS is reserved for the notify call that
-// might follow it. Exported so cspReportPruneFunction.test.ts can pin the
-// full ordering invariant: cspReportPruner's own PRUNE_TIME_BUDGET_MS <
-// HARD_TIMEOUT_MS < RUN_DEADLINE_MS — a normal partial run (store too large
-// to finish in one pass) must exit gracefully via PRUNE_TIME_BUDGET_MS well
-// before HARD_TIMEOUT_MS would kill it and report it as a failure.
-export const RUN_DEADLINE_MS = 28000;
-
-// A short, separate budget for the GitHub notification call: this only runs
-// after prune() has already failed (possibly after consuming all of
-// HARD_TIMEOUT_MS itself), so it must not be able to push the combined run
-// past RUN_DEADLINE_MS. A timeout here is caught and logged the same as any
-// other notify failure — the next hourly run's own failure (if the issue
-// persists) gets another chance to notify.
-export const NOTIFY_TIMEOUT_MS = 5000;
+// budget and the notify budget are sequential, not independent (notify only
+// ever runs after prune() has already failed), so they share one combined
+// ceiling, RUN_DEADLINE_MS, defined with the notify budget in
+// lib/notifyBudget.ts. HARD_TIMEOUT_MS below is what is left for prune() once
+// NOTIFY_TIMEOUT_MS is reserved for the notify call that might follow it.
+// cspReportPruneFunction.test.ts pins the full ordering invariant:
+// cspReportPruner's own PRUNE_TIME_BUDGET_MS < HARD_TIMEOUT_MS <
+// RUN_DEADLINE_MS, so a normal partial run (store too large to finish in one
+// pass) exits gracefully via PRUNE_TIME_BUDGET_MS well before HARD_TIMEOUT_MS
+// would kill it and report it as a failure.
 
 // cspReportPruner's own list/delete budgets are cooperative: they check the
 // clock between pages/batches, not during a single slow list() page or
@@ -67,7 +62,9 @@ export const NOTIFY_TIMEOUT_MS = 5000;
 // limit (even after reserving NOTIFY_TIMEOUT_MS for the notify call that
 // follows a failure), so a hang still produces a logged
 // csp-report-prune-failed marker instead of the run being silently killed
-// with nothing written to the logs.
+// with nothing written to the logs. Because RESPONSE_HEADROOM_MS is also
+// kept free, a notify after a full hang gets slightly under
+// NOTIFY_TIMEOUT_MS (see remainingNotifyBudgetMs).
 export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - NOTIFY_TIMEOUT_MS;
 
 // Best-effort: a broken notifier (bad/missing PRUNE_FAILURE_GITHUB_TOKEN,
@@ -77,11 +74,20 @@ export const HARD_TIMEOUT_MS = RUN_DEADLINE_MS - NOTIFY_TIMEOUT_MS;
 // (no nested control flow inside the handler's own catch block).
 async function notifyPruneFailureQuietly(
   pruneErrorMessage: string,
+  runStartedAt: number,
 ): Promise<void> {
+  const budgetMs = remainingNotifyBudgetMs(Date.now() - runStartedAt);
+  if (budgetMs <= 0) {
+    console.warn(
+      NOTIFY_FAILED_LOG_PREFIX,
+      JSON.stringify({ message: "no time left to notify" }),
+    );
+    return;
+  }
   try {
     await withTimeout(
       getPruneFailureNotifier().notify(pruneErrorMessage),
-      NOTIFY_TIMEOUT_MS,
+      budgetMs,
       "csp report prune failure notify",
     );
   } catch (notifyError) {
@@ -112,6 +118,7 @@ async function resolvePruneFailureQuietly(): Promise<void> {
 }
 
 export default async (_request: Request): Promise<Response> => {
+  const runStartedAt = Date.now();
   try {
     const result = await withTimeout(
       getCspReportPruner().prune(),
@@ -122,7 +129,7 @@ export default async (_request: Request): Promise<Response> => {
   } catch (error) {
     const message = errorMessage(error);
     console.warn(PRUNE_FAILED_LOG_PREFIX, JSON.stringify({ message }));
-    await notifyPruneFailureQuietly(message);
+    await notifyPruneFailureQuietly(message, runStartedAt);
     return new Response(null, { status: HTTP_INTERNAL_SERVER_ERROR });
   }
   await resolvePruneFailureQuietly();
