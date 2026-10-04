@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 const WORKFLOW_PATH = resolve(process.cwd(), ".github/workflows/ci.yml");
 const WORKFLOW = readFileSync(WORKFLOW_PATH, "utf8");
 
-const TOP_LEVEL_KEY = /^\S/;
+const TOP_LEVEL_KEY = /^[^\s#]/;
 
 // Slices a top-level `<name>:` block up to the next top-level key. Returns
 // undefined when absent so the assertion fails rather than setup throwing.
@@ -49,9 +49,9 @@ describe("ci.yml concurrency", () => {
     expect(findTopLevelBlock("concurrency")).not.toBeUndefined();
   });
 
-  it("groups runs per PR number, falling back to the ref", () => {
+  it("groups runs per PR number, falling back to the commit SHA", () => {
     expect(concurrency()).toMatch(
-      /^\s+group:\s*.*github\.event\.pull_request\.number\s*\|\|\s*github\.ref/m,
+      /^\s+group:\s*.*github\.event\.pull_request\.number\s*\|\|\s*github\.sha\b/m,
     );
   });
 
