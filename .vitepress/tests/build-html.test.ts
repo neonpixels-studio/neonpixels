@@ -567,14 +567,6 @@ describe("hero font preload", () => {
       expect(sitemap).toContain(`<loc>${canonicalHref(privacyHead)}</loc>`);
     });
 
-    it("does not canonicalize the 404 page to itself", () => {
-      const notFoundHead = extractHead(
-        readFileSync(resolve(buildOutDir, NOT_FOUND_HTML_FILE), "utf8"),
-      );
-      expect(canonicalHref(notFoundHead)).toBeNull();
-      expect(metaContent(notFoundHead, OG_ATTRIBUTE, "og:url")).toBeNull();
-    });
-
     it("points og:url at the canonical URL", () => {
       expect(metaContent(privacyHead, OG_ATTRIBUTE, "og:url")).toBe(
         canonicalHref(privacyHead),
@@ -589,6 +581,16 @@ describe("hero font preload", () => {
       expect(metaContent(privacyHead, TWITTER_ATTRIBUTE, "twitter:title")).toBe(
         ogTitle,
       );
+    });
+  });
+
+  describe("404 page metadata", () => {
+    it("does not canonicalize the 404 page to itself", () => {
+      const notFoundHead = extractHead(
+        readFileSync(resolve(buildOutDir, NOT_FOUND_HTML_FILE), "utf8"),
+      );
+      expect(canonicalHref(notFoundHead)).toBeNull();
+      expect(metaContent(notFoundHead, OG_ATTRIBUTE, "og:url")).toBeNull();
     });
   });
 

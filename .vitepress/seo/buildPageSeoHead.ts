@@ -4,6 +4,7 @@ const MARKDOWN_EXTENSION = /\.md$/;
 const INDEX_FILE_NAME = "index";
 const HTML_EXTENSION = ".html";
 const PATH_SEPARATOR = "/";
+const TRAILING_SLASH = /\/$/;
 
 export interface PageSeoInput {
   siteUrl: string;
@@ -23,10 +24,11 @@ function directoryUrl(siteUrl: string, segments: string[]) {
 // the bare domain, `dir/index.md` is `/dir/`, and any other page gets a
 // `.html` suffix unless cleanUrls is on.
 export function buildPageUrl({
-  siteUrl,
+  siteUrl: rawSiteUrl,
   relativePath,
   cleanUrls,
 }: Pick<PageSeoInput, "siteUrl" | "relativePath" | "cleanUrls">) {
+  const siteUrl = rawSiteUrl.replace(TRAILING_SLASH, "");
   const segments = relativePath
     .replace(MARKDOWN_EXTENSION, "")
     .split(PATH_SEPARATOR);

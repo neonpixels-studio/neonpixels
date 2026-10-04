@@ -21,6 +21,18 @@ describe("buildPageUrl", () => {
   });
 });
 
+describe("buildPageUrl with a trailing-slash siteUrl", () => {
+  it("does not double the slash", () => {
+    expect(
+      buildPageUrl({
+        siteUrl: `${SITE_URL}/`,
+        relativePath: "privacy.md",
+        cleanUrls: false,
+      }),
+    ).toBe(`${SITE_URL}/privacy.html`);
+  });
+});
+
 describe("buildPageSeoHead", () => {
   const privacy = buildPageSeoHead({
     siteUrl: SITE_URL,
