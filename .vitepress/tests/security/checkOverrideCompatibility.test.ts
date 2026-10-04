@@ -39,6 +39,24 @@ describe("readOverriddenPackageNames", () => {
     ).toEqual(["brace-expansion"]);
   });
 
+  it("strips version selectors, including on scoped packages", () => {
+    expect(
+      readOverriddenPackageNames({
+        "brace-expansion@^1": "5.0.12",
+        "@scope/pkg@^2": "3.0.0",
+        "@scope/plain": "1.0.0",
+      }),
+    ).toEqual(["brace-expansion", "@scope/pkg", "@scope/plain"]);
+  });
+
+  it('includes a nested override\'s "." entry, which forces the parent itself', () => {
+    expect(
+      readOverriddenPackageNames({
+        "brace-expansion": { ".": "5.0.12", child: "1.0.0" },
+      }),
+    ).toEqual(["brace-expansion"]);
+  });
+
   it("returns nothing when there are no overrides", () => {
     expect(readOverriddenPackageNames(undefined)).toEqual([]);
   });
@@ -73,6 +91,17 @@ describe("findIncompatibleConsumers", () => {
     lockfile.packages!["node_modules/legacy-glob"] = {
       version: "1.0.0",
       optionalDependencies: { "brace-expansion": "^2.0.1" },
+    };
+    expect(
+      findIncompatibleConsumers(lockfile, ["brace-expansion"]),
+    ).toHaveLength(1);
+  });
+
+  it("flags peerDependencies as well", () => {
+    const lockfile = lockfileWithConsumer("^5.0.0");
+    lockfile.packages!["node_modules/legacy-glob"] = {
+      version: "1.0.0",
+      peerDependencies: { "brace-expansion": "^1.0.0" },
     };
     expect(
       findIncompatibleConsumers(lockfile, ["brace-expansion"]),

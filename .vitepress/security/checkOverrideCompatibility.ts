@@ -14,9 +14,10 @@ import semver from "semver";
 // the lockfile alone is enough to find those mismatches: no `npm ls` output
 // parsing, no install required, deterministic for a given commit.
 //
-// Only top-level string overrides are checked. Nested objects (e.g. the
-// `vitepress: { vite, esbuild }` entry) scope an override to one parent and
-// are deliberate range bumps for that parent, not a blanket force.
+// Only blanket overrides are checked: string values, and the `"."` entry of a
+// nested object. Other nested entries (e.g. the `vitepress: { vite, esbuild }`
+// entry) scope an override to one parent and are deliberate range bumps for
+// that parent, not a blanket force.
 //
 // Executed with plain `node` against this .ts file directly (native type
 // stripping), the same way ../perf/checkPerformanceBudget.ts is; see the note
@@ -28,15 +29,16 @@ const NODE_MODULES_SEGMENT = "node_modules/";
 const DECLARED_DEPENDENCY_FIELDS = [
   "dependencies",
   "optionalDependencies",
+  "peerDependencies",
 ] as const;
 
 type DependencyMap = Record<string, string>;
 
 export type LockfilePackage = {
   version?: string;
-  link?: boolean;
   dependencies?: DependencyMap;
   optionalDependencies?: DependencyMap;
+  peerDependencies?: DependencyMap;
 };
 
 export type Lockfile = {
@@ -50,12 +52,37 @@ export type Incompatibility = {
   installedVersion: string;
 };
 
+const DOT_OVERRIDE_KEY = ".";
+
+// Keys may carry a version selector ("brace-expansion@^1", "@scope/pkg@^2");
+// the lockfile is indexed by bare name. Start the search at index 1 so a
+// scope's leading "@" isn't mistaken for the selector.
+function packageNameFromOverrideKey(key: string) {
+  const selectorStart = key.indexOf("@", 1);
+  return selectorStart === -1 ? key : key.slice(0, selectorStart);
+}
+
+// A string value forces the package for every consumer. An object value
+// scopes overrides to that parent's subtree, except its "." entry, which
+// forces the parent itself like a string would.
+function isBlanketOverride(value: unknown) {
+  if (typeof value === "string") {
+    return true;
+  }
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  return (
+    typeof (value as Record<string, unknown>)[DOT_OVERRIDE_KEY] === "string"
+  );
+}
+
 export function readOverriddenPackageNames(
   overrides: Record<string, unknown> | undefined,
 ) {
   return Object.entries(overrides ?? {})
-    .filter(([, value]) => typeof value === "string")
-    .map(([name]) => name);
+    .filter(([, value]) => isBlanketOverride(value))
+    .map(([key]) => packageNameFromOverrideKey(key));
 }
 
 function parentPath(packagePath: string) {
