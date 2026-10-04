@@ -51,6 +51,20 @@ Deploys to [Netlify](https://www.netlify.com). See [`netlify.toml`](netlify.toml
 the build command, publish directory and security headers. The build runs the test
 suite before building, so a failing test blocks the deploy.
 
+### Deploys
+
+Production deploys once a week, Mondays 14:00 UTC, through a Netlify build hook
+triggered by the `Weekly production deploy` workflow (skipped when `main` had no
+commits in the last 7 days). Merging to `main` does not deploy. Pull requests get
+Deploy Previews as usual. To ship a hotfix, go to the Actions tab > Weekly
+production deploy > Run workflow (on `main`). The workflow needs the
+`NETLIFY_BUILD_HOOK_URL` repository secret (the URL of a Netlify build hook for
+branch `main`, created under Site configuration > Build & deploy > Continuous
+deployment > Build hooks) and fails loudly if it is missing. Deploys started from
+the Netlify UI on `main` are cancelled by the ignore gate; use the workflow
+instead. GitHub disables scheduled workflows after 60 days without repository
+activity; re-enable it from the Actions tab if that happens.
+
 ### Contact form ([Netlify Forms](https://docs.netlify.com/manage/forms/setup/))
 
 `components/ContactForm.vue` is a real HTML `<form data-netlify="true" name="contact">`
