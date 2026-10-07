@@ -49,7 +49,8 @@ function resolveDescription({
   description,
   fallbackDescription,
 }: Pick<PageSeoInput, "description" | "fallbackDescription">) {
-  return description?.trim() || fallbackDescription;
+  const trimmedDescription = description?.trim();
+  return trimmedDescription || fallbackDescription;
 }
 
 // Per-page head tags that must differ from page to page. Declared here, not in

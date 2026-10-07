@@ -584,16 +584,6 @@ describe("hero font preload", () => {
         ogTitle,
       );
     });
-  });
-
-  describe("privacy.html per-page descriptions", () => {
-    let privacyHead = "";
-
-    beforeAll(() => {
-      privacyHead = extractHead(
-        readFileSync(resolve(buildOutDir, "privacy.html"), "utf8"),
-      );
-    });
 
     it("uses the privacy page description for og:description and twitter:description", () => {
       const homeDescription = metaContent(
@@ -630,6 +620,11 @@ describe("hero font preload", () => {
   });
 
   describe("homepage per-page metadata", () => {
+    it("emits each description tag exactly once", () => {
+      expect(builtHead.match(/property="og:description"/g)).toHaveLength(1);
+      expect(builtHead.match(/name="twitter:description"/g)).toHaveLength(1);
+    });
+
     it("keeps the canonical as the bare domain, matching og:url", () => {
       expect(canonicalHref(builtHead)).toBe(SITE_ORIGIN_URL);
       expect(metaContent(builtHead, OG_ATTRIBUTE, "og:url")).toBe(

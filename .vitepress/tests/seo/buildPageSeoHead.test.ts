@@ -93,6 +93,13 @@ describe("buildPageSeoHead descriptions", () => {
     expect(JSON.stringify(tags)).not.toContain(HOME_DESCRIPTION);
   });
 
+  it("trims surrounding whitespace from the page description", () => {
+    expect(descriptionTags(`  ${PRIVACY_DESCRIPTION}  `)).toEqual([
+      ["meta", { property: "og:description", content: PRIVACY_DESCRIPTION }],
+      ["meta", { name: "twitter:description", content: PRIVACY_DESCRIPTION }],
+    ]);
+  });
+
   it.each([undefined, "", "   "])(
     "falls back to the global description when the page has %j",
     (description) => {
