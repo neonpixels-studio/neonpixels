@@ -69,10 +69,12 @@ The workflow then polls the Netlify API (`.github/scripts/verify-production-depl
 30 minute timeout) until the deploy is `ready`. Because the build command runs the full
 test suite, a red build leaves production stale; any non-success outcome (failed,
 cancelled, timed out) fails the run and opens a `deploy-failure` issue (or comments on the
-open one) via `.github/scripts/notify-deploy-failure.cjs`. This needs a second repository
-secret, `NETLIFY_AUTH_TOKEN`: a Netlify personal access token (User settings >
-Applications > Personal access tokens). The workflow fails before firing the hook if it
-is missing.
+open one) via `.github/scripts/notify-deploy-failure.cjs`. This needs two more repository
+secrets: `NETLIFY_AUTH_TOKEN` (a Netlify personal access token: User settings >
+Applications > Personal access tokens) and `NETLIFY_SITE_ID` (Site configuration > Site
+details > Project ID). The deploy is found by a unique per-run trigger title
+(`... run <run id> attempt <attempt>`) rather than the hook response. The workflow fails before firing the
+hook if either secret is missing.
 
 ### Contact form ([Netlify Forms](https://docs.netlify.com/manage/forms/setup/))
 

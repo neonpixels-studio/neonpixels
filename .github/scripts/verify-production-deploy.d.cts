@@ -17,8 +17,8 @@ export type PollResult = {
 };
 
 export type PollArgs = {
-  buildId: string;
-  fetchDeploy: (buildId: string) => Promise<NetlifyDeploy>;
+  deployTitle: string;
+  fetchDeploy: (deployTitle: string) => Promise<NetlifyDeploy | null>;
   sleep: (milliseconds: number) => Promise<void>;
   now?: () => number;
   intervalMs?: number;
@@ -27,7 +27,7 @@ export type PollArgs = {
 
 export type FetchLike = (
   url: string,
-  init: { headers: Record<string, string> },
+  init: { headers: Record<string, string>; signal?: AbortSignal },
 ) => Promise<{
   ok: boolean;
   status: number;
@@ -48,13 +48,19 @@ declare function verifyProductionDeploy(args?: VerifyArgs): Promise<PollResult>;
 
 declare namespace verifyProductionDeploy {
   function classifyDeployState(state: string): DeployOutcome | "pending";
-  function parseBuildId(hookResponseBody: string): string;
   function createNetlifyClient(args: {
     token: string;
+    siteId: string;
     fetchImpl?: FetchLike;
-  }): { fetchDeploy: (buildId: string) => Promise<NetlifyDeploy> };
+  }): { fetchDeploy: (deployTitle: string) => Promise<NetlifyDeploy | null> };
   function pollDeployStatus(args: PollArgs): Promise<PollResult>;
+  function escapeWorkflowCommand(text: string): string;
   function describeResult(result: PollResult): string;
+  class NetlifyApiError extends Error {
+    constructor(path: string, status: number);
+    status: number;
+  }
+  const MAX_CONSECUTIVE_ERRORS: number;
   const POLL_TIMEOUT_MS: number;
   const OUTCOME_SUCCESS: "success";
   const OUTCOME_FAILURE: "failure";

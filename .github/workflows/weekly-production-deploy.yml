@@ -25,6 +25,7 @@ jobs:
     env:
       NETLIFY_BUILD_HOOK_URL: ${{ secrets.NETLIFY_BUILD_HOOK_URL }}
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
       EVENT_NAME: ${{ github.event_name }}
     steps:
       - name: Require build hook secret
@@ -36,10 +37,14 @@ jobs:
 
       # Checked before the hook fires so a missing token can't leave a deploy
       # running that nothing will verify.
-      - name: Require Netlify API token secret
+      - name: Require Netlify API secrets
         run: |
           if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
             echo "::error::Repository secret NETLIFY_AUTH_TOKEN is not set; cannot verify the production deploy."
+            exit 1
+          fi
+          if [ -z "$NETLIFY_SITE_ID" ]; then
+            echo "::error::Repository secret NETLIFY_SITE_ID is not set; cannot verify the production deploy."
             exit 1
           fi
 
@@ -65,21 +70,22 @@ jobs:
           echo "main has $recent_commits commit(s) in the last 7 days."
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
+      # The run id and attempt make the title unique (a re-run keeps the run id) so the verify step can find exactly
+      # this deploy; it is also what shows in the Netlify deploy list.
       - name: Trigger production deploy
-        id: trigger
         if: steps.recent.outputs.skip != 'true'
         run: |
-          trigger_title="Manual+production+deploy"
+          trigger_title="Manual production deploy"
           if [ "$EVENT_NAME" = "schedule" ]; then
-            trigger_title="Weekly+production+deploy"
+            trigger_title="Weekly production deploy"
           fi
-          hook_response=$(curl --fail --silent --show-error -X POST -d '{}' "$NETLIFY_BUILD_HOOK_URL?trigger_title=$trigger_title")
-          echo "hook_response=$hook_response" >> "$GITHUB_OUTPUT"
+          trigger_title="$trigger_title run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
+          echo "NETLIFY_DEPLOY_TITLE=$trigger_title" >> "$GITHUB_ENV"
+          encoded_title=$(printf '%s' "$trigger_title" | sed 's/ /+/g')
+          curl --fail --silent --show-error -X POST -d '{}' "$NETLIFY_BUILD_HOOK_URL?trigger_title=$encoded_title"
 
       - name: Verify production deploy succeeded
         if: steps.recent.outputs.skip != 'true'
-        env:
-          NETLIFY_HOOK_RESPONSE: ${{ steps.trigger.outputs.hook_response }}
         run: node .github/scripts/verify-production-deploy.cjs
 
   # Separate job so `issues: write` stays out of the job that handles the

@@ -9,17 +9,19 @@ import type { NetlifyDeploy } from "../../.github/scripts/verify-production-depl
 
 const {
   classifyDeployState,
-  parseBuildId,
   createNetlifyClient,
   pollDeployStatus,
   describeResult,
+  NetlifyApiError,
+  MAX_CONSECUTIVE_ERRORS,
   OUTCOME_SUCCESS,
   OUTCOME_FAILURE,
   OUTCOME_CANCELLED,
   OUTCOME_TIMEOUT,
 } = verifyProductionDeploy;
 
-const BUILD_ID = "build-123";
+const DEPLOY_BASE_TITLE = "Weekly production deploy run 99";
+const DEPLOY_TITLE = "Weekly production deploy run 99 attempt 1";
 const INTERVAL_MS = 1000;
 const TIMEOUT_MS = 5000;
 
@@ -33,18 +35,14 @@ function buildFakeClock() {
   };
 }
 
-function poll(states: string[], overrides: Partial<NetlifyDeploy> = {}) {
+function pollWith(
+  fetchDeploy: (_title: string) => Promise<NetlifyDeploy | null>,
+) {
   const clock = buildFakeClock();
-  const queue = [...states];
-  const fetchDeploy = vi.fn(async () => ({
-    state: queue.length > 1 ? (queue.shift() as string) : queue[0],
-    ...overrides,
-  }));
   return {
-    fetchDeploy,
     clock,
     result: pollDeployStatus({
-      buildId: BUILD_ID,
+      deployTitle: DEPLOY_TITLE,
       fetchDeploy,
       sleep: clock.sleep,
       now: clock.now,
@@ -54,32 +52,28 @@ function poll(states: string[], overrides: Partial<NetlifyDeploy> = {}) {
   };
 }
 
+function poll(states: string[], overrides: Partial<NetlifyDeploy> = {}) {
+  const queue = [...states];
+  const fetchDeploy = vi.fn(async () => ({
+    state: queue.length > 1 ? (queue.shift() as string) : queue[0],
+    ...overrides,
+  }));
+  return { fetchDeploy, ...pollWith(fetchDeploy) };
+}
+
 describe("classifyDeployState", () => {
   it.each([
     ["ready", OUTCOME_SUCCESS],
     ["error", OUTCOME_FAILURE],
     ["rejected", OUTCOME_FAILURE],
     ["cancelled", OUTCOME_CANCELLED],
+    ["canceled", OUTCOME_CANCELLED],
     ["skipped", OUTCOME_CANCELLED],
     ["building", "pending"],
     ["new", "pending"],
     ["enqueued", "pending"],
   ])("maps %s to %s", (state, outcome) => {
     expect(classifyDeployState(state)).toBe(outcome);
-  });
-});
-
-describe("parseBuildId", () => {
-  it("returns the id from the hook response", () => {
-    expect(parseBuildId(JSON.stringify({ id: BUILD_ID }))).toBe(BUILD_ID);
-  });
-
-  it("rejects non-JSON bodies", () => {
-    expect(() => parseBuildId("<html>")).toThrow(/not JSON/);
-  });
-
-  it("rejects a response without an id", () => {
-    expect(() => parseBuildId("{}")).toThrow(/build id/);
   });
 });
 
@@ -117,18 +111,37 @@ describe("pollDeployStatus", () => {
     expect(fetchDeploy).toHaveBeenCalledTimes(TIMEOUT_MS / INTERVAL_MS);
   });
 
-  it("propagates API errors instead of swallowing them", async () => {
-    const clock = buildFakeClock();
-    await expect(
-      pollDeployStatus({
-        buildId: BUILD_ID,
-        fetchDeploy: async () => {
-          throw new Error("boom");
-        },
-        sleep: clock.sleep,
-        now: clock.now,
-      }),
-    ).rejects.toThrow("boom");
+  it("retries a transient API error and still succeeds", async () => {
+    const fetchDeploy = vi
+      .fn()
+      .mockRejectedValueOnce(new NetlifyApiError("/x", 503))
+      .mockResolvedValue({ state: "ready" });
+    const { result } = pollWith(fetchDeploy);
+    expect(await result).toMatchObject({ outcome: OUTCOME_SUCCESS });
+  });
+
+  it("rethrows after consecutive API errors", async () => {
+    const fetchDeploy = vi.fn().mockRejectedValue(new Error("boom"));
+    const { result } = pollWith(fetchDeploy);
+    await expect(result).rejects.toThrow("boom");
+    expect(fetchDeploy).toHaveBeenCalledTimes(MAX_CONSECUTIVE_ERRORS);
+  });
+
+  it.each([401, 403, 404])("rethrows a %i immediately", async (status) => {
+    const fetchDeploy = vi
+      .fn()
+      .mockRejectedValue(new NetlifyApiError("/x", status));
+    const { result } = pollWith(fetchDeploy);
+    await expect(result).rejects.toThrow(String(status));
+    expect(fetchDeploy).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports that no deploy was found when the title never appears", async () => {
+    const { result } = pollWith(async () => null);
+    expect(await result).toMatchObject({
+      outcome: OUTCOME_TIMEOUT,
+      state: "not found",
+    });
   });
 });
 
@@ -137,33 +150,85 @@ describe("createNetlifyClient", () => {
     return { ok: status < 400, status, json: async () => body };
   }
 
-  it("follows the build to its deploy using the bearer token", async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ deploy_id: "deploy-9" }))
-      .mockResolvedValueOnce(jsonResponse({ state: "ready" }));
-    const { fetchDeploy } = createNetlifyClient({ token: "tok", fetchImpl });
-    expect(await fetchDeploy(BUILD_ID)).toEqual({ state: "ready" });
-    expect(fetchImpl.mock.calls[0][0]).toContain(`/builds/${BUILD_ID}`);
-    expect(fetchImpl.mock.calls[1][0]).toContain("/deploys/deploy-9");
+  it("finds the deploy by its unique title using the bearer token", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse([
+        { title: "Some other deploy", state: "error" },
+        { title: DEPLOY_TITLE, state: "ready" },
+      ]),
+    );
+    const { fetchDeploy } = createNetlifyClient({
+      token: "tok",
+      siteId: "site/1",
+      fetchImpl,
+    });
+    expect(await fetchDeploy(DEPLOY_TITLE)).toEqual({
+      title: DEPLOY_TITLE,
+      state: "ready",
+    });
+    expect(fetchImpl.mock.calls[0][0]).toContain("/sites/site%2F1/deploys");
+    expect(fetchImpl.mock.calls[0][0]).toContain("production=true");
     expect(fetchImpl.mock.calls[0][1].headers.Authorization).toBe("Bearer tok");
   });
 
-  it("reports a pending deploy while the build has no deploy id", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({}));
-    const { fetchDeploy } = createNetlifyClient({ token: "tok", fetchImpl });
-    expect(await fetchDeploy(BUILD_ID)).toEqual({ state: "new" });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  it("ignores a terminal deploy from a previous attempt of the same run", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse([
+          { title: `${DEPLOY_BASE_TITLE} attempt 1`, state: "error" },
+        ]),
+      );
+    const { fetchDeploy } = createNetlifyClient({
+      token: "tok",
+      siteId: "s",
+      fetchImpl,
+    });
+    expect(await fetchDeploy(`${DEPLOY_BASE_TITLE} attempt 2`)).toBeNull();
   });
 
-  it("throws on a non-OK API response", async () => {
+  it("reports pending while the deploy is not listed yet", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse([]));
+    const { fetchDeploy } = createNetlifyClient({
+      token: "tok",
+      siteId: "s",
+      fetchImpl,
+    });
+    expect(await fetchDeploy(DEPLOY_TITLE)).toBeNull();
+  });
+
+  it("throws a NetlifyApiError on a non-OK response", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({}, 401));
-    const { fetchDeploy } = createNetlifyClient({ token: "bad", fetchImpl });
-    await expect(fetchDeploy(BUILD_ID)).rejects.toThrow(/401/);
+    const { fetchDeploy } = createNetlifyClient({
+      token: "bad",
+      siteId: "s",
+      fetchImpl,
+    });
+    await expect(fetchDeploy(DEPLOY_TITLE)).rejects.toBeInstanceOf(
+      NetlifyApiError,
+    );
+  });
+});
+
+describe("escapeWorkflowCommand", () => {
+  it("escapes characters that could end or inject a workflow command", () => {
+    expect(
+      verifyProductionDeploy.escapeWorkflowCommand("50%\r\n::error::x"),
+    ).toBe("50%25%0D%0A::error::x");
   });
 });
 
 describe("describeResult", () => {
+  it("collapses multi-line Netlify error messages", () => {
+    expect(
+      describeResult({
+        outcome: OUTCOME_FAILURE,
+        state: "error",
+        deploy: { state: "error", error_message: "a\n::error::b" },
+      }),
+    ).not.toContain("\n");
+  });
+
   it("includes the Netlify error message on failure", () => {
     expect(
       describeResult({
@@ -178,64 +243,54 @@ describe("describeResult", () => {
 describe("verifyProductionDeploy", () => {
   const env = {
     NETLIFY_AUTH_TOKEN: "tok",
-    NETLIFY_HOOK_RESPONSE: JSON.stringify({ id: BUILD_ID }),
+    NETLIFY_SITE_ID: "site",
+    NETLIFY_DEPLOY_TITLE: DEPLOY_TITLE,
   };
 
   function stubFetch(state: string) {
-    return vi.fn(async (url: string) => ({
+    return vi.fn(async () => ({
       ok: true,
       status: 200,
-      json: async () =>
-        url.includes("/builds/") ? { deploy_id: "d1" } : { state },
+      json: async () => [{ title: DEPLOY_TITLE, state }],
     }));
   }
 
-  it("resolves when the deploy is ready", async () => {
+  function verify(state: string, extra = {}) {
     const clock = buildFakeClock();
-    const result = await verifyProductionDeploy({
+    return verifyProductionDeploy({
       env,
-      fetchImpl: stubFetch("ready"),
+      fetchImpl: stubFetch(state),
       sleep: clock.sleep,
       now: clock.now,
       log: vi.fn(),
+      intervalMs: INTERVAL_MS,
+      timeoutMs: TIMEOUT_MS,
+      ...extra,
     });
-    expect(result.outcome).toBe(OUTCOME_SUCCESS);
+  }
+
+  it("resolves when the deploy is ready", async () => {
+    expect((await verify("ready")).outcome).toBe(OUTCOME_SUCCESS);
   });
 
   it("rejects when the deploy errors", async () => {
-    const clock = buildFakeClock();
-    await expect(
-      verifyProductionDeploy({
-        env,
-        fetchImpl: stubFetch("error"),
-        sleep: clock.sleep,
-        now: clock.now,
-        log: vi.fn(),
-      }),
-    ).rejects.toThrow(/failure/);
+    await expect(verify("error")).rejects.toThrow(/failure/);
+  });
+
+  it("rejects when the deploy is cancelled", async () => {
+    await expect(verify("cancelled")).rejects.toThrow(/cancelled/);
   });
 
   it("rejects on timeout", async () => {
-    const clock = buildFakeClock();
-    await expect(
-      verifyProductionDeploy({
-        env,
-        fetchImpl: stubFetch("building"),
-        sleep: clock.sleep,
-        now: clock.now,
-        log: vi.fn(),
-        intervalMs: INTERVAL_MS,
-        timeoutMs: TIMEOUT_MS,
-      }),
-    ).rejects.toThrow(/timeout/);
+    await expect(verify("building")).rejects.toThrow(/timeout/);
   });
 
-  it("fails with a clear message when the token is missing", async () => {
-    await expect(
-      verifyProductionDeploy({
-        env: { NETLIFY_HOOK_RESPONSE: env.NETLIFY_HOOK_RESPONSE },
-        log: vi.fn(),
-      }),
-    ).rejects.toThrow(/NETLIFY_AUTH_TOKEN is not set/);
-  });
+  it.each(["NETLIFY_AUTH_TOKEN", "NETLIFY_SITE_ID", "NETLIFY_DEPLOY_TITLE"])(
+    "fails with a clear message when %s is missing",
+    async (name) => {
+      await expect(
+        verify("ready", { env: { ...env, [name]: undefined } }),
+      ).rejects.toThrow(`${name} is not set`);
+    },
+  );
 });

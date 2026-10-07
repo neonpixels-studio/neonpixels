@@ -104,10 +104,19 @@ describe("weekly-production-deploy.yml", () => {
 
   it("calls the hook with failing curl and the documented titles", () => {
     expect(WORKFLOW).toContain(
-      `curl --fail --silent --show-error -X POST -d '{}' "$NETLIFY_BUILD_HOOK_URL?trigger_title=$trigger_title"`,
+      `curl --fail --silent --show-error -X POST -d '{}' "$NETLIFY_BUILD_HOOK_URL?trigger_title=$encoded_title"`,
     );
-    expect(WORKFLOW).toContain("Weekly+production+deploy");
-    expect(WORKFLOW).toContain("Manual+production+deploy");
+    expect(WORKFLOW).toContain('trigger_title="Weekly production deploy"');
+    expect(WORKFLOW).toContain('trigger_title="Manual production deploy"');
+  });
+
+  it("makes the trigger title unique per run and shares it with the verify step", () => {
+    expect(WORKFLOW).toContain(
+      'trigger_title="$trigger_title run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"',
+    );
+    expect(WORKFLOW).toContain(
+      'echo "NETLIFY_DEPLOY_TITLE=$trigger_title" >> "$GITHUB_ENV"',
+    );
   });
 
   it("checks full history for commits in the last 7 days on schedule only", () => {
@@ -140,9 +149,6 @@ describe("weekly-production-deploy.yml", () => {
   it("verifies the deploy after triggering it", () => {
     expect(WORKFLOW.indexOf("verify-production-deploy.cjs")).toBeGreaterThan(
       WORKFLOW.indexOf("Trigger production deploy"),
-    );
-    expect(WORKFLOW).toContain(
-      "NETLIFY_HOOK_RESPONSE: ${{ steps.trigger.outputs.hook_response }}",
     );
   });
 
