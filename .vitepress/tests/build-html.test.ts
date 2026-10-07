@@ -545,8 +545,9 @@ describe("hero font preload", () => {
     expect(privacyHtml).toContain("Google Analytics");
   });
 
-  // Issue #174: canonical/og:url/og:title used to be global, so /privacy
-  // claimed the homepage as its canonical and got the homepage's social card.
+  // Issues #174 and #189: canonical/og:url/og:title/og:description used to be
+  // global, so /privacy claimed the homepage as its canonical and got the
+  // homepage's social card and blurb.
   describe("privacy.html per-page metadata", () => {
     let privacyHead = "";
 
@@ -582,6 +583,39 @@ describe("hero font preload", () => {
       expect(metaContent(privacyHead, TWITTER_ATTRIBUTE, "twitter:title")).toBe(
         ogTitle,
       );
+    });
+  });
+
+  describe("privacy.html per-page descriptions", () => {
+    let privacyHead = "";
+
+    beforeAll(() => {
+      privacyHead = extractHead(
+        readFileSync(resolve(buildOutDir, "privacy.html"), "utf8"),
+      );
+    });
+
+    it("uses the privacy page description for og:description and twitter:description", () => {
+      const homeDescription = metaContent(
+        builtHead,
+        OG_ATTRIBUTE,
+        "og:description",
+      );
+      const ogDescription = metaContent(
+        privacyHead,
+        OG_ATTRIBUTE,
+        "og:description",
+      );
+      expect(ogDescription).toContain("Google Analytics");
+      expect(ogDescription).not.toBe(homeDescription);
+      expect(
+        metaContent(privacyHead, TWITTER_ATTRIBUTE, "twitter:description"),
+      ).toBe(ogDescription);
+    });
+
+    it("emits each description tag exactly once", () => {
+      expect(privacyHead.match(/property="og:description"/g)).toHaveLength(1);
+      expect(privacyHead.match(/name="twitter:description"/g)).toHaveLength(1);
     });
   });
 
