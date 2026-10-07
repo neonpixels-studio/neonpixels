@@ -84,29 +84,31 @@ describe("buildPageSeoHead descriptions", () => {
     );
   }
 
+  function expectedDescriptionTags(content: string) {
+    return [
+      ["meta", { property: "og:description", content }],
+      ["meta", { name: "twitter:description", content }],
+    ];
+  }
+
   it("uses the page description, not the homepage blurb, for both tags", () => {
-    const tags = descriptionTags(PRIVACY_DESCRIPTION);
-    expect(tags).toEqual([
-      ["meta", { property: "og:description", content: PRIVACY_DESCRIPTION }],
-      ["meta", { name: "twitter:description", content: PRIVACY_DESCRIPTION }],
-    ]);
-    expect(JSON.stringify(tags)).not.toContain(HOME_DESCRIPTION);
+    expect(descriptionTags(PRIVACY_DESCRIPTION)).toEqual(
+      expectedDescriptionTags(PRIVACY_DESCRIPTION),
+    );
   });
 
   it("trims surrounding whitespace from the page description", () => {
-    expect(descriptionTags(`  ${PRIVACY_DESCRIPTION}  `)).toEqual([
-      ["meta", { property: "og:description", content: PRIVACY_DESCRIPTION }],
-      ["meta", { name: "twitter:description", content: PRIVACY_DESCRIPTION }],
-    ]);
+    expect(descriptionTags(`  ${PRIVACY_DESCRIPTION}  `)).toEqual(
+      expectedDescriptionTags(PRIVACY_DESCRIPTION),
+    );
   });
 
   it.each([undefined, "", "   "])(
     "falls back to the global description when the page has %j",
     (description) => {
-      expect(descriptionTags(description)).toEqual([
-        ["meta", { property: "og:description", content: HOME_DESCRIPTION }],
-        ["meta", { name: "twitter:description", content: HOME_DESCRIPTION }],
-      ]);
+      expect(descriptionTags(description)).toEqual(
+        expectedDescriptionTags(HOME_DESCRIPTION),
+      );
     },
   );
 });

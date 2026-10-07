@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "vitepress";
 
+import config from "../config";
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
 
 // Asserts the tags survive `vitepress build` into the emitted HTML, not just the
@@ -620,7 +621,13 @@ describe("hero font preload", () => {
   });
 
   describe("homepage per-page metadata", () => {
-    it("emits each description tag exactly once", () => {
+    it("emits each description tag exactly once, with the global description", () => {
+      expect(metaContent(builtHead, OG_ATTRIBUTE, "og:description")).toBe(
+        config.description,
+      );
+      expect(
+        metaContent(builtHead, TWITTER_ATTRIBUTE, "twitter:description"),
+      ).toBe(config.description);
       expect(builtHead.match(/property="og:description"/g)).toHaveLength(1);
       expect(builtHead.match(/name="twitter:description"/g)).toHaveLength(1);
     });
