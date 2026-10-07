@@ -119,4 +119,37 @@ describe("weekly-production-deploy.yml", () => {
   it("declares a concurrency block", () => {
     expect(WORKFLOW).toMatch(/^concurrency:/m);
   });
+
+  it("fails before firing the hook when the Netlify token is missing", () => {
+    const tokenCheck = WORKFLOW.indexOf('if [ -z "$NETLIFY_AUTH_TOKEN" ]');
+    expect(tokenCheck).toBeGreaterThan(-1);
+    expect(tokenCheck).toBeLessThan(
+      WORKFLOW.indexOf("Trigger production deploy"),
+    );
+  });
+
+  it("passes the token only via env from the secret", () => {
+    const references = WORKFLOW.split("\n").filter((line) =>
+      line.includes("secrets.NETLIFY_AUTH_TOKEN"),
+    );
+    expect(references).toEqual([
+      "      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}",
+    ]);
+  });
+
+  it("verifies the deploy after triggering it", () => {
+    expect(WORKFLOW.indexOf("verify-production-deploy.cjs")).toBeGreaterThan(
+      WORKFLOW.indexOf("Trigger production deploy"),
+    );
+    expect(WORKFLOW).toContain(
+      "NETLIFY_HOOK_RESPONSE: ${{ steps.trigger.outputs.hook_response }}",
+    );
+  });
+
+  it("notifies on failure from a separate job that alone gets issues: write", () => {
+    expect(WORKFLOW).toMatch(
+      /notify-deploy-failure:\n\s+needs: deploy\n\s+if: failure\(\)/,
+    );
+    expect(WORKFLOW.match(/^\s+issues: write$/gm)).toHaveLength(1);
+  });
 });

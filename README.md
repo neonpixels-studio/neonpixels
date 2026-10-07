@@ -65,6 +65,15 @@ the Netlify UI on `main` are cancelled by the ignore gate; use the workflow
 instead. GitHub disables scheduled workflows after 60 days without repository
 activity; re-enable it from the Actions tab if that happens.
 
+The workflow then polls the Netlify API (`.github/scripts/verify-production-deploy.cjs`,
+30 minute timeout) until the deploy is `ready`. Because the build command runs the full
+test suite, a red build leaves production stale; any non-success outcome (failed,
+cancelled, timed out) fails the run and opens a `deploy-failure` issue (or comments on the
+open one) via `.github/scripts/notify-deploy-failure.cjs`. This needs a second repository
+secret, `NETLIFY_AUTH_TOKEN`: a Netlify personal access token (User settings >
+Applications > Personal access tokens). The workflow fails before firing the hook if it
+is missing.
+
 ### Contact form ([Netlify Forms](https://docs.netlify.com/manage/forms/setup/))
 
 `components/ContactForm.vue` is a real HTML `<form data-netlify="true" name="contact">`
