@@ -11,6 +11,8 @@ export interface PageSeoInput {
   relativePath: string;
   cleanUrls: boolean;
   title: string;
+  description?: string;
+  fallbackDescription: string;
 }
 
 function directoryUrl(siteUrl: string, segments: string[]) {
@@ -41,15 +43,27 @@ export function buildPageUrl({
   return `${siteUrl}${PATH_SEPARATOR}${segments.join(PATH_SEPARATOR)}${suffix}`;
 }
 
+// A page without its own frontmatter description (VitePress reports it as an
+// empty string) falls back to the site-wide one.
+function resolveDescription({
+  description,
+  fallbackDescription,
+}: Pick<PageSeoInput, "description" | "fallbackDescription">) {
+  return description?.trim() || fallbackDescription;
+}
+
 // Per-page head tags that must differ from page to page. Declared here, not in
-// the global head, so a page can never inherit the homepage's canonical or
-// social title (issue #174).
+// the global head, so a page can never inherit the homepage's canonical, social
+// title (issue #174) or social description (issue #189).
 export function buildPageSeoHead(input: PageSeoInput): HeadConfig[] {
   const url = buildPageUrl(input);
+  const description = resolveDescription(input);
   return [
     ["link", { rel: "canonical", href: url }],
     ["meta", { property: "og:url", content: url }],
     ["meta", { property: "og:title", content: input.title }],
     ["meta", { name: "twitter:title", content: input.title }],
+    ["meta", { property: "og:description", content: description }],
+    ["meta", { name: "twitter:description", content: description }],
   ];
 }

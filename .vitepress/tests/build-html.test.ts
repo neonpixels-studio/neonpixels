@@ -86,6 +86,7 @@ const REQUIRED_META: ReadonlyArray<readonly [string, string]> = [
   [OG_ATTRIBUTE, "og:image"],
   [TWITTER_ATTRIBUTE, "twitter:card"],
   [TWITTER_ATTRIBUTE, "twitter:title"],
+  [TWITTER_ATTRIBUTE, "twitter:description"],
   [TWITTER_ATTRIBUTE, "twitter:image"],
 ];
 

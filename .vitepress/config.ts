@@ -105,21 +105,20 @@ export default defineConfig({
     // .vitepress/theme/analytics/ and csp-head-crosscheck.test.ts).
     //
     // Fonts are self-hosted — see .vitepress/theme/index.ts
-    // Canonical, og:url, og:title and twitter:title are per-page: see
+    // Canonical, og:url, og:title, twitter:title, og:description and
+    // twitter:description are per-page: see
     // transformHead below.
     // Theme color
     ["meta", { name: "theme-color", content: "#08080a" }],
     // Open Graph
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:locale", content: "en_US" }],
-    ["meta", { property: "og:description", content: DESCRIPTION }],
     ["meta", { property: "og:image", content: OG_IMAGE }],
     ["meta", { property: "og:image:width", content: "1200" }],
     ["meta", { property: "og:image:height", content: "630" }],
     ["meta", { property: "og:image:alt", content: OG_IMAGE_ALT }],
     // Twitter Card
     ["meta", { name: "twitter:card", content: "summary_large_image" }],
-    ["meta", { name: "twitter:description", content: DESCRIPTION }],
     ["meta", { name: "twitter:image", content: OG_IMAGE }],
     ["meta", { name: "twitter:image:alt", content: OG_IMAGE_ALT }],
     // Structured data
@@ -163,6 +162,8 @@ export default defineConfig({
       relativePath: pageData.relativePath,
       cleanUrls: siteConfig.cleanUrls ?? false,
       title: pageData.title || siteConfig.site.title,
+      description: pageData.description,
+      fallbackDescription: DESCRIPTION,
     });
   },
   vite: {

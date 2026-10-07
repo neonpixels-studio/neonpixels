@@ -298,7 +298,7 @@ describe("Open Graph image metadata", () => {
     expect(altText.trim().length).toBeGreaterThanOrEqual(MIN_IMAGE_ALT_LENGTH);
     expect(altText.trim().length).toBeLessThanOrEqual(MAX_IMAGE_ALT_LENGTH);
     expect(altText).not.toBe(config.title);
-    expect(altText).not.toBe(findMetaContent("og:description"));
+    expect(altText).not.toBe(config.description);
     expect(findMetaContent("twitter:image:alt")).toBe(altText);
   });
 });
