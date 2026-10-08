@@ -201,6 +201,39 @@ describe("ContactForm", () => {
     wrapper.unmount();
   });
 
+  it("logs a non-PII console.info marker when the honeypot catches a submission", async () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const wrapper = mount(ContactForm);
+    await fillFields(wrapper, { name: "Ada", email: "ada@example.com" });
+    await wrapper.find("#contact-honeypot").setValue("spam bot filled this");
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    const loggedText = JSON.stringify(infoSpy.mock.calls);
+    expect(loggedText).toContain("honeypot");
+    expect(loggedText).not.toContain("Ada");
+    expect(loggedText).not.toContain("ada@example.com");
+    expect(loggedText).not.toContain("spam bot filled this");
+    infoSpy.mockRestore();
+    wrapper.unmount();
+  });
+
+  it("does not log the honeypot marker for a real submission", async () => {
+    mockedSubmitNetlifyForm.mockResolvedValue(undefined);
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const wrapper = mount(ContactForm);
+    await fillAndSubmit(wrapper, {
+      name: "Ada",
+      email: "ada@example.com",
+      message: "hello",
+    });
+
+    expect(infoSpy).not.toHaveBeenCalled();
+    infoSpy.mockRestore();
+    wrapper.unmount();
+  });
+
   it("clears the honeypot itself so a stray autofill doesn't swallow every later real attempt", async () => {
     mockedSubmitNetlifyForm.mockResolvedValue(undefined);
     const wrapper = mount(ContactForm);

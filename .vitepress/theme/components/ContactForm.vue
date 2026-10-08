@@ -11,6 +11,9 @@ import { submitNetlifyForm } from "../forms/submitNetlifyForm";
 // the bot never sees them.
 const FORM_NAME = "contact";
 const HONEYPOT_FIELD_NAME = "bot-field";
+// Stable, greppable tag so a "sent but got no reply" report can be checked
+// against the visitor's console. Carries no field values (no PII).
+const HONEYPOT_CAUGHT_MESSAGE = "Contact form honeypot caught a submission";
 
 // Shared by every visible field (name/email/message) so the two style
 // concerns — the uppercase micro-label and the input/textarea chrome — are
@@ -124,6 +127,7 @@ async function handleSubmit() {
     // clears the honeypot itself: a stray autofill (some browser extensions
     // fill every input on a page, hidden or not) would otherwise silently
     // swallow every subsequent real attempt from this same visitor too.
+    console.info(HONEYPOT_CAUGHT_MESSAGE);
     status.value = "success";
     resetFields();
     honeypotValue.value = "";
