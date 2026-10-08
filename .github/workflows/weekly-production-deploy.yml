@@ -20,14 +20,31 @@ jobs:
     # A manual run from another branch must not deploy production.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Covers the hook call plus the verify step's 30 minute poll timeout.
+    timeout-minutes: 45
     env:
       NETLIFY_BUILD_HOOK_URL: ${{ secrets.NETLIFY_BUILD_HOOK_URL }}
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
       EVENT_NAME: ${{ github.event_name }}
     steps:
       - name: Require build hook secret
         run: |
           if [ -z "$NETLIFY_BUILD_HOOK_URL" ]; then
             echo "::error::Repository secret NETLIFY_BUILD_HOOK_URL is not set; cannot trigger a production deploy."
+            exit 1
+          fi
+
+      # Checked before the hook fires so a missing token can't leave a deploy
+      # running that nothing will verify.
+      - name: Require Netlify API secrets
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
+            echo "::error::Repository secret NETLIFY_AUTH_TOKEN is not set; cannot verify the production deploy."
+            exit 1
+          fi
+          if [ -z "$NETLIFY_SITE_ID" ]; then
+            echo "::error::Repository secret NETLIFY_SITE_ID is not set; cannot verify the production deploy."
             exit 1
           fi
 
@@ -53,11 +70,43 @@ jobs:
           echo "main has $recent_commits commit(s) in the last 7 days."
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
+      # The run id and attempt make the title unique (a re-run keeps the run id) so the verify step can find exactly
+      # this deploy; it is also what shows in the Netlify deploy list.
       - name: Trigger production deploy
         if: steps.recent.outputs.skip != 'true'
         run: |
-          trigger_title="Manual+production+deploy"
+          trigger_title="Manual production deploy"
           if [ "$EVENT_NAME" = "schedule" ]; then
-            trigger_title="Weekly+production+deploy"
+            trigger_title="Weekly production deploy"
           fi
-          curl --fail --silent --show-error -X POST -d '{}' "$NETLIFY_BUILD_HOOK_URL?trigger_title=$trigger_title"
+          trigger_title="$trigger_title run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
+          echo "NETLIFY_DEPLOY_TITLE=$trigger_title" >> "$GITHUB_ENV"
+          encoded_title=$(printf '%s' "$trigger_title" | sed 's/ /+/g')
+          curl --fail --silent --show-error -X POST -d '{}' "$NETLIFY_BUILD_HOOK_URL?trigger_title=$encoded_title"
+
+      - name: Verify production deploy succeeded
+        if: steps.recent.outputs.skip != 'true'
+        run: node .github/scripts/verify-production-deploy.cjs
+
+  # Separate job so `issues: write` stays out of the job that handles the
+  # Netlify secrets; same split as notify-audit-failure in security.yml.
+  notify-deploy-failure:
+    needs: deploy
+    if: failure()
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Notify on production deploy failure
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const notifyDeployFailure = require("./.github/scripts/notify-deploy-failure.cjs");
+            await notifyDeployFailure({ github, context, core });

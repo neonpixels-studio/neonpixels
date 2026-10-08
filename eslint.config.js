@@ -65,7 +65,11 @@ export default [
     // one declaration file (rather than a blanket `**/*.d.ts`/`**/*.d.cts`
     // ignore) so a future declaration file with a genuine mistake still gets
     // caught.
-    files: [".github/scripts/notify-audit-failure.d.cts"],
+    files: [
+      ".github/scripts/notify-audit-failure.d.cts",
+      ".github/scripts/notify-deploy-failure.d.cts",
+      ".github/scripts/verify-production-deploy.d.cts",
+    ],
     rules: {
       "no-unused-vars": "off",
       "no-redeclare": "off",
