@@ -41,6 +41,7 @@ async function fillAndSubmit(
 describe("ContactForm", () => {
   afterEach(() => {
     mockedSubmitNetlifyForm.mockReset();
+    vi.restoreAllMocks();
   });
 
   it("ships the static markup Netlify's build-time bot needs to register the form", () => {
@@ -215,7 +216,6 @@ describe("ContactForm", () => {
     expect(loggedText).not.toContain("Ada");
     expect(loggedText).not.toContain("ada@example.com");
     expect(loggedText).not.toContain("spam bot filled this");
-    infoSpy.mockRestore();
     wrapper.unmount();
   });
 
@@ -230,7 +230,6 @@ describe("ContactForm", () => {
     });
 
     expect(infoSpy).not.toHaveBeenCalled();
-    infoSpy.mockRestore();
     wrapper.unmount();
   });
 
