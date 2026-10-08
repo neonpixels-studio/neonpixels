@@ -286,26 +286,33 @@ it("grants issues: write only to the notify-audit-failure and close-resolved-aud
   expect(remainder).not.toMatch(/^\s*issues:\s*write\s*$/m);
 });
 
+function findConcurrencyBlock() {
+  const lines = WORKFLOW.split("\n");
+  const start = lines.findIndex((line) => /^concurrency:\s*$/.test(line));
+  if (start === -1) {
+    return undefined;
+  }
+  const rest = lines.slice(start + 1);
+  const nextKey = rest.findIndex((line) => TOP_LEVEL_KEY.test(line));
+  const end = nextKey === -1 ? rest.length : nextKey;
+  return rest.slice(0, end).join("\n");
+}
+
 describe("workflow concurrency", () => {
-  const concurrencyBlock = () => {
-    const lines = WORKFLOW.split("\n");
-    const start = lines.findIndex((line) => /^concurrency:\s*$/.test(line));
-    if (start === -1) {
-      return "";
-    }
-    const rest = lines.slice(start + 1);
-    const next = rest.findIndex((line) => /^[^\s#]/.test(line));
-    return rest.slice(0, next === -1 ? rest.length : next).join("\n");
-  };
+  const concurrencyBlock = () => findConcurrencyBlock() ?? "";
 
   it("declares a top-level concurrency block", () => {
-    expect(concurrencyBlock()).not.toBe("");
+    expect(findConcurrencyBlock()).not.toBeUndefined();
   });
 
-  it("groups runs per PR number, falling back to the commit SHA", () => {
+  // Falling back to github.sha would put push, schedule, and manual runs on
+  // the same commit in one group, where a queued scheduled audit can be
+  // replaced by a newer run and its notify/close jobs never fire.
+  it("groups runs per PR number, falling back to the unique run id", () => {
     expect(concurrencyBlock()).toMatch(
-      /^\s+group:\s*\$\{\{\s*github\.workflow\s*\}\}-\$\{\{\s*github\.event\.pull_request\.number\s*\|\|\s*github\.sha\s*\}\}\s*$/m,
+      /^\s+group:\s*\$\{\{\s*github\.workflow\s*\}\}-\$\{\{\s*github\.event\.pull_request\.number\s*\|\|\s*github\.run_id\s*\}\}\s*$/m,
     );
+    expect(concurrencyBlock()).not.toContain("github.sha");
   });
 
   // Unconditional `true` would cancel main scans and the scheduled audit.

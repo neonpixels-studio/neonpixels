@@ -20,10 +20,11 @@ permissions:
   contents: read
 
 # Superseded PR runs are cancelled. Push, schedule, and manual runs get a
-# per-commit group and are never cancelled, so a main scan or the weekly
-# advisory audit can't be dropped by a later run.
+# per-run group (not per-commit: schedule and manual runs share main's SHA
+# with the push run, and a queued run in a shared group gets replaced), so
+# nothing but a superseded PR run is ever cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
