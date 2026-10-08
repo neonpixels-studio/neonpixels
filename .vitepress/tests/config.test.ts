@@ -293,12 +293,20 @@ describe("Open Graph image metadata", () => {
     expect(findMetaContent("twitter:image")).toBe(findMetaContent("og:image"));
   });
 
+  it("leaves the per-page description tags out of the global head", () => {
+    const globalIdentifiers = (config.head ?? []).map(
+      ([, attributes]) => attributes?.property ?? attributes?.name,
+    );
+    expect(globalIdentifiers).not.toContain("og:description");
+    expect(globalIdentifiers).not.toContain("twitter:description");
+  });
+
   it("declares usable alt text for og:image and twitter:image", () => {
     const altText = findMetaContent("og:image:alt");
     expect(altText.trim().length).toBeGreaterThanOrEqual(MIN_IMAGE_ALT_LENGTH);
     expect(altText.trim().length).toBeLessThanOrEqual(MAX_IMAGE_ALT_LENGTH);
     expect(altText).not.toBe(config.title);
-    expect(altText).not.toBe(findMetaContent("og:description"));
+    expect(altText).not.toBe(config.description);
     expect(findMetaContent("twitter:image:alt")).toBe(altText);
   });
 });

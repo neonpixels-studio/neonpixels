@@ -3,6 +3,8 @@ import { describe, it, expect } from "vitest";
 import { buildPageSeoHead, buildPageUrl } from "../../seo/buildPageSeoHead";
 
 const SITE_URL = "https://neonpixels.dev";
+const HOME_DESCRIPTION = "We build the missing apps.";
+const PRIVACY_DESCRIPTION = "What Neon Pixels collects via Google Analytics.";
 
 describe("buildPageUrl", () => {
   it.each([
@@ -39,6 +41,8 @@ describe("buildPageSeoHead", () => {
     relativePath: "privacy.md",
     cleanUrls: false,
     title: "Privacy Policy",
+    description: PRIVACY_DESCRIPTION,
+    fallbackDescription: HOME_DESCRIPTION,
   });
 
   it("emits a canonical that is not the homepage", () => {
@@ -62,4 +66,49 @@ describe("buildPageSeoHead", () => {
       { name: "twitter:title", content: "Privacy Policy" },
     ]);
   });
+});
+
+describe("buildPageSeoHead descriptions", () => {
+  function descriptionTags(description: string | undefined) {
+    return buildPageSeoHead({
+      siteUrl: SITE_URL,
+      relativePath: "privacy.md",
+      cleanUrls: false,
+      title: "Privacy Policy",
+      description,
+      fallbackDescription: HOME_DESCRIPTION,
+    }).filter(
+      ([, attributes]) =>
+        attributes.property === "og:description" ||
+        attributes.name === "twitter:description",
+    );
+  }
+
+  function expectedDescriptionTags(content: string) {
+    return [
+      ["meta", { property: "og:description", content }],
+      ["meta", { name: "twitter:description", content }],
+    ];
+  }
+
+  it("uses the page description, not the homepage blurb, for both tags", () => {
+    expect(descriptionTags(PRIVACY_DESCRIPTION)).toEqual(
+      expectedDescriptionTags(PRIVACY_DESCRIPTION),
+    );
+  });
+
+  it("trims surrounding whitespace from the page description", () => {
+    expect(descriptionTags(`  ${PRIVACY_DESCRIPTION}  `)).toEqual(
+      expectedDescriptionTags(PRIVACY_DESCRIPTION),
+    );
+  });
+
+  it.each([undefined, "", "   "])(
+    "falls back to the global description when the page has %j",
+    (description) => {
+      expect(descriptionTags(description)).toEqual(
+        expectedDescriptionTags(HOME_DESCRIPTION),
+      );
+    },
+  );
 });

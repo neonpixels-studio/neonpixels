@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "vitepress";
 
+import config from "../config";
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
 
 // Asserts the tags survive `vitepress build` into the emitted HTML, not just the
@@ -86,6 +87,7 @@ const REQUIRED_META: ReadonlyArray<readonly [string, string]> = [
   [OG_ATTRIBUTE, "og:image"],
   [TWITTER_ATTRIBUTE, "twitter:card"],
   [TWITTER_ATTRIBUTE, "twitter:title"],
+  [TWITTER_ATTRIBUTE, "twitter:description"],
   [TWITTER_ATTRIBUTE, "twitter:image"],
 ];
 
@@ -544,8 +546,9 @@ describe("hero font preload", () => {
     expect(privacyHtml).toContain("Google Analytics");
   });
 
-  // Issue #174: canonical/og:url/og:title used to be global, so /privacy
-  // claimed the homepage as its canonical and got the homepage's social card.
+  // Issues #174 and #189: canonical/og:url/og:title/og:description used to be
+  // global, so /privacy claimed the homepage as its canonical and got the
+  // homepage's social card and blurb.
   describe("privacy.html per-page metadata", () => {
     let privacyHead = "";
 
@@ -582,6 +585,29 @@ describe("hero font preload", () => {
         ogTitle,
       );
     });
+
+    it("uses the privacy page description for og:description and twitter:description", () => {
+      const homeDescription = metaContent(
+        builtHead,
+        OG_ATTRIBUTE,
+        "og:description",
+      );
+      const ogDescription = metaContent(
+        privacyHead,
+        OG_ATTRIBUTE,
+        "og:description",
+      );
+      expect(ogDescription).toContain("Google Analytics");
+      expect(ogDescription).not.toBe(homeDescription);
+      expect(
+        metaContent(privacyHead, TWITTER_ATTRIBUTE, "twitter:description"),
+      ).toBe(ogDescription);
+    });
+
+    it("emits each description tag exactly once", () => {
+      expect(privacyHead.match(/property="og:description"/g)).toHaveLength(1);
+      expect(privacyHead.match(/name="twitter:description"/g)).toHaveLength(1);
+    });
   });
 
   describe("404 page metadata", () => {
@@ -595,6 +621,17 @@ describe("hero font preload", () => {
   });
 
   describe("homepage per-page metadata", () => {
+    it("emits each description tag exactly once, with the global description", () => {
+      expect(metaContent(builtHead, OG_ATTRIBUTE, "og:description")).toBe(
+        config.description,
+      );
+      expect(
+        metaContent(builtHead, TWITTER_ATTRIBUTE, "twitter:description"),
+      ).toBe(config.description);
+      expect(builtHead.match(/property="og:description"/g)).toHaveLength(1);
+      expect(builtHead.match(/name="twitter:description"/g)).toHaveLength(1);
+    });
+
     it("keeps the canonical as the bare domain, matching og:url", () => {
       expect(canonicalHref(builtHead)).toBe(SITE_ORIGIN_URL);
       expect(metaContent(builtHead, OG_ATTRIBUTE, "og:url")).toBe(
