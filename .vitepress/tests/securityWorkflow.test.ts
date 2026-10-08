@@ -285,3 +285,33 @@ it("grants issues: write only to the notify-audit-failure and close-resolved-aud
   const remainder = WORKFLOW.replace(notifyJob, "").replace(closeJob, "");
   expect(remainder).not.toMatch(/^\s*issues:\s*write\s*$/m);
 });
+
+describe("workflow concurrency", () => {
+  const concurrencyBlock = () => {
+    const lines = WORKFLOW.split("\n");
+    const start = lines.findIndex((line) => /^concurrency:\s*$/.test(line));
+    if (start === -1) {
+      return "";
+    }
+    const rest = lines.slice(start + 1);
+    const next = rest.findIndex((line) => /^[^\s#]/.test(line));
+    return rest.slice(0, next === -1 ? rest.length : next).join("\n");
+  };
+
+  it("declares a top-level concurrency block", () => {
+    expect(concurrencyBlock()).not.toBe("");
+  });
+
+  it("groups runs per PR number, falling back to the commit SHA", () => {
+    expect(concurrencyBlock()).toMatch(
+      /^\s+group:\s*\$\{\{\s*github\.workflow\s*\}\}-\$\{\{\s*github\.event\.pull_request\.number\s*\|\|\s*github\.sha\s*\}\}\s*$/m,
+    );
+  });
+
+  // Unconditional `true` would cancel main scans and the scheduled audit.
+  it("cancels in-progress runs only for pull_request events", () => {
+    expect(concurrencyBlock()).toMatch(
+      /^\s+cancel-in-progress:\s*\$\{\{\s*github\.event_name\s*==\s*'pull_request'\s*\}\}\s*$/m,
+    );
+  });
+});
