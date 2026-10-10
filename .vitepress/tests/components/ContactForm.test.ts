@@ -41,6 +41,7 @@ async function fillAndSubmit(
 describe("ContactForm", () => {
   afterEach(() => {
     mockedSubmitNetlifyForm.mockReset();
+    vi.restoreAllMocks();
   });
 
   it("ships the static markup Netlify's build-time bot needs to register the form", () => {
@@ -198,6 +199,37 @@ describe("ContactForm", () => {
     expect(wrapper.get<HTMLInputElement>("#contact-name").element.value).toBe(
       "",
     );
+    wrapper.unmount();
+  });
+
+  it("logs a non-PII console.info marker when the honeypot catches a submission", async () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const wrapper = mount(ContactForm);
+    await fillFields(wrapper, { name: "Ada", email: "ada@example.com" });
+    await wrapper.find("#contact-honeypot").setValue("spam bot filled this");
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    const loggedText = JSON.stringify(infoSpy.mock.calls);
+    expect(loggedText).toContain("honeypot");
+    expect(loggedText).not.toContain("Ada");
+    expect(loggedText).not.toContain("ada@example.com");
+    expect(loggedText).not.toContain("spam bot filled this");
+    wrapper.unmount();
+  });
+
+  it("does not log the honeypot marker for a real submission", async () => {
+    mockedSubmitNetlifyForm.mockResolvedValue(undefined);
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const wrapper = mount(ContactForm);
+    await fillAndSubmit(wrapper, {
+      name: "Ada",
+      email: "ada@example.com",
+      message: "hello",
+    });
+
+    expect(infoSpy).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 

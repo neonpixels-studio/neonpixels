@@ -88,7 +88,8 @@ posting the same url-encoded body a native submission would. Spam filtering uses
 accessible honeypot field (`bot-field`, `data-netlify-honeypot`) that's hidden from
 sighted users and assistive tech and removed from the tab order, so only an automated
 filler ever populates it; a filled honeypot reports success without actually
-submitting. **No new environment variables or build config are required** — Netlify
+submitting (it logs a PII-free `console.info` marker so a false-positive catch is
+diagnosable). **No new environment variables or build config are required** — Netlify
 auto-detects the form from the deployed HTML. To receive submissions by email, enable
 notifications once per site: Netlify dashboard → Site configuration → Forms →
 Form notifications.
