@@ -14,10 +14,12 @@ import semver from "semver";
 // the lockfile alone is enough to find those mismatches: no `npm ls` output
 // parsing, no install required, deterministic for a given commit.
 //
-// Only blanket overrides are checked: string values, and the `"."` entry of a
-// nested object. Other nested entries (e.g. the `vitepress: { vite, esbuild }`
-// entry) scope an override to one parent and are deliberate range bumps for
-// that parent, not a blanket force.
+// Every string leaf is checked, however deeply it is nested: a parent-scoped
+// entry such as `{ "minimatch": { "brace-expansion": "5" } }` is exactly what
+// narrowing a blanket override produces, and a mismatch hidden there would be
+// just as silent. The lockfile check is global per package name, which can
+// only over-report for a scoped entry, never miss one. The deliberate range
+// bumps in DELIBERATE_SCOPED_OVERRIDES are skipped.
 //
 // Executed with plain `node` against this .ts file directly (native type
 // stripping), the same way ../perf/checkPerformanceBudget.ts is; see the note
@@ -62,28 +64,66 @@ function packageNameFromOverrideKey(key: string) {
   return selectorStart === -1 ? key : key.slice(0, selectorStart);
 }
 
-// A string value forces the package for every consumer. An object value
-// scopes overrides to that parent's subtree, except its "." entry, which
-// forces the parent itself like a string would.
-function isBlanketOverride(value: unknown) {
-  if (typeof value === "string") {
-    return true;
-  }
-  if (typeof value !== "object" || value === null) {
+// Parent-scoped entries that deliberately move a build tool to a newer range
+// for that parent only (see package.json). They are not mismatch masks, so
+// they are exempt. Keep in sync with package.json when adding another.
+const DELIBERATE_SCOPED_OVERRIDES: Record<string, readonly string[]> = {
+  vitepress: ["vite", "esbuild"],
+};
+
+function isDeliberateScopedOverride(
+  parentName: string | undefined,
+  name: string,
+) {
+  if (
+    parentName === undefined ||
+    !Object.hasOwn(DELIBERATE_SCOPED_OVERRIDES, parentName)
+  ) {
     return false;
   }
-  return (
-    typeof (value as Record<string, unknown>)[DOT_OVERRIDE_KEY] === "string"
+  return DELIBERATE_SCOPED_OVERRIDES[parentName].includes(name);
+}
+
+function isOverrideObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// A string value forces the package for every consumer of its scope. An object
+// value nests further overrides under that parent; its "." entry forces the
+// parent itself like a string would. Non-string leaves are ignored.
+function overriddenNamesForEntry(
+  parentName: string | undefined,
+  key: string,
+  value: unknown,
+): string[] {
+  if (key === DOT_OVERRIDE_KEY) {
+    return typeof value === "string" && parentName !== undefined
+      ? [parentName]
+      : [];
+  }
+  const name = packageNameFromOverrideKey(key);
+  if (typeof value === "string") {
+    return isDeliberateScopedOverride(parentName, name) ? [] : [name];
+  }
+  if (!isOverrideObject(value)) {
+    return [];
+  }
+  return overriddenNamesIn(name, value);
+}
+
+function overriddenNamesIn(
+  parentName: string | undefined,
+  overrides: Record<string, unknown>,
+): string[] {
+  return Object.entries(overrides).flatMap(([key, value]) =>
+    overriddenNamesForEntry(parentName, key, value),
   );
 }
 
 export function readOverriddenPackageNames(
   overrides: Record<string, unknown> | undefined,
 ) {
-  const names = Object.entries(overrides ?? {})
-    .filter(([, value]) => isBlanketOverride(value))
-    .map(([key]) => packageNameFromOverrideKey(key));
-  return [...new Set(names)];
+  return [...new Set(overriddenNamesIn(undefined, overrides ?? {}))];
 }
 
 function parentPath(packagePath: string) {

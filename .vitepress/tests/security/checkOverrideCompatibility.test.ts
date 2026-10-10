@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   findIncompatibleConsumers,
@@ -30,13 +30,83 @@ function lockfileWithConsumer(consumerRange: string): Lockfile {
 }
 
 describe("readOverriddenPackageNames", () => {
-  it("skips nested overrides scoped to a parent", () => {
+  it("skips the deliberate vitepress bumps but keeps blanket overrides", () => {
     expect(
       readOverriddenPackageNames({
-        vitepress: { vite: "^6.4.3" },
+        vitepress: { vite: "^6.4.3", esbuild: "^0.25.0" },
         "brace-expansion": "^5.0.12",
       }),
     ).toEqual(["brace-expansion"]);
+  });
+
+  it("checks a parent-scoped override that is not allowlisted", () => {
+    expect(
+      readOverriddenPackageNames({
+        minimatch: { "brace-expansion": "5" },
+      }),
+    ).toEqual(["brace-expansion"]);
+  });
+
+  it("checks a non-allowlisted child under an allowlisted parent", () => {
+    expect(
+      readOverriddenPackageNames({
+        vitepress: { vite: "^6.4.3", "brace-expansion": "5" },
+      }),
+    ).toEqual(["brace-expansion"]);
+  });
+
+  it("applies the allowlist when the parent key carries a version selector", () => {
+    expect(
+      readOverriddenPackageNames({
+        "vitepress@^1": { vite: "^6.4.3" },
+      }),
+    ).toEqual([]);
+  });
+
+  it("allowlists every scoped child currently in package.json", () => {
+    const { overrides } = JSON.parse(
+      readFileSync(resolve(__dirname, "../../../package.json"), "utf8"),
+    );
+    const scopedEntries = Object.entries(overrides ?? {}).filter(
+      ([, value]) => typeof value === "object",
+    );
+    expect(scopedEntries.length).toBeGreaterThan(0);
+    for (const [parent, children] of scopedEntries) {
+      const { ".": _parentForce, ...scopedChildren } = children as Record<
+        string,
+        unknown
+      >;
+      expect(
+        readOverriddenPackageNames({ [parent]: scopedChildren }),
+        `package.json override scoped to ${parent} is not allowlisted`,
+      ).toEqual([]);
+    }
+  });
+
+  it("does not throw on parents named like Object.prototype members", () => {
+    expect(
+      readOverriddenPackageNames(
+        JSON.parse('{"constructor":{"x":"1"},"__proto__":{"y":"1"}}'),
+      ),
+    ).toEqual(["x", "y"]);
+  });
+
+  it("walks deeply nested leaves", () => {
+    expect(
+      readOverriddenPackageNames({
+        a: { b: { "brace-expansion": "5" } },
+      }),
+    ).toEqual(["brace-expansion"]);
+  });
+
+  it("ignores non-string leaves", () => {
+    expect(
+      readOverriddenPackageNames({
+        minimatch: { "brace-expansion": 5, other: null, list: ["1"] },
+        flag: true,
+        empty: {},
+      }),
+    ).toEqual([]);
   });
 
   it("strips version selectors, including on scoped packages", () => {
@@ -49,12 +119,12 @@ describe("readOverriddenPackageNames", () => {
     ).toEqual(["brace-expansion", "@scope/pkg", "@scope/plain"]);
   });
 
-  it('includes a nested override\'s "." entry, which forces the parent itself', () => {
+  it('includes a nested override\'s "." entry and its scoped children', () => {
     expect(
       readOverriddenPackageNames({
         "brace-expansion": { ".": "5.0.12", child: "1.0.0" },
       }),
-    ).toEqual(["brace-expansion"]);
+    ).toEqual(["brace-expansion", "child"]);
   });
 
   it("lists a package once when a bare key and a selector key both target it", () => {
