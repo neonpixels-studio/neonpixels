@@ -1259,31 +1259,30 @@ describe("findCatchAllsAhead", () => {
   });
 });
 
-// Issue #152: the two [[redirects]] blocks proxying /dashboard and
+// Issue #152: the two [[redirects]] blocks sending /dashboard and
 // /dashboard/* to the separately-deployed dashboard app had zero test
-// coverage, so an edit that broke either block (wrong destination, a 3xx
-// status instead of the 200 that makes Netlify proxy rather than redirect,
-// or a dropped `force`) could ship with no CI signal — silently turning the
-// proxy into a broken link or an off-origin redirect.
-describe("dashboard proxy redirects", () => {
-  const DASHBOARD_APP_ORIGIN = "https://neonpixels-dashboard.netlify.app";
+// coverage, so an edit that broke either block (wrong destination, wrong
+// status, or a dropped `force`) could ship with no CI signal — silently
+// turning the redirect into a broken link.
+describe("dashboard redirects", () => {
+  const DASHBOARD_APP_ORIGIN = "https://dashboard.neonpixels.dev";
   const DASHBOARD_PATH = "/dashboard";
   const DASHBOARD_SPLAT_PATH = "/dashboard/*";
-  // status = 200 is what makes Netlify rewrite (proxy) the request rather
-  // than send the browser a 3xx redirect, so the URL stays on this origin.
-  const PROXY_STATUS = 200;
+  // A permanent redirect to the dashboard's own domain, not a 200 proxy
+  // that would keep serving it from this origin.
+  const REDIRECT_STATUS = 301;
 
-  it("proxies /dashboard to the dashboard app's root", () => {
+  it("redirects /dashboard to the dashboard app's root", () => {
     const redirect = findRedirect(redirects, DASHBOARD_PATH);
     expect(redirect.to).toBe(DASHBOARD_APP_ORIGIN);
-    expect(redirect.status).toBe(PROXY_STATUS);
+    expect(redirect.status).toBe(REDIRECT_STATUS);
     expect(redirect.force).toBe(true);
   });
 
-  it("proxies /dashboard/* to the dashboard app, forwarding the splat", () => {
+  it("redirects /dashboard/* to the dashboard app, forwarding the splat", () => {
     const redirect = findRedirect(redirects, DASHBOARD_SPLAT_PATH);
     expect(redirect.to).toBe(`${DASHBOARD_APP_ORIGIN}/:splat`);
-    expect(redirect.status).toBe(PROXY_STATUS);
+    expect(redirect.status).toBe(REDIRECT_STATUS);
     expect(redirect.force).toBe(true);
   });
 
@@ -1310,7 +1309,7 @@ describe("dashboard proxy redirects", () => {
 // VitePress builds. Nothing else in this suite reads [[redirects]], so a
 // dropped or mis-typed rule here would break that link with every other
 // static guard still green. Built on the shared parseRedirects/findRedirect
-// helpers above (the same ones the dashboard proxy tests above use) rather
+// helpers above (the same ones the dashboard redirect tests above use) rather
 // than a second bespoke parser — that shared implementation already tolerates
 // a trailing inline TOML comment (matchRedirectKey doesn't anchor to the end
 // of the line), so this suite only needs to assert that behavior, not
