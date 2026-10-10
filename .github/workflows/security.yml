@@ -19,6 +19,14 @@ on:
 permissions:
   contents: read
 
+# Superseded PR runs are cancelled. Push, schedule, and manual runs get a
+# per-run group (not per-commit: schedule and manual runs share main's SHA
+# with the push run, and a queued run in a shared group gets replaced), so
+# nothing but a superseded PR run is ever cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   GITLEAKS_VERSION: 8.30.1
 
