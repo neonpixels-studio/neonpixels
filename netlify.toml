@@ -11,6 +11,21 @@
 # (A NODE_VERSION set in the Netlify UI would still override .nvmrc; keep it
 # unset there so this file's guarantee holds.)
 
+# Send the legacy neonpixels.io domain (apex and www) to neonpixels.dev,
+# keeping the path. Listed first so no path rule below can match an .io
+# request before these do. force = true wins over any matching static file.
+[[redirects]]
+  from = "https://neonpixels.io/*"
+  to = "https://neonpixels.dev/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "https://www.neonpixels.io/*"
+  to = "https://neonpixels.dev/:splat"
+  status = 301
+  force = true
+
 # Redirect the old /dashboard path (and deep links under it) to the dashboard
 # app's own domain. force = true wins over any matching static file.
 [[redirects]]
