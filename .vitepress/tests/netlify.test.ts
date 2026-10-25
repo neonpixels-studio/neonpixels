@@ -1304,6 +1304,40 @@ describe("dashboard redirects", () => {
   });
 });
 
+describe("legacy neonpixels.io domain redirects", () => {
+  const CANONICAL_SPLAT_TARGET = "https://neonpixels.dev/:splat";
+  const LEGACY_DOMAIN_PATHS = [
+    "https://neonpixels.io/*",
+    "https://www.neonpixels.io/*",
+  ];
+  const REDIRECT_STATUS = 301;
+
+  it.each(LEGACY_DOMAIN_PATHS)(
+    "permanently redirects %s to neonpixels.dev, forwarding the splat",
+    (from) => {
+      const redirect = findRedirect(redirects, from);
+      expect(redirect.to).toBe(CANONICAL_SPLAT_TARGET);
+      expect(redirect.status).toBe(REDIRECT_STATUS);
+      expect(redirect.force).toBe(true);
+    },
+  );
+
+  // Netlify applies the first matching rule, so a path-only rule listed
+  // ahead of these (e.g. /dashboard/*) would catch an .io request first and
+  // keep the visitor on the legacy domain.
+  it("lists the domain redirects before every path-only rule", () => {
+    const lastDomainIndex = Math.max(
+      ...LEGACY_DOMAIN_PATHS.map((path) =>
+        redirects.findIndex((redirect) => redirect.from === path),
+      ),
+    );
+    const pathRulesAhead = redirects
+      .slice(0, lastDomainIndex)
+      .filter((redirect) => redirect.from?.startsWith("/"));
+    expect(pathRulesAhead).toEqual([]);
+  });
+});
+
 // Issue #149: ConsentBanner.vue links to the extensionless /privacy URL, which
 // only resolves because this file rewrites it to the real privacy.html
 // VitePress builds. Nothing else in this suite reads [[redirects]], so a
