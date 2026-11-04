@@ -3,10 +3,10 @@ import { join, posix, relative, resolve, sep } from "node:path";
 
 // Hand-maintained links (llms.txt, the /privacy and /dashboard redirects in
 // netlify.toml, the manifest icons) can dangle without any test noticing.
-// This walks the real build output and fails on any internal href/src, srcset candidate, og:image/twitter:image
-// meta URL,
-// manifest icon src or llms.txt link that resolves to neither a file in
-// dist nor a Netlify redirect/rewrite rule. Run after `npm run build` (see
+// This walks the real build output and fails on any internal href/src,
+// srcset candidate, og:image/twitter:image meta URL, manifest icon src or
+// llms.txt link that resolves to neither a file in dist nor a Netlify
+// redirect/rewrite rule. Run after `npm run build` (see
 // the link:check script and .github/workflows/ci.yml); the resolver logic is
 // unit-tested against fixtures in ../tests/links.
 //
@@ -41,6 +41,8 @@ const IMAGE_META_KEYS = new Set([
 ]);
 const DATA_URI_PREFIX = "data:";
 const SRCSET_SEPARATOR_PATTERN = /[\s,]/;
+const NON_WHITESPACE_PATTERN = /\S/;
+const TRAILING_COMMAS_PATTERN = /,+$/;
 const MARKDOWN_LINK_PATTERN = /\]\(([^)\s]+)\)/g;
 const REDIRECT_BLOCK_HEADER = "[[redirects]]";
 const SECTION_HEADER_PATTERN = /^\s*\[/;
@@ -120,6 +122,32 @@ export function extractHtmlUrls(html: string): string[] {
   );
 }
 
+function skipWhile(text: string, position: number, pattern: RegExp): number {
+  let cursor = position;
+  while (cursor < text.length && pattern.test(text[cursor])) {
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function isDataUri(url: string): boolean {
+  return url.toLowerCase().startsWith(DATA_URI_PREFIX);
+}
+
+// A URL with a trailing comma has no descriptors, so the next candidate
+// starts right after it; otherwise descriptors run to the next comma.
+function nextCandidateStart(
+  srcset: string,
+  position: number,
+  endsWithComma: boolean,
+): number {
+  if (endsWithComma) {
+    return position;
+  }
+  const nextComma = srcset.indexOf(",", position);
+  return nextComma === -1 ? srcset.length : nextComma + 1;
+}
+
 // Follows the HTML srcset grammar: a candidate is a whitespace-free URL
 // (which may itself contain commas, e.g. data: URIs) followed by optional
 // descriptors up to the next comma. A trailing comma on the URL ends it.
@@ -127,22 +155,14 @@ export function parseSrcset(srcset: string): string[] {
   const urls: string[] = [];
   let position = 0;
   while (position < srcset.length) {
-    while (
-      position < srcset.length &&
-      SRCSET_SEPARATOR_PATTERN.test(srcset[position])
-    ) {
-      position += 1;
-    }
-    const urlStart = position;
-    while (position < srcset.length && !/\s/.test(srcset[position])) {
-      position += 1;
-    }
-    const url = srcset.slice(urlStart, position).replace(/,+$/, "");
-    if (url && !url.toLowerCase().startsWith(DATA_URI_PREFIX)) {
+    const urlStart = skipWhile(srcset, position, SRCSET_SEPARATOR_PATTERN);
+    position = skipWhile(srcset, urlStart, NON_WHITESPACE_PATTERN);
+    const rawUrl = srcset.slice(urlStart, position);
+    const url = rawUrl.replace(TRAILING_COMMAS_PATTERN, "");
+    if (url && !isDataUri(url)) {
       urls.push(url);
     }
-    const nextComma = srcset.indexOf(",", position);
-    position = nextComma === -1 ? srcset.length : nextComma + 1;
+    position = nextCandidateStart(srcset, position, rawUrl !== url);
   }
   return urls;
 }

@@ -137,6 +137,15 @@ describe("parseSrcset", () => {
     ]);
   });
 
+  it("keeps the candidate after a URL with a trailing comma", () => {
+    expect(parseSrcset("/a.png, /b.png 2x")).toEqual(["/a.png", "/b.png"]);
+    expect(parseSrcset("/a.png, /b.png, /c.png")).toEqual([
+      "/a.png",
+      "/b.png",
+      "/c.png",
+    ]);
+  });
+
   it("returns nothing for an empty value", () => {
     expect(parseSrcset("  ")).toEqual([]);
   });
