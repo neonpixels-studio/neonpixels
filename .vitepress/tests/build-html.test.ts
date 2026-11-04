@@ -20,6 +20,7 @@ import { build } from "vitepress";
 
 import config from "../config";
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
+import { runAxeOnHtml } from "./utils/axe";
 
 // Asserts the tags survive `vitepress build` into the emitted HTML, not just the
 // config.head array. config.test.ts already covers the config object; this closes
@@ -49,6 +50,7 @@ const ASSETS_DIR = "assets";
 // than only immediately before the final extension.
 const CONTENT_HASH_FILENAME = /\.[A-Za-z0-9_-]{8,}\./;
 const NOT_FOUND_HTML_FILE = "404.html";
+const PRIVACY_HTML_FILE = "privacy.html";
 const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
 const REPORT_ONLY_HEADER_LINE = new RegExp(
   `^\\s*${REPORT_ONLY_HEADER_NAME}:\\s*(.+)$`,
@@ -990,4 +992,42 @@ describe("shipped immutable asset caching", () => {
   // never declaring their own X-Robots-Tag) are the same kind of static,
   // build-independent check, so they live in netlify.test.ts too — see
   // "noindex header ownership" there.
+});
+
+// Renders the built pages into jsdom and runs axe-core. Complements the static
+// a11y guards (wcag-text-contrast, component-focus, eslint-a11y) with a real rule
+// engine over the emitted DOM. Reuses the smoke build above, so no second build.
+const AXE_PAGES = [
+  { name: "/", file: INDEX_HTML_FILE },
+  { name: "/privacy", file: PRIVACY_HTML_FILE },
+  { name: "/404", file: NOT_FOUND_HTML_FILE },
+] as const;
+
+describe("axe accessibility (WCAG 2.1 A/AA) on built pages", () => {
+  it("covers every top-level built HTML page", () => {
+    const builtPages = readdirSync(buildOutDir)
+      .filter((name) => name.endsWith(HTML_EXTENSION))
+      .sort();
+    expect(AXE_PAGES.map((page) => page.file).sort()).toEqual(builtPages);
+  });
+
+  it.each(AXE_PAGES)("has no violations on $name", async ({ file }) => {
+    const html = readFileSync(resolve(buildOutDir, file), "utf8");
+    expect(await runAxeOnHtml(html)).toEqual([]);
+  });
+
+  it("detects a violation when one is introduced", async () => {
+    // Anchor on the real element's id: a bare `<main` also appears inside an
+    // HTML comment in the built output, so the injection would land in the comment.
+    const broken = readFileSync(
+      resolve(buildOutDir, INDEX_HTML_FILE),
+      "utf8",
+    ).replace(
+      '<main id="main-content"',
+      '<img src="x.png"><main id="main-content"',
+    );
+    expect(broken).toContain('<img src="x.png">');
+    const ids = (await runAxeOnHtml(broken)).map((violation) => violation.id);
+    expect(ids).toContain("image-alt");
+  });
 });
