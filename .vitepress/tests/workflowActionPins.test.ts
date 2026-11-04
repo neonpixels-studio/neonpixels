@@ -3,8 +3,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const WORKFLOWS_DIR = resolve(process.cwd(), ".github/workflows");
-const USES_LINE = /^\s*(?:-\s+)?uses:\s*(\S+)(.*)$/;
-const PINNED_REFERENCE = /@[0-9a-f]{40}$/;
+const USES_LINE = /^\s*(?:-\s+)?uses:\s*["']?([^\s"']+)["']?(.*)$/;
+const PINNED_REFERENCE = /@(?:[0-9a-f]{40}|sha256:[0-9a-f]{64})$/;
 const VERSION_COMMENT = /^\s+#\s*v\d+(\.\d+)*\S*\s*$/;
 
 // Local actions (./) are exempt; they are versioned with the repo itself.
@@ -23,11 +23,14 @@ function collectUses() {
           line: index + 1,
           match: USES_LINE.exec(line),
         }))
-        .filter((entry) => entry.match !== null)
+        .filter(
+          (entry): entry is typeof entry & { match: RegExpExecArray } =>
+            entry.match !== null,
+        )
         .map((entry) => ({
           where: `${entry.file}:${entry.line}`,
-          reference: entry.match![1],
-          trailing: entry.match![2],
+          reference: entry.match[1],
+          trailing: entry.match[2],
         })),
     );
 }
