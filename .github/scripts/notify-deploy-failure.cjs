@@ -1,37 +1,16 @@
 // Called from the "notify-deploy-failure" job in
 // .github/workflows/weekly-production-deploy.yml via actions/github-script.
-// Mirrors notify-audit-failure.cjs (marker in the body, one open issue per
-// failure streak, comment instead of duplicating) with its own label and
-// marker so the two notifiers never match each other's issues. Kept as
+// Configures the shared tracker (failure-issue-tracker.cjs) with its own label
+// and marker so notifiers never match each other's issues. Kept as
 // CommonJS (.cjs) because package.json sets "type": "module".
+const { createFailureIssueTracker } = require("./failure-issue-tracker.cjs");
+
 const ISSUE_TITLE = "Weekly production deploy failed";
 const DEPLOY_FAILURE_LABEL = "deploy-failure";
 const ISSUE_MARKER = "<!-- neonpixels:deploy-failure-notifier -->";
 
-// 100 is the API's max per_page; see notify-audit-failure.cjs.
-const LIST_PAGE_SIZE = 100;
-
-function isTrackedDeployFailureIssue(issueOrPullRequest) {
-  return (
-    !issueOrPullRequest.pull_request &&
-    (issueOrPullRequest.body ?? "").includes(ISSUE_MARKER)
-  );
-}
-
-async function findOpenDeployFailureIssues({ github, owner, repo }) {
-  const { data } = await github.rest.issues.listForRepo({
-    owner,
-    repo,
-    state: "open",
-    labels: DEPLOY_FAILURE_LABEL,
-    per_page: LIST_PAGE_SIZE,
-  });
-  return data.filter(isTrackedDeployFailureIssue);
-}
-
 function buildIssueBody(runUrl) {
   return [
-    ISSUE_MARKER,
     "The weekly production deploy did not complete successfully, so " +
       "production is likely stale until the next run.",
     "",
@@ -45,42 +24,19 @@ function buildIssueBody(runUrl) {
   ].join("\n");
 }
 
-// Unguarded on purpose: a failure here should surface loudly in the
-// workflow log rather than leave a silently-broken notifier.
-module.exports = async function notifyDeployFailure({ github, context, core }) {
-  const owner = context.repo.owner;
-  const repo = context.repo.repo;
-  const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+const tracker = createFailureIssueTracker({
+  label: DEPLOY_FAILURE_LABEL,
+  marker: ISSUE_MARKER,
+  title: ISSUE_TITLE,
+  logName: "deploy-failure",
+  buildIssueBody,
+  recoveryMessage: "The production deploy succeeded again.",
+});
 
-  const [existingIssue] = await findOpenDeployFailureIssues({
-    github,
-    owner,
-    repo,
-  });
-  if (existingIssue) {
-    await github.rest.issues.createComment({
-      owner,
-      repo,
-      issue_number: existingIssue.number,
-      body: `Still failing. Latest run: ${runUrl}`,
-    });
-    core.info(
-      `Commented on existing deploy-failure issue #${existingIssue.number}.`,
-    );
-    return;
-  }
-
-  const { data: createdIssue } = await github.rest.issues.create({
-    owner,
-    repo,
-    title: ISSUE_TITLE,
-    labels: [DEPLOY_FAILURE_LABEL],
-    body: buildIssueBody(runUrl),
-  });
-  core.info(`Opened deploy-failure issue #${createdIssue.number}.`);
-};
+module.exports = tracker.notify;
 
 module.exports.DEPLOY_FAILURE_LABEL = DEPLOY_FAILURE_LABEL;
 module.exports.ISSUE_TITLE = ISSUE_TITLE;
 module.exports.ISSUE_MARKER = ISSUE_MARKER;
-module.exports.findOpenDeployFailureIssues = findOpenDeployFailureIssues;
+module.exports.findOpenDeployFailureIssues = tracker.findOpenIssues;
+module.exports.closeResolved = tracker.closeResolved;
