@@ -77,7 +77,8 @@ describe("ci.yml internal link check", () => {
 describe("ci.yml single site build", () => {
   const BUILD_COMMAND = "run: npm run build";
   const TEST_COMMAND = "run: npm run test:ci";
-  const PUBLISH_DIR = ".vitepress/dist";
+  const BUILD_STEP_LINE = /^\s+run:\s*npm run build\s*$/gm;
+  const PUBLISH_DIR_PATTERN = "\\.vitepress/dist";
 
   it("builds the site before running test:ci so the smoke suite can reuse it", () => {
     const build = WORKFLOW.indexOf(BUILD_COMMAND);
@@ -87,19 +88,20 @@ describe("ci.yml single site build", () => {
   });
 
   it("builds only once", () => {
-    expect(WORKFLOW.split(BUILD_COMMAND)).toHaveLength(2);
+    expect(WORKFLOW.match(BUILD_STEP_LINE)).toHaveLength(1);
+    expect(WORKFLOW).not.toMatch(/vitepress build/);
   });
 
   it("passes SMOKE_BUILD_REUSE_DIR pointing at the publish dir to the test step", () => {
     const testStart = WORKFLOW.indexOf(TEST_COMMAND);
-    const stepEnd = WORKFLOW.indexOf("\n      - name:", testStart);
+    const nextStep = WORKFLOW.slice(testStart).search(/\n\s+- (?:name|uses):/);
     const testStep = WORKFLOW.slice(
       testStart,
-      stepEnd === -1 ? undefined : stepEnd,
+      nextStep === -1 ? undefined : testStart + nextStep,
     );
     expect(testStep).toMatch(
       new RegExp(
-        `^\\s+${SMOKE_BUILD_REUSE_DIR_ENV}:\\s*${PUBLISH_DIR}\\s*$`,
+        `^\\s+${SMOKE_BUILD_REUSE_DIR_ENV}:\\s*["']?${PUBLISH_DIR_PATTERN}["']?\\s*$`,
         "m",
       ),
     );
