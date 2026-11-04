@@ -15,7 +15,7 @@ import { join, posix, relative, resolve, sep } from "node:path";
 const DEFAULT_OUT_DIR = resolve(process.cwd(), ".vitepress/dist");
 const DEFAULT_NETLIFY_TOML = resolve(process.cwd(), "netlify.toml");
 const SITE_ORIGIN = "https://neonpixels.dev";
-const PLACEHOLDER_ORIGIN = "http://placeholder.invalid";
+const PLACEHOLDER_ORIGIN = "https://placeholder.invalid";
 const INDEX_HTML_FILE = "index.html";
 const MANIFEST_FILE = "images/site.webmanifest";
 const LLMS_FILE = "llms.txt";
@@ -24,6 +24,7 @@ const WILDCARD_SUFFIX = "/*";
 const SPLAT_PLACEHOLDER = ":splat";
 const ABSOLUTE_URL_PREFIX = "http";
 const DEFAULT_REDIRECT_STATUS = 301;
+const CLIENT_ERROR_STATUS_FLOOR = 400;
 const EXIT_SUCCESS = 0;
 const EXIT_FAILURE = 1;
 
@@ -135,7 +136,8 @@ export function toInternalPath(
     return trimmed;
   }
   const isInternal =
-    resolved.origin === PLACEHOLDER_ORIGIN || resolved.origin === SITE_ORIGIN;
+    resolved.hostname === new URL(PLACEHOLDER_ORIGIN).hostname ||
+    resolved.hostname === new URL(SITE_ORIGIN).hostname;
   if (!isInternal) {
     return undefined;
   }
@@ -217,6 +219,9 @@ export function checkPath(
   const rule = findRedirect(path, rules);
   if (!rule) {
     return "no matching file or redirect in build output";
+  }
+  if (rule.status >= CLIENT_ERROR_STATUS_FLOOR) {
+    return `rule ${rule.from} responds with status ${rule.status}`;
   }
   const target = toInternalPath(
     rule.to.replace(SPLAT_PLACEHOLDER, splatFor(rule, path)),

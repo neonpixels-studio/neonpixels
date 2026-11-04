@@ -122,10 +122,9 @@ describe("toInternalPath", () => {
     );
   });
 
-  it("treats plain http on the site host as external and a query-only URL as root", () => {
-    expect(
-      toInternalPath("http://neonpixels.dev/x", "/i.html"),
-    ).toBeUndefined();
+  it("checks http and protocol-relative links on the site host, and maps a query-only URL to root", () => {
+    expect(toInternalPath("http://neonpixels.dev/x", "/i.html")).toBe("/x");
+    expect(toInternalPath("//neonpixels.dev/y", "/i.html")).toBe("/y");
     expect(toInternalPath("https://neonpixels.dev?x=1", "/i.html")).toBe("/");
   });
 
@@ -199,6 +198,15 @@ describe("findBrokenReferences", () => {
     writeFileSync(join(workDir, "secret.txt"), "x");
     const references = [{ source: "index.html", url: "/..%2Fsecret.txt" }];
     expect(findBrokenReferences(outDir, references, [])).toHaveLength(1);
+  });
+
+  it("does not let a 404 catch-all rule hide broken links", () => {
+    writeOutput("404.html");
+    const catchAll = parseNetlifyRedirects(
+      '[[redirects]]\n  from = "/*"\n  to = "/404.html"\n  status = 404\n',
+    );
+    const references = [{ source: "index.html", url: "/missing" }];
+    expect(findBrokenReferences(outDir, references, catchAll)).toHaveLength(1);
   });
 
   it("resolves directory URLs to index.html", () => {
