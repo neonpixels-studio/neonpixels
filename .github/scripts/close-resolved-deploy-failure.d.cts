@@ -2,16 +2,16 @@
 // close-resolved-audit-failure.d.cts for why it exists and why
 // `export default`.
 
-import type { CloseGithubIssuesClient } from "./close-resolved-audit-failure.cjs";
 import type {
-  AuditWorkflowContext,
-  AuditWorkflowCore,
-} from "./notify-audit-failure.cjs";
+  CloseGithubIssuesClient,
+  CloseAuditWorkflowCore,
+} from "./close-resolved-audit-failure.cjs";
+import type { AuditWorkflowContext } from "./notify-audit-failure.cjs";
 
 export type CloseResolvedDeployFailureArgs = {
   github: { rest: { issues: CloseGithubIssuesClient } };
   context: AuditWorkflowContext;
-  core: AuditWorkflowCore & { warning: (_message: string) => void };
+  core: CloseAuditWorkflowCore;
 };
 
 declare function closeResolvedDeployFailure(

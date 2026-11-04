@@ -172,9 +172,9 @@ describe("weekly-production-deploy.yml", () => {
   });
 
   it("runs the close script and pins the recovery job's actions to SHAs", () => {
-    const recoveryJob = WORKFLOW.slice(
-      WORKFLOW.indexOf("close-resolved-deploy-failure:"),
-    );
+    const jobStart = WORKFLOW.indexOf("  close-resolved-deploy-failure:");
+    expect(jobStart).toBeGreaterThan(-1);
+    const recoveryJob = WORKFLOW.slice(jobStart).split(/\n {2}[a-z-]+:\n/)[0];
     expect(recoveryJob).toContain("close-resolved-deploy-failure.cjs");
     const uses = recoveryJob.match(/^\s+(?:- )?uses: .+$/gm) ?? [];
     expect(uses).toHaveLength(2);
