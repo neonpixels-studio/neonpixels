@@ -18,7 +18,7 @@ function isTrackedDeployFailureIssue(issueOrPullRequest) {
   );
 }
 
-async function findOpenDeployFailureIssue({ github, owner, repo }) {
+async function findOpenDeployFailureIssues({ github, owner, repo }) {
   const { data } = await github.rest.issues.listForRepo({
     owner,
     repo,
@@ -26,7 +26,7 @@ async function findOpenDeployFailureIssue({ github, owner, repo }) {
     labels: DEPLOY_FAILURE_LABEL,
     per_page: LIST_PAGE_SIZE,
   });
-  return data.find(isTrackedDeployFailureIssue);
+  return data.filter(isTrackedDeployFailureIssue);
 }
 
 function buildIssueBody(runUrl) {
@@ -39,9 +39,9 @@ function buildIssueBody(runUrl) {
     "",
     "The Netlify build runs the full test suite and blocks on failure; " +
       "check the deploy log in Netlify, fix the cause on main, then re-run " +
-      "the Weekly production deploy workflow. Close this issue once " +
-      "production is fresh; closing it also lets the next failure open a " +
-      "new one.",
+      "the Weekly production deploy workflow. This issue closes " +
+      "automatically after the next verified production deploy; closing " +
+      "it manually also lets the next failure open a new one.",
   ].join("\n");
 }
 
@@ -52,7 +52,7 @@ module.exports = async function notifyDeployFailure({ github, context, core }) {
   const repo = context.repo.repo;
   const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
 
-  const existingIssue = await findOpenDeployFailureIssue({
+  const [existingIssue] = await findOpenDeployFailureIssues({
     github,
     owner,
     repo,
@@ -83,3 +83,4 @@ module.exports = async function notifyDeployFailure({ github, context, core }) {
 module.exports.DEPLOY_FAILURE_LABEL = DEPLOY_FAILURE_LABEL;
 module.exports.ISSUE_TITLE = ISSUE_TITLE;
 module.exports.ISSUE_MARKER = ISSUE_MARKER;
+module.exports.findOpenDeployFailureIssues = findOpenDeployFailureIssues;
