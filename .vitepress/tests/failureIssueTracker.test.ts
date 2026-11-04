@@ -143,12 +143,25 @@ describe("closeResolved", () => {
       issue_number: 1,
       body: `recovered ${RUN_URL}`,
     });
+    expect(issues.createComment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issue_number: 2,
+        body: `recovered ${RUN_URL}`,
+      }),
+    );
+    expect(issues.createComment).toHaveBeenCalledTimes(2);
   });
 
   it("only warns when the recovery comment fails after a successful close", async () => {
     const { issues, github, core } = createStubs([tracked(1)]);
     issues.createComment.mockRejectedValue(new Error("nope"));
     await createTracker().closeResolved({ github, context, core });
+    expect(issues.update).toHaveBeenCalledWith(
+      expect.objectContaining({ issue_number: 1, state: "closed" }),
+    );
+    expect(issues.update.mock.invocationCallOrder[0]).toBeLessThan(
+      issues.createComment.mock.invocationCallOrder[0],
+    );
     expect(core.warning).toHaveBeenCalledWith(
       expect.stringContaining("could not post the recovery comment: nope"),
     );

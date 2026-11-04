@@ -58,7 +58,7 @@ module.exports = tracker.notify;
 module.exports.AUDIT_FAILURE_LABEL = AUDIT_FAILURE_LABEL;
 module.exports.ISSUE_TITLE = ISSUE_TITLE;
 module.exports.ISSUE_MARKER = ISSUE_MARKER;
-// close-resolved-audit-failure.cjs needs every open tracked issue, so the
-// plural lookup stays exported.
+// Plural lookup stays exported for tests and any caller needing every open
+// tracked issue.
 module.exports.findOpenAuditFailureIssues = tracker.findOpenIssues;
 module.exports.closeResolved = tracker.closeResolved;
