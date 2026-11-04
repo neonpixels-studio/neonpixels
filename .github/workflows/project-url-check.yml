@@ -1,0 +1,86 @@
+name: Project URL check
+
+on:
+  schedule:
+    # Daily at 07:41 UTC (off the hour: GitHub flags top-of-hour runs as most
+    # likely to be delayed or dropped). Note: on public repos, GitHub disables
+    # scheduled workflows after 60 days with no repository activity.
+    - cron: "41 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read .nvmrc
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.nvmrc.outputs.version }}
+
+      # No `npm ci`: the script uses only Node built-ins, so no dependency
+      # code runs in a job that is later trusted to gate the issue jobs.
+      - name: Check project URLs and the /dashboard target
+        run: node .vitepress/health/checkProjectUrls.ts
+
+  # Separate jobs, scoped to the schedule trigger, for the same reasons as
+  # security.yml's notify-audit-failure: `issues: write` stays out of the job
+  # that executes the check, and `failure()` fires on any step breaking so a
+  # scheduled run can never fail silently.
+  notify-project-url-failure:
+    needs: check
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Notify on scheduled project URL check failure
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { notifyProjectUrlFailure } = require("./.github/scripts/project-url-check-issue.cjs");
+            await notifyProjectUrlFailure({ github, context, core });
+
+  close-resolved-project-url-failure:
+    needs: check
+    if: success() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Close resolved project URL issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { closeResolvedProjectUrlFailure } = require("./.github/scripts/project-url-check-issue.cjs");
+            await closeResolvedProjectUrlFailure({ github, context, core });
