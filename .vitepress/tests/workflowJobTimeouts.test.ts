@@ -74,6 +74,10 @@ const JOBS = PARSED.flatMap(({ file, jobs }) =>
 );
 
 describe("workflow job timeouts", () => {
+  it("finds workflow files", () => {
+    expect(WORKFLOW_FILES.length).toBeGreaterThan(0);
+  });
+
   it.each(PARSED)("finds jobs in $file", ({ jobs }) => {
     expect(jobs.length).toBeGreaterThan(0);
   });
