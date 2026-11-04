@@ -63,3 +63,12 @@ describe("ci.yml concurrency", () => {
     );
   });
 });
+
+describe("ci.yml internal link check", () => {
+  it("runs link:check after the build step", () => {
+    const build = WORKFLOW.indexOf("run: npm run build");
+    const linkCheck = WORKFLOW.indexOf("run: npm run link:check");
+    expect(build).toBeGreaterThan(-1);
+    expect(linkCheck).toBeGreaterThan(build);
+  });
+});
