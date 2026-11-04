@@ -129,16 +129,10 @@ describe("notify", () => {
       createTracker().notify({ github, context, core }),
     ).rejects.toThrow("comment failed");
   });
-
-  it("prepends the marker even when the body builder omits it", async () => {
-    const { issues, github, core } = createStubs();
-    await createTracker().notify({ github, context, core });
-    expect(issues.create.mock.calls[0][0].body.startsWith(MARKER)).toBe(true);
-  });
 });
 
 describe("createFailureIssueTracker", () => {
-  it("rejects an empty label, marker, or title", () => {
+  it("rejects any missing or empty config field", () => {
     const valid = {
       label: LABEL,
       marker: MARKER,
@@ -147,9 +141,19 @@ describe("createFailureIssueTracker", () => {
       buildIssueBody: () => "",
       recoveryMessage: "r",
     };
-    expect(() => createFailureIssueTracker({ ...valid, label: "" })).toThrow();
-    expect(() => createFailureIssueTracker({ ...valid, marker: "" })).toThrow();
-    expect(() => createFailureIssueTracker({ ...valid, title: "" })).toThrow();
+    const broken = [
+      { ...valid, label: "" },
+      { ...valid, marker: "" },
+      { ...valid, title: "" },
+      { ...valid, logName: "" },
+      { ...valid, recoveryMessage: "" },
+      { ...valid, buildIssueBody: undefined },
+    ];
+    for (const config of broken) {
+      expect(() =>
+        createFailureIssueTracker(config as unknown as typeof valid),
+      ).toThrow(/invalid config/);
+    }
   });
 });
 

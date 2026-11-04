@@ -26,6 +26,30 @@ function buildRunUrl(context) {
   return `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
 }
 
+const REQUIRED_STRING_FIELDS = [
+  "label",
+  "marker",
+  "title",
+  "logName",
+  "recoveryMessage",
+];
+
+// Fail at load time rather than on the first real failure, when a broken
+// notifier would be too late to matter.
+function assertValidConfig(config) {
+  const invalidFields = REQUIRED_STRING_FIELDS.filter(
+    (field) => typeof config[field] !== "string" || config[field] === "",
+  );
+  if (typeof config.buildIssueBody !== "function") {
+    invalidFields.push("buildIssueBody");
+  }
+  if (invalidFields.length > 0) {
+    throw new Error(
+      `createFailureIssueTracker: invalid config (${invalidFields.join(", ")}).`,
+    );
+  }
+}
+
 // logName is the short name used in log lines and errors, e.g. "audit-failure".
 function createFailureIssueTracker({
   label,
@@ -35,11 +59,14 @@ function createFailureIssueTracker({
   buildIssueBody,
   recoveryMessage,
 }) {
-  if (!label || !marker || !title) {
-    throw new Error(
-      "createFailureIssueTracker requires label, marker, and title.",
-    );
-  }
+  assertValidConfig({
+    label,
+    marker,
+    title,
+    logName,
+    buildIssueBody,
+    recoveryMessage,
+  });
 
   // Returns every match, not just the first: the close path needs all of them
   // (a human reopening one, or two racing runs, could otherwise leave a second
@@ -112,6 +139,17 @@ function createFailureIssueTracker({
     }
   }
 
+  // Returns a failure description instead of throwing so the caller's loop
+  // stays flat and keeps going.
+  async function tryCloseIssue(args) {
+    try {
+      await closeIssue(args);
+      return null;
+    } catch (error) {
+      return `#${args.issue.number}: ${error.message}`;
+    }
+  }
+
   async function closeResolved({ github, context, core }) {
     const { owner, repo } = context.repo;
     const runUrl = buildRunUrl(context);
@@ -126,10 +164,16 @@ function createFailureIssueTracker({
     // collected and thrown afterward so they still surface in the log.
     const closeFailures = [];
     for (const issue of trackedIssues) {
-      try {
-        await closeIssue({ github, owner, repo, issue, runUrl, core });
-      } catch (error) {
-        closeFailures.push(`#${issue.number}: ${error.message}`);
+      const failure = await tryCloseIssue({
+        github,
+        owner,
+        repo,
+        issue,
+        runUrl,
+        core,
+      });
+      if (failure) {
+        closeFailures.push(failure);
       }
     }
 
