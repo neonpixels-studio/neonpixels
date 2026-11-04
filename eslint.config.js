@@ -68,6 +68,7 @@ export default [
     files: [
       ".github/scripts/notify-audit-failure.d.cts",
       ".github/scripts/notify-deploy-failure.d.cts",
+      ".github/scripts/project-url-check-issue.d.cts",
       ".github/scripts/verify-production-deploy.d.cts",
     ],
     rules: {
