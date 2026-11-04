@@ -66,6 +66,13 @@ afterEach(() => {
 });
 
 describe("parseNetlifyRedirects", () => {
+  it("defaults a missing status to 301", () => {
+    const [rule] = parseNetlifyRedirects(
+      '[[redirects]]\n  from = "/a"\n  to = "/b"\n',
+    );
+    expect(rule.status).toBe(301);
+  });
+
   it("reads every redirects block and ignores other sections", () => {
     const rules = parseNetlifyRedirects(TOML);
     expect(rules.map((rule) => rule.from)).toEqual([
@@ -115,11 +122,15 @@ describe("toInternalPath", () => {
     );
   });
 
-  it("treats scheme-relative and other-scheme URLs as external", () => {
+  it("treats plain http on the site host as external and a query-only URL as root", () => {
     expect(
       toInternalPath("http://neonpixels.dev/x", "/i.html"),
     ).toBeUndefined();
     expect(toInternalPath("https://neonpixels.dev?x=1", "/i.html")).toBe("/");
+  });
+
+  it("keeps an unparseable URL so it fails lookup instead of crashing", () => {
+    expect(toInternalPath("http://", "/i.html")).toBe("http://");
   });
 
   it("keeps a malformed percent escape instead of throwing", () => {
@@ -149,24 +160,24 @@ describe("findBrokenReferences", () => {
   });
 
   it("does not treat a rewrite as a free pass when its target is missing", () => {
-    const refs = [{ source: "index.html", url: "/privacy" }];
-    expect(findBrokenReferences(outDir, refs, rules)).toHaveLength(1);
+    const references = [{ source: "index.html", url: "/privacy" }];
+    expect(findBrokenReferences(outDir, references, rules)).toHaveLength(1);
     writeOutput("privacy.html");
-    expect(findBrokenReferences(outDir, refs, rules)).toHaveLength(0);
+    expect(findBrokenReferences(outDir, references, rules)).toHaveLength(0);
   });
 
   it("does not assume pretty URLs without a rule", () => {
     writeOutput("privacy.html");
-    const refs = [{ source: "index.html", url: "/privacy" }];
-    expect(findBrokenReferences(outDir, refs, [])).toHaveLength(1);
+    const references = [{ source: "index.html", url: "/privacy" }];
+    expect(findBrokenReferences(outDir, references, [])).toHaveLength(1);
   });
 
   it("allows proxied or redirected external routes like /dashboard", () => {
-    const refs = [
+    const references = [
       { source: "index.html", url: "/dashboard" },
       { source: "index.html", url: "/dashboard/settings" },
     ];
-    expect(findBrokenReferences(outDir, refs, rules)).toHaveLength(0);
+    expect(findBrokenReferences(outDir, references, rules)).toHaveLength(0);
   });
 
   it("substitutes the splat when validating an internal wildcard redirect", () => {
@@ -174,16 +185,26 @@ describe("findBrokenReferences", () => {
       '[[redirects]]\n  from = "/old/*"\n  to = "/new/:splat"\n  status = 301\n',
     );
     writeOutput("new/index.html");
-    const refs = [{ source: "index.html", url: "/old/a.png" }];
-    expect(findBrokenReferences(outDir, refs, splatRules)).toHaveLength(1);
+    const references = [{ source: "index.html", url: "/old/a.png" }];
+    expect(findBrokenReferences(outDir, references, splatRules)).toHaveLength(
+      1,
+    );
     writeOutput("new/a.png");
-    expect(findBrokenReferences(outDir, refs, splatRules)).toHaveLength(0);
+    expect(findBrokenReferences(outDir, references, splatRules)).toHaveLength(
+      0,
+    );
+  });
+
+  it("never probes outside the output directory", () => {
+    writeFileSync(join(workDir, "secret.txt"), "x");
+    const references = [{ source: "index.html", url: "/..%2Fsecret.txt" }];
+    expect(findBrokenReferences(outDir, references, [])).toHaveLength(1);
   });
 
   it("resolves directory URLs to index.html", () => {
     writeOutput("index.html");
-    const refs = [{ source: "llms.txt", url: "https://neonpixels.dev/" }];
-    expect(findBrokenReferences(outDir, refs, rules)).toHaveLength(0);
+    const references = [{ source: "llms.txt", url: "https://neonpixels.dev/" }];
+    expect(findBrokenReferences(outDir, references, rules)).toHaveLength(0);
   });
 });
 
@@ -224,15 +245,26 @@ describe("runInternalLinkCheckCli", () => {
     expect(output).toContain("llms.txt: https://neonpixels.dev/gone");
   });
 
-  it("throws when netlify.toml is missing", () => {
+  it("throws when llms.txt or the manifest is missing", () => {
     writeOutput("index.html");
+    expect(() => runInternalLinkCheckCli(outDir, tomlPath)).toThrow(
+      /Expected images\/site\.webmanifest/,
+    );
+    writeOutput("images/site.webmanifest", "{}");
+    expect(() => runInternalLinkCheckCli(outDir, tomlPath)).toThrow(
+      /Expected llms\.txt/,
+    );
+  });
+
+  it("throws when netlify.toml is missing", () => {
+    writeValidSite();
     expect(() =>
       runInternalLinkCheckCli(outDir, join(workDir, "missing.toml")),
     ).toThrow(/netlify\.toml not found/);
   });
 
   it("names the manifest when its JSON is invalid", () => {
-    writeOutput("index.html");
+    writeValidSite();
     writeOutput("images/site.webmanifest", "{nope");
     expect(() => runInternalLinkCheckCli(outDir, tomlPath)).toThrow(
       /Invalid JSON in images\/site\.webmanifest/,

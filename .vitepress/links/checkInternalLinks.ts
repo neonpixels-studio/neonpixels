@@ -20,6 +20,10 @@ const INDEX_HTML_FILE = "index.html";
 const MANIFEST_FILE = "images/site.webmanifest";
 const LLMS_FILE = "llms.txt";
 const HTML_EXTENSION = ".html";
+const WILDCARD_SUFFIX = "/*";
+const SPLAT_PLACEHOLDER = ":splat";
+const ABSOLUTE_URL_PREFIX = "http";
+const DEFAULT_REDIRECT_STATUS = 301;
 const EXIT_SUCCESS = 0;
 const EXIT_FAILURE = 1;
 
@@ -51,8 +55,10 @@ function emptyRule(): Partial<RedirectRule> {
   return {};
 }
 
-function isCompleteRule(rule: Partial<RedirectRule>): rule is RedirectRule {
-  return Boolean(rule.from && rule.to && rule.status);
+function isCompleteRule(
+  rule: Partial<RedirectRule>,
+): rule is Partial<RedirectRule> & Pick<RedirectRule, "from" | "to"> {
+  return Boolean(rule.from && rule.to);
 }
 
 export function parseNetlifyRedirects(toml: string): RedirectRule[] {
@@ -61,7 +67,10 @@ export function parseNetlifyRedirects(toml: string): RedirectRule[] {
 
   const flush = () => {
     if (current && isCompleteRule(current)) {
-      rules.push(current);
+      rules.push({
+        ...current,
+        status: current.status ?? DEFAULT_REDIRECT_STATUS,
+      });
     }
     current = undefined;
   };
@@ -121,13 +130,24 @@ export function toInternalPath(
   if (!trimmed || trimmed.startsWith("#")) {
     return undefined;
   }
-  const resolved = new URL(trimmed, new URL(sourcePath, PLACEHOLDER_ORIGIN));
+  const resolved = parseUrl(trimmed, new URL(sourcePath, PLACEHOLDER_ORIGIN));
+  if (!resolved) {
+    return trimmed;
+  }
   const isInternal =
     resolved.origin === PLACEHOLDER_ORIGIN || resolved.origin === SITE_ORIGIN;
   if (!isInternal) {
     return undefined;
   }
   return safeDecode(resolved.pathname);
+}
+
+function parseUrl(url: string, base: URL): URL | undefined {
+  try {
+    return new URL(url, base);
+  } catch {
+    return undefined;
+  }
 }
 
 // A malformed escape is kept verbatim so it fails the file lookup with the
@@ -141,18 +161,20 @@ function safeDecode(pathname: string): string {
 }
 
 function splatFor(rule: RedirectRule, path: string): string {
-  if (!rule.from.endsWith("/*")) {
+  if (!rule.from.endsWith(WILDCARD_SUFFIX)) {
     return "";
   }
-  return path.slice(rule.from.length - 2).replace(/^\//, "");
+  return path
+    .slice(rule.from.length - WILDCARD_SUFFIX.length)
+    .replace(/^\//, "");
 }
 
 function ruleMatches(rule: RedirectRule, path: string): boolean {
-  if (rule.from.startsWith("http")) {
+  if (rule.from.startsWith(ABSOLUTE_URL_PREFIX)) {
     return false;
   }
-  if (rule.from.endsWith("/*")) {
-    const prefix = rule.from.slice(0, -2);
+  if (rule.from.endsWith(WILDCARD_SUFFIX)) {
+    const prefix = rule.from.slice(0, -WILDCARD_SUFFIX.length);
     return path === prefix || path.startsWith(`${prefix}/`);
   }
   return rule.from === path;
@@ -166,16 +188,19 @@ export function findRedirect(
 }
 
 function candidateFiles(path: string): string[] {
-  const relative = path.replace(/^\/+/, "");
-  if (relative === "" || relative.endsWith("/")) {
-    return [posix.join(relative, INDEX_HTML_FILE)];
+  const relativePath = path.replace(/^\/+/, "");
+  if (relativePath === "" || relativePath.endsWith("/")) {
+    return [posix.join(relativePath, INDEX_HTML_FILE)];
   }
-  return [relative];
+  return [relativePath];
 }
 
 function fileExistsInOutput(outDir: string, path: string): boolean {
   return candidateFiles(path).some((candidate) => {
-    const absolute = join(outDir, candidate);
+    const absolute = resolve(outDir, candidate);
+    if (!absolute.startsWith(resolve(outDir) + sep)) {
+      return false;
+    }
     return existsSync(absolute) && statSync(absolute).isFile();
   });
 }
@@ -194,7 +219,7 @@ export function checkPath(
     return "no matching file or redirect in build output";
   }
   const target = toInternalPath(
-    rule.to.replace(":splat", splatFor(rule, path)),
+    rule.to.replace(SPLAT_PLACEHOLDER, splatFor(rule, path)),
     path,
   );
   if (target === undefined) {
@@ -238,6 +263,16 @@ function readOptional(path: string): string | undefined {
   return existsSync(path) ? readFileSync(path, "utf8") : undefined;
 }
 
+// These two files are the hand-maintained sources this check exists for, so a
+// rename or deletion must fail loudly instead of silently skipping them.
+function readRequired(outDir: string, file: string): string {
+  const contents = readOptional(join(outDir, file));
+  if (contents === undefined) {
+    throw new Error(`Expected ${file} in build output at ${outDir}`);
+  }
+  return contents;
+}
+
 function toReferences(source: string, urls: string[]): LinkReference[] {
   return urls.map((url) => ({ source, url }));
 }
@@ -250,10 +285,7 @@ function collectHtmlReferences(outDir: string): LinkReference[] {
 }
 
 function collectManifestReferences(outDir: string): LinkReference[] {
-  const manifest = readOptional(join(outDir, MANIFEST_FILE));
-  if (!manifest) {
-    return [];
-  }
+  const manifest = readRequired(outDir, MANIFEST_FILE);
   try {
     return toReferences(MANIFEST_FILE, extractManifestIconUrls(manifest));
   } catch (error) {
@@ -265,8 +297,8 @@ function collectManifestReferences(outDir: string): LinkReference[] {
 }
 
 function collectLlmsReferences(outDir: string): LinkReference[] {
-  const llms = readOptional(join(outDir, LLMS_FILE));
-  return llms ? toReferences(LLMS_FILE, extractLlmsUrls(llms)) : [];
+  const llms = readRequired(outDir, LLMS_FILE);
+  return toReferences(LLMS_FILE, extractLlmsUrls(llms));
 }
 
 export function collectReferences(outDir: string): LinkReference[] {
