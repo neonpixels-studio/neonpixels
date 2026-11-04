@@ -618,6 +618,16 @@ describe("hero font preload", () => {
       expect(canonicalHref(notFoundHead)).toBeNull();
       expect(metaContent(notFoundHead, OG_ATTRIBUTE, "og:url")).toBeNull();
     });
+
+    it("tells crawlers not to index the 404 page", () => {
+      const notFoundHead = extractHead(
+        readFileSync(resolve(buildOutDir, NOT_FOUND_HTML_FILE), "utf8"),
+      );
+      expect(metaContent(notFoundHead, "name", "robots")).toBe(
+        "noindex, follow",
+      );
+      expect(notFoundHead).toContain("<title>404 | Neon Pixels</title>");
+    });
   });
 
   describe("homepage per-page metadata", () => {

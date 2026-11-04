@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 
-import { buildPageSeoHead, buildPageUrl } from "../../seo/buildPageSeoHead";
+import {
+  buildNotFoundHead,
+  buildPageSeoHead,
+  buildPageUrl,
+} from "../../seo/buildPageSeoHead";
 
 const SITE_URL = "https://neonpixels.dev";
 const HOME_DESCRIPTION = "We build the missing apps.";
@@ -111,4 +115,22 @@ describe("buildPageSeoHead descriptions", () => {
       );
     },
   );
+});
+
+describe("buildNotFoundHead", () => {
+  const head = buildNotFoundHead();
+
+  it("noindexes the 404 view", () => {
+    expect(head).toContainEqual([
+      "meta",
+      { name: "robots", content: "noindex, follow" },
+    ]);
+  });
+
+  it("never carries a canonical or og:url", () => {
+    expect(
+      head.some(([tag, attrs]) => tag === "link" && attrs.rel === "canonical"),
+    ).toBe(false);
+    expect(head.some(([, attrs]) => attrs.property === "og:url")).toBe(false);
+  });
 });

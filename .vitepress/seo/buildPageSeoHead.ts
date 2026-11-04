@@ -5,6 +5,7 @@ const INDEX_FILE_NAME = "index";
 const HTML_EXTENSION = ".html";
 const PATH_SEPARATOR = "/";
 const TRAILING_SLASH = /\/$/;
+const NOT_FOUND_ROBOTS_CONTENT = "noindex, follow";
 
 export interface PageSeoInput {
   siteUrl: string;
@@ -51,6 +52,13 @@ function resolveDescription({
 }: Pick<PageSeoInput, "description" | "fallbackDescription">) {
   const trimmedDescription = description?.trim();
   return trimmedDescription || fallbackDescription;
+}
+
+// The 404 view must never inherit the homepage canonical or og:url, and must
+// tell crawlers not to index error URLs (the site-wide noindex only covers
+// deploy previews).
+export function buildNotFoundHead(): HeadConfig[] {
+  return [["meta", { name: "robots", content: NOT_FOUND_ROBOTS_CONTENT }]];
 }
 
 // Per-page head tags that must differ from page to page. Declared here, not in
