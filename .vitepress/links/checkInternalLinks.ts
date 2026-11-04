@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, posix, resolve } from "node:path";
+import { join, posix, relative, resolve, sep } from "node:path";
 
 // Hand-maintained links (llms.txt, the /privacy and /dashboard redirects in
 // netlify.toml, the manifest icons) can dangle without any test noticing.
@@ -25,7 +25,6 @@ const EXIT_FAILURE = 1;
 
 const URL_ATTRIBUTE_PATTERN = /\s(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
 const MARKDOWN_LINK_PATTERN = /\]\(([^)\s]+)\)/g;
-const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
 const REDIRECT_BLOCK_HEADER = "[[redirects]]";
 const SECTION_HEADER_PATTERN = /^\s*\[/;
 const TOML_STRING_FIELD_PATTERN = /^\s*(from|to)\s*=\s*"([^"]*)"/;
@@ -122,20 +121,30 @@ export function toInternalPath(
   if (!trimmed || trimmed.startsWith("#")) {
     return undefined;
   }
-  const isSiteOrigin =
-    trimmed === SITE_ORIGIN || trimmed.startsWith(`${SITE_ORIGIN}/`);
-  if (
-    !isSiteOrigin &&
-    (SCHEME_PATTERN.test(trimmed) || trimmed.startsWith("//"))
-  ) {
+  const resolved = new URL(trimmed, new URL(sourcePath, PLACEHOLDER_ORIGIN));
+  const isInternal =
+    resolved.origin === PLACEHOLDER_ORIGIN || resolved.origin === SITE_ORIGIN;
+  if (!isInternal) {
     return undefined;
   }
-  const base = new URL(sourcePath, PLACEHOLDER_ORIGIN);
-  const resolved = new URL(trimmed, base);
-  if (!isSiteOrigin && resolved.origin !== PLACEHOLDER_ORIGIN) {
-    return undefined;
+  return safeDecode(resolved.pathname);
+}
+
+// A malformed escape is kept verbatim so it fails the file lookup with the
+// offending reference attached, rather than crashing the whole run.
+function safeDecode(pathname: string): string {
+  try {
+    return decodeURIComponent(pathname);
+  } catch {
+    return pathname;
   }
-  return decodeURIComponent(resolved.pathname);
+}
+
+function splatFor(rule: RedirectRule, path: string): string {
+  if (!rule.from.endsWith("/*")) {
+    return "";
+  }
+  return path.slice(rule.from.length - 2).replace(/^\//, "");
 }
 
 function ruleMatches(rule: RedirectRule, path: string): boolean {
@@ -184,7 +193,10 @@ export function checkPath(
   if (!rule) {
     return "no matching file or redirect in build output";
   }
-  const target = toInternalPath(rule.to.replace(/:splat$/, ""), path);
+  const target = toInternalPath(
+    rule.to.replace(":splat", splatFor(rule, path)),
+    path,
+  );
   if (target === undefined) {
     return undefined;
   }
@@ -226,26 +238,43 @@ function readOptional(path: string): string | undefined {
   return existsSync(path) ? readFileSync(path, "utf8") : undefined;
 }
 
-export function collectReferences(outDir: string): LinkReference[] {
-  const references: LinkReference[] = [];
-  for (const file of listHtmlFiles(outDir)) {
-    const source = file
-      .slice(outDir.length + 1)
-      .split("\\")
-      .join("/");
-    for (const url of extractHtmlUrls(readFileSync(file, "utf8"))) {
-      references.push({ source, url });
-    }
-  }
+function toReferences(source: string, urls: string[]): LinkReference[] {
+  return urls.map((url) => ({ source, url }));
+}
+
+function collectHtmlReferences(outDir: string): LinkReference[] {
+  return listHtmlFiles(outDir).flatMap((file) => {
+    const source = relative(outDir, file).split(sep).join("/");
+    return toReferences(source, extractHtmlUrls(readFileSync(file, "utf8")));
+  });
+}
+
+function collectManifestReferences(outDir: string): LinkReference[] {
   const manifest = readOptional(join(outDir, MANIFEST_FILE));
-  for (const url of manifest ? extractManifestIconUrls(manifest) : []) {
-    references.push({ source: MANIFEST_FILE, url });
+  if (!manifest) {
+    return [];
   }
+  try {
+    return toReferences(MANIFEST_FILE, extractManifestIconUrls(manifest));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid JSON in ${MANIFEST_FILE}: ${reason}`, {
+      cause: error,
+    });
+  }
+}
+
+function collectLlmsReferences(outDir: string): LinkReference[] {
   const llms = readOptional(join(outDir, LLMS_FILE));
-  for (const url of llms ? extractLlmsUrls(llms) : []) {
-    references.push({ source: LLMS_FILE, url });
-  }
-  return references;
+  return llms ? toReferences(LLMS_FILE, extractLlmsUrls(llms)) : [];
+}
+
+export function collectReferences(outDir: string): LinkReference[] {
+  return [
+    ...collectHtmlReferences(outDir),
+    ...collectManifestReferences(outDir),
+    ...collectLlmsReferences(outDir),
+  ];
 }
 
 export function runInternalLinkCheckCli(
@@ -257,7 +286,11 @@ export function runInternalLinkCheckCli(
       `No build output at ${outDir}; run \`npm run build\` first`,
     );
   }
-  const rules = parseNetlifyRedirects(readOptional(netlifyTomlPath) ?? "");
+  const toml = readOptional(netlifyTomlPath);
+  if (toml === undefined) {
+    throw new Error(`netlify.toml not found at ${netlifyTomlPath}`);
+  }
+  const rules = parseNetlifyRedirects(toml);
   const references = collectReferences(outDir);
   const broken = findBrokenReferences(outDir, references, rules);
   if (broken.length === 0) {

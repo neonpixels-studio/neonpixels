@@ -115,6 +115,17 @@ describe("toInternalPath", () => {
     );
   });
 
+  it("treats scheme-relative and other-scheme URLs as external", () => {
+    expect(
+      toInternalPath("http://neonpixels.dev/x", "/i.html"),
+    ).toBeUndefined();
+    expect(toInternalPath("https://neonpixels.dev?x=1", "/i.html")).toBe("/");
+  });
+
+  it("keeps a malformed percent escape instead of throwing", () => {
+    expect(toInternalPath("/a%E0%A4.png", "/i.html")).toBe("/a%E0%A4.png");
+  });
+
   it("resolves relative URLs against the source page", () => {
     expect(toInternalPath("b.png", "/docs/page.html")).toBe("/docs/b.png");
   });
@@ -156,6 +167,17 @@ describe("findBrokenReferences", () => {
       { source: "index.html", url: "/dashboard/settings" },
     ];
     expect(findBrokenReferences(outDir, refs, rules)).toHaveLength(0);
+  });
+
+  it("substitutes the splat when validating an internal wildcard redirect", () => {
+    const splatRules = parseNetlifyRedirects(
+      '[[redirects]]\n  from = "/old/*"\n  to = "/new/:splat"\n  status = 301\n',
+    );
+    writeOutput("new/index.html");
+    const refs = [{ source: "index.html", url: "/old/a.png" }];
+    expect(findBrokenReferences(outDir, refs, splatRules)).toHaveLength(1);
+    writeOutput("new/a.png");
+    expect(findBrokenReferences(outDir, refs, splatRules)).toHaveLength(0);
   });
 
   it("resolves directory URLs to index.html", () => {
@@ -200,6 +222,21 @@ describe("runInternalLinkCheckCli", () => {
     expect(output).toContain("index.html: /missing");
     expect(output).toContain("images/site.webmanifest: /images/nope.png");
     expect(output).toContain("llms.txt: https://neonpixels.dev/gone");
+  });
+
+  it("throws when netlify.toml is missing", () => {
+    writeOutput("index.html");
+    expect(() =>
+      runInternalLinkCheckCli(outDir, join(workDir, "missing.toml")),
+    ).toThrow(/netlify\.toml not found/);
+  });
+
+  it("names the manifest when its JSON is invalid", () => {
+    writeOutput("index.html");
+    writeOutput("images/site.webmanifest", "{nope");
+    expect(() => runInternalLinkCheckCli(outDir, tomlPath)).toThrow(
+      /Invalid JSON in images\/site\.webmanifest/,
+    );
   });
 
   it("throws when there is no build output", () => {
