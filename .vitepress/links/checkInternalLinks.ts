@@ -4,8 +4,9 @@ import { join, posix, relative, resolve, sep } from "node:path";
 // Hand-maintained links (llms.txt, the /privacy and /dashboard redirects in
 // netlify.toml, the manifest icons) can dangle without any test noticing.
 // This walks the real build output and fails on any internal href/src,
-// manifest icon src or llms.txt link that resolves to neither a file in
-// dist nor a Netlify redirect/rewrite rule. Run after `npm run build` (see
+// srcset candidate, og:image/twitter:image meta URL, manifest icon src or
+// llms.txt link that resolves to neither a file in dist nor a Netlify
+// redirect/rewrite rule. Run after `npm run build` (see
 // the link:check script and .github/workflows/ci.yml); the resolver logic is
 // unit-tested against fixtures in ../tests/links.
 //
@@ -29,6 +30,22 @@ const EXIT_SUCCESS = 0;
 const EXIT_FAILURE = 1;
 
 const URL_ATTRIBUTE_PATTERN = /\s(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+const SRCSET_ATTRIBUTE_PATTERN =
+  /\s(?:image)?srcset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
+const META_TAG_PATTERN = /<meta\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
+const ATTRIBUTE_PATTERN =
+  /([^\s"'<>/=]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+const IMAGE_META_KEYS = new Set([
+  "og:image",
+  "og:image:url",
+  "og:image:secure_url",
+  "twitter:image",
+  "twitter:image:src",
+]);
+const DATA_URI_PREFIX = "data:";
+const SRCSET_SEPARATOR_PATTERN = /[\s,]/;
+const NON_WHITESPACE_PATTERN = /\S/;
+const TRAILING_COMMAS_PATTERN = /,+$/;
 const MARKDOWN_LINK_PATTERN = /\]\(([^)\s]+)\)/g;
 const REDIRECT_BLOCK_HEADER = "[[redirects]]";
 const SECTION_HEADER_PATTERN = /^\s*\[/;
@@ -106,6 +123,84 @@ export function extractHtmlUrls(html: string): string[] {
   return [...html.matchAll(URL_ATTRIBUTE_PATTERN)].map(
     (match) => match[1] ?? match[2],
   );
+}
+
+function skipWhile(text: string, position: number, pattern: RegExp): number {
+  let cursor = position;
+  while (cursor < text.length && pattern.test(text[cursor])) {
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function isDataUri(url: string): boolean {
+  return url.toLowerCase().startsWith(DATA_URI_PREFIX);
+}
+
+// A URL with a trailing comma has no descriptors, so the next candidate
+// starts right after it; otherwise descriptors run to the next comma.
+function nextCandidateStart(
+  srcset: string,
+  position: number,
+  endsWithComma: boolean,
+): number {
+  if (endsWithComma) {
+    return position;
+  }
+  const nextComma = srcset.indexOf(",", position);
+  return nextComma === -1 ? srcset.length : nextComma + 1;
+}
+
+// Follows the HTML srcset grammar: a candidate is a whitespace-free URL
+// (which may itself contain commas, e.g. data: URIs) followed by optional
+// descriptors up to the next comma. A trailing comma on the URL ends it.
+export function parseSrcset(srcset: string): string[] {
+  const urls: string[] = [];
+  let position = 0;
+  while (position < srcset.length) {
+    const urlStart = skipWhile(srcset, position, SRCSET_SEPARATOR_PATTERN);
+    position = skipWhile(srcset, urlStart, NON_WHITESPACE_PATTERN);
+    const rawUrl = srcset.slice(urlStart, position);
+    const url = rawUrl.replace(TRAILING_COMMAS_PATTERN, "");
+    if (url && !isDataUri(url)) {
+      urls.push(url);
+    }
+    position = nextCandidateStart(srcset, position, rawUrl !== url);
+  }
+  return urls;
+}
+
+export function extractSrcsetUrls(html: string): string[] {
+  return [...html.matchAll(SRCSET_ATTRIBUTE_PATTERN)].flatMap((match) =>
+    parseSrcset(match[1] ?? match[2] ?? match[3]),
+  );
+}
+
+function readAttributes(tag: string): Map<string, string> {
+  const attributes = new Map<string, string>();
+  for (const match of tag.matchAll(ATTRIBUTE_PATTERN)) {
+    const name = match[1].toLowerCase();
+    // HTML parsers keep the first occurrence of a duplicated attribute.
+    if (attributes.has(name)) {
+      continue;
+    }
+    attributes.set(name, match[2] ?? match[3] ?? match[4]);
+  }
+  return attributes;
+}
+
+function isImageMeta(attributes: Map<string, string>): boolean {
+  return ["property", "name"].some((attribute) =>
+    IMAGE_META_KEYS.has((attributes.get(attribute) ?? "").toLowerCase()),
+  );
+}
+
+export function extractImageMetaUrls(html: string): string[] {
+  return [...html.matchAll(META_TAG_PATTERN)].flatMap((match) => {
+    const attributes = readAttributes(match[0]);
+    const content = attributes.get("content");
+    return isImageMeta(attributes) && content ? [content] : [];
+  });
 }
 
 export function extractManifestIconUrls(manifestJson: string): string[] {
@@ -285,7 +380,12 @@ function toReferences(source: string, urls: string[]): LinkReference[] {
 function collectHtmlReferences(outDir: string): LinkReference[] {
   return listHtmlFiles(outDir).flatMap((file) => {
     const source = relative(outDir, file).split(sep).join("/");
-    return toReferences(source, extractHtmlUrls(readFileSync(file, "utf8")));
+    const html = readFileSync(file, "utf8");
+    return toReferences(source, [
+      ...extractHtmlUrls(html),
+      ...extractSrcsetUrls(html),
+      ...extractImageMetaUrls(html),
+    ]);
   });
 }
 
