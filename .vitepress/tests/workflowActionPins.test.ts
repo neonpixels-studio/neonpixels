@@ -12,27 +12,29 @@ function isExempt(reference: string) {
   return reference.startsWith("./");
 }
 
+function parseUsesLines(file: string) {
+  return readFileSync(resolve(WORKFLOWS_DIR, file), "utf8")
+    .split(/\r?\n/)
+    .map((line, index) => ({
+      file,
+      line: index + 1,
+      match: USES_LINE.exec(line),
+    }))
+    .filter(
+      (entry): entry is typeof entry & { match: RegExpExecArray } =>
+        entry.match !== null,
+    )
+    .map((entry) => ({
+      where: `${entry.file}:${entry.line}`,
+      reference: entry.match[1],
+      trailing: entry.match[2],
+    }));
+}
+
 function collectUses() {
   return readdirSync(WORKFLOWS_DIR)
     .filter((file) => /\.ya?ml$/.test(file))
-    .flatMap((file) =>
-      readFileSync(resolve(WORKFLOWS_DIR, file), "utf8")
-        .split("\n")
-        .map((line, index) => ({
-          file,
-          line: index + 1,
-          match: USES_LINE.exec(line),
-        }))
-        .filter(
-          (entry): entry is typeof entry & { match: RegExpExecArray } =>
-            entry.match !== null,
-        )
-        .map((entry) => ({
-          where: `${entry.file}:${entry.line}`,
-          reference: entry.match[1],
-          trailing: entry.match[2],
-        })),
-    );
+    .flatMap(parseUsesLines);
 }
 
 const USES = collectUses().filter((entry) => !isExempt(entry.reference));
