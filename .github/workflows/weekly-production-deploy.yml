@@ -22,6 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     # Covers the hook call plus the verify step's 30 minute poll timeout.
     timeout-minutes: 45
+    # Lets the recovery job tell a verified deploy from a skipped one.
+    outputs:
+      skipped: ${{ steps.recent.outputs.skip }}
     env:
       NETLIFY_BUILD_HOOK_URL: ${{ secrets.NETLIFY_BUILD_HOOK_URL }}
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
@@ -110,3 +113,27 @@ jobs:
           script: |
             const notifyDeployFailure = require("./.github/scripts/notify-deploy-failure.cjs");
             await notifyDeployFailure({ github, context, core });
+
+  # Runs only when a deploy was actually triggered and verified; a skipped
+  # week (no commits) proves nothing about production, so it must not close
+  # an open failure issue. Mirrors close-resolved-audit-failure in security.yml.
+  close-resolved-deploy-failure:
+    needs: deploy
+    if: success() && needs.deploy.outputs.skipped == 'false'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Close resolved deploy-failure issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const closeResolvedDeployFailure = require("./.github/scripts/close-resolved-deploy-failure.cjs");
+            await closeResolvedDeployFailure({ github, context, core });

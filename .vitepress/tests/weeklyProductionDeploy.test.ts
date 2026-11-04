@@ -152,10 +152,34 @@ describe("weekly-production-deploy.yml", () => {
     );
   });
 
-  it("notifies on failure from a separate job that alone gets issues: write", () => {
+  it("notifies on failure from a separate job, not the deploy job", () => {
     expect(WORKFLOW).toMatch(
       /notify-deploy-failure:\n\s+needs: deploy\n\s+if: failure\(\)/,
     );
-    expect(WORKFLOW.match(/^\s+issues: write$/gm)).toHaveLength(1);
+  });
+
+  it("grants issues: write only to the notify and recovery jobs", () => {
+    expect(WORKFLOW.match(/^\s+issues: write$/gm)).toHaveLength(2);
+  });
+
+  it("closes the failure issue only after a verified, non-skipped deploy", () => {
+    expect(WORKFLOW).toMatch(
+      /close-resolved-deploy-failure:\n\s+needs: deploy\n\s+if: success\(\) && needs\.deploy\.outputs\.skipped == 'false'/,
+    );
+    expect(WORKFLOW).toMatch(
+      /outputs:\n\s+skipped: \$\{\{ steps\.recent\.outputs\.skip \}\}/,
+    );
+  });
+
+  it("runs the close script and pins the recovery job's actions to SHAs", () => {
+    const recoveryJob = WORKFLOW.slice(
+      WORKFLOW.indexOf("close-resolved-deploy-failure:"),
+    );
+    expect(recoveryJob).toContain("close-resolved-deploy-failure.cjs");
+    const uses = recoveryJob.match(/^\s+(?:- )?uses: .+$/gm) ?? [];
+    expect(uses).toHaveLength(2);
+    for (const line of uses) {
+      expect(line).toMatch(/@[0-9a-f]{40} # v\d+\.\d+\.\d+$/);
+    }
   });
 });
