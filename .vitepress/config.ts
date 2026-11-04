@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { writeReportOnlyHeaders } from "./csp/writeReportOnlyHeaders";
 import { writeFontPreloadLink } from "./fonts/writeFontPreloadLink";
 import { getNoindexHeaderLines } from "./robots/getNoindexHeaderLines";
-import { buildPageSeoHead } from "./seo/buildPageSeoHead";
+import { buildNotFoundHead, buildPageSeoHead } from "./seo/buildPageSeoHead";
 import { PROJECTS, type Project } from "./theme/data/projects";
 
 const SITE_URL = "https://neonpixels.dev";
@@ -155,7 +155,7 @@ export default defineConfig({
   ],
   transformHead({ pageData, siteConfig }) {
     if (pageData.isNotFound) {
-      return [];
+      return buildNotFoundHead();
     }
     return buildPageSeoHead({
       siteUrl: SITE_URL,
