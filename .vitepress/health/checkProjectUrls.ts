@@ -21,6 +21,8 @@ const MAX_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 2_000;
 const MIN_ALIVE_STATUS = 200;
 const MAX_ALIVE_STATUS = 399;
+// Statuses a host may return for HEAD while GET works; retried once as GET.
+const HEAD_UNSUPPORTED_STATUSES = [405, 501];
 
 const PROJECT_URL_PATTERN = /^\s*url:\s*"(https?:\/\/[^"]+)"/gm;
 const DASHBOARD_REDIRECT_PATTERN = new RegExp(
@@ -67,17 +69,31 @@ function sleep(milliseconds: number) {
 
 // Redirects are not followed: a 3xx from the target proves it is up, and
 // following it would instead test wherever it points.
-async function attemptHead(url: string, fetchImpl: FetchLike) {
+async function requestStatus(
+  url: string,
+  method: "HEAD" | "GET",
+  fetchImpl: FetchLike,
+) {
+  const response = await fetchImpl(url, {
+    method,
+    redirect: "manual",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  return response.status;
+}
+
+async function probeStatus(url: string, fetchImpl: FetchLike) {
+  const headStatus = await requestStatus(url, "HEAD", fetchImpl);
+  if (!HEAD_UNSUPPORTED_STATUSES.includes(headStatus)) {
+    return headStatus;
+  }
+  return requestStatus(url, "GET", fetchImpl);
+}
+
+async function attemptProbe(url: string, fetchImpl: FetchLike) {
   try {
-    const response = await fetchImpl(url, {
-      method: "HEAD",
-      redirect: "manual",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    return {
-      ok: isAliveStatus(response.status),
-      detail: `HTTP ${response.status}`,
-    };
+    const status = await probeStatus(url, fetchImpl);
+    return { ok: isAliveStatus(status), detail: `HTTP ${status}` };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     return { ok: false, detail: `request failed: ${reason}` };
@@ -89,10 +105,10 @@ export async function checkTarget(
   fetchImpl: FetchLike,
   retryDelayMs = RETRY_DELAY_MS,
 ): Promise<UrlCheckResult> {
-  let outcome = await attemptHead(target.url, fetchImpl);
+  let outcome = await attemptProbe(target.url, fetchImpl);
   for (let attempt = 1; attempt < MAX_ATTEMPTS && !outcome.ok; attempt++) {
     await sleep(retryDelayMs);
-    outcome = await attemptHead(target.url, fetchImpl);
+    outcome = await attemptProbe(target.url, fetchImpl);
   }
   return { ...target, ...outcome };
 }
@@ -121,8 +137,7 @@ export async function checkAll(
   );
 }
 
-function writeStepSummary(lines: string[]) {
-  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+function writeStepSummary(summaryPath: string | undefined, lines: string[]) {
   if (!summaryPath) {
     return;
   }
@@ -132,23 +147,46 @@ function writeStepSummary(lines: string[]) {
   );
 }
 
-async function main() {
-  const targets = loadTargets(process.cwd());
-  const results = await checkAll(targets, fetch);
+export type RunOptions = {
+  root: string;
+  fetchImpl: FetchLike;
+  summaryPath?: string;
+  retryDelayMs?: number;
+};
+
+// Returns the process exit code (1 when any target is down) rather than
+// exiting, so the gate that decides whether the workflow fails is testable.
+export async function run({
+  root,
+  fetchImpl,
+  summaryPath,
+  retryDelayMs = RETRY_DELAY_MS,
+}: RunOptions) {
+  const targets = loadTargets(root);
+  const results = await checkAll(targets, fetchImpl, retryDelayMs);
   const lines = results.map(formatResult);
   console.log(lines.join("\n"));
-  writeStepSummary(lines);
+  writeStepSummary(summaryPath, lines);
 
   const failures = results.filter((result) => !result.ok);
-  if (failures.length > 0) {
-    console.error(`${failures.length} of ${results.length} targets are down.`);
-    process.exitCode = 1;
+  if (failures.length === 0) {
+    return 0;
   }
+  console.error(`${failures.length} of ${results.length} targets are down.`);
+  return 1;
 }
 
 if (import.meta.main) {
-  main().catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  });
+  run({
+    root: process.cwd(),
+    fetchImpl: fetch,
+    summaryPath: process.env.GITHUB_STEP_SUMMARY,
+  })
+    .then((exitCode) => {
+      process.exitCode = exitCode;
+    })
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    });
 }

@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { mkdtempSync, readFileSync as readText, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { PROJECTS } from "@theme/data/projects";
 
 import {
@@ -10,6 +12,7 @@ import {
   extractProjectTargets,
   isAliveStatus,
   loadTargets,
+  run,
   type FetchLike,
 } from "../../health/checkProjectUrls";
 
@@ -103,6 +106,16 @@ describe("checkTarget", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("retries a 405 on HEAD as GET and uses that status", async () => {
+    const fetchImpl = respondWith(405, 200);
+    const result = await checkTarget(TARGET, fetchImpl, NO_DELAY);
+    expect(result.ok).toBe(true);
+    expect(fetchImpl.mock.calls.map((call) => call[1].method)).toEqual([
+      "HEAD",
+      "GET",
+    ]);
+  });
+
   it("passes a timeout signal to every request", async () => {
     const fetchImpl = respondWith(200);
     await checkTarget(TARGET, fetchImpl, NO_DELAY);
@@ -124,5 +137,44 @@ describe("checkAll", () => {
       NO_DELAY,
     );
     expect(results.map((result) => result.ok)).toEqual([true, false]);
+  });
+});
+
+describe("run (exit code gate)", () => {
+  const summaryDir = mkdtempSync(join(tmpdir(), "project-url-check-"));
+  afterAll(() => rmSync(summaryDir, { recursive: true, force: true }));
+
+  function runWith(status: (_target: string) => number, summaryName: string) {
+    const summaryPath = join(summaryDir, summaryName);
+    const fetchImpl = vi.fn<FetchLike>(async (url) => ({
+      status: status(url),
+    }));
+    const silence = vi.spyOn(console, "log").mockImplementation(() => {});
+    const silenceError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    return run({
+      root: process.cwd(),
+      fetchImpl,
+      summaryPath,
+      retryDelayMs: NO_DELAY,
+    }).finally(() => {
+      silence.mockRestore();
+      silenceError.mockRestore();
+    });
+  }
+
+  it("returns 0 when every target is alive", async () => {
+    expect(await runWith(() => 200, "ok.md")).toBe(0);
+  });
+
+  it("returns 1 and writes a FAIL summary line when one target is down", async () => {
+    const exitCode = await runWith(
+      (url) => (url.includes("basin.fm") ? 503 : 200),
+      "down.md",
+    );
+    expect(exitCode).toBe(1);
+    const summary = readText(join(summaryDir, "down.md"), "utf8");
+    expect(summary).toMatch(/FAIL .*basin\.fm.*HTTP 503/);
   });
 });
