@@ -31,7 +31,7 @@ const EXIT_FAILURE = 1;
 
 const URL_ATTRIBUTE_PATTERN = /\s(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
 const SRCSET_ATTRIBUTE_PATTERN =
-  /\s(?:image)?srcset\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+  /\s(?:image)?srcset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
 const META_TAG_PATTERN = /<meta\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
 const ATTRIBUTE_PATTERN =
   /([^\s"'<>/=]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
@@ -40,6 +40,7 @@ const IMAGE_META_KEYS = new Set([
   "og:image:url",
   "og:image:secure_url",
   "twitter:image",
+  "twitter:image:src",
 ]);
 const DATA_URI_PREFIX = "data:";
 const SRCSET_SEPARATOR_PATTERN = /[\s,]/;
@@ -171,7 +172,7 @@ export function parseSrcset(srcset: string): string[] {
 
 export function extractSrcsetUrls(html: string): string[] {
   return [...html.matchAll(SRCSET_ATTRIBUTE_PATTERN)].flatMap((match) =>
-    parseSrcset(match[1] ?? match[2]),
+    parseSrcset(match[1] ?? match[2] ?? match[3]),
   );
 }
 
@@ -188,16 +189,17 @@ function readAttributes(tag: string): Map<string, string> {
   return attributes;
 }
 
+function isImageMeta(attributes: Map<string, string>): boolean {
+  return ["property", "name"].some((attribute) =>
+    IMAGE_META_KEYS.has((attributes.get(attribute) ?? "").toLowerCase()),
+  );
+}
+
 export function extractImageMetaUrls(html: string): string[] {
   return [...html.matchAll(META_TAG_PATTERN)].flatMap((match) => {
     const attributes = readAttributes(match[0]);
-    const key = (
-      attributes.get("property") ??
-      attributes.get("name") ??
-      ""
-    ).toLowerCase();
     const content = attributes.get("content");
-    return IMAGE_META_KEYS.has(key) && content ? [content] : [];
+    return isImageMeta(attributes) && content ? [content] : [];
   });
 }
 

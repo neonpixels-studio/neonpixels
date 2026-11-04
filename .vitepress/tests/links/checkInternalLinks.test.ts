@@ -6,9 +6,9 @@ import { dirname, join } from "node:path";
 import {
   extractHtmlUrls,
   extractImageMetaUrls,
-  extractSrcsetUrls,
   extractLlmsUrls,
   extractManifestIconUrls,
+  extractSrcsetUrls,
   findBrokenReferences,
   parseNetlifyRedirects,
   parseSrcset,
@@ -156,6 +156,15 @@ describe("extractSrcsetUrls", () => {
     const html = `<picture><source srcset='/a.webp 1x, /b.webp 2x'><img src="/c.png" srcset="/c.png 1x"></picture>`;
     expect(extractSrcsetUrls(html)).toEqual(["/a.webp", "/b.webp", "/c.png"]);
   });
+
+  it("reads unquoted srcset values", () => {
+    expect(extractSrcsetUrls(`<img srcset=/a.png>`)).toEqual(["/a.png"]);
+  });
+
+  it("reads imagesrcset on preload links", () => {
+    const html = `<link rel="preload" as="image" imagesrcset="/a.png 1x, /b.png 2x">`;
+    expect(extractSrcsetUrls(html)).toEqual(["/a.png", "/b.png"]);
+  });
 });
 
 describe("extractImageMetaUrls", () => {
@@ -174,12 +183,15 @@ describe("extractImageMetaUrls", () => {
       "/tw.png",
     ]);
   });
-});
 
-describe("extractImageMetaUrls edge cases", () => {
   it("is case-insensitive, accepts single and unquoted values", () => {
     const html = `<META PROPERTY="OG:IMAGE" CONTENT="/a.png"><meta name='twitter:image' content='/b.png'><meta property=og:image content=/c.png>`;
     expect(extractImageMetaUrls(html)).toEqual(["/a.png", "/b.png", "/c.png"]);
+  });
+
+  it("checks both property and name for an image key", () => {
+    const html = `<meta property="og:description" name="twitter:image" content="/x.png"><meta name="twitter:image:src" content="/y.png">`;
+    expect(extractImageMetaUrls(html)).toEqual(["/x.png", "/y.png"]);
   });
 
   it("ignores empty content", () => {
@@ -196,13 +208,6 @@ describe("extractImageMetaUrls edge cases", () => {
   it("uses the first of duplicated attributes like browsers do", () => {
     const html = `<meta property="og:image" content="/real.png" content="/x.png">`;
     expect(extractImageMetaUrls(html)).toEqual(["/real.png"]);
-  });
-});
-
-describe("extractSrcsetUrls imagesrcset", () => {
-  it("reads imagesrcset on preload links", () => {
-    const html = `<link rel="preload" as="image" imagesrcset="/a.png 1x, /b.png 2x">`;
-    expect(extractSrcsetUrls(html)).toEqual(["/a.png", "/b.png"]);
   });
 });
 
