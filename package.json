@@ -12,6 +12,7 @@
     "typecheck": "vue-tsc --noEmit",
     "audit": "npm audit --audit-level=high",
     "check:overrides": "node .vitepress/security/checkOverrideCompatibility.ts",
+    "link:check": "node .vitepress/links/checkInternalLinks.ts",
     "perf:budget": "node .vitepress/perf/checkPerformanceBudget.ts",
     "lint": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",

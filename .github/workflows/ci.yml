@@ -49,5 +49,8 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Internal link check
+        run: npm run link:check
+
       - name: Performance budget
         run: npm run perf:budget
