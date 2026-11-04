@@ -43,11 +43,15 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
-      - name: Test
-        run: npm run test:ci
-
       - name: Build
         run: npm run build
+
+      # The build-html smoke suite reuses the build above instead of compiling a
+      # second throwaway copy. It fails loudly if the dist is missing or partial.
+      - name: Test
+        run: npm run test:ci
+        env:
+          SMOKE_BUILD_REUSE_DIR: .vitepress/dist
 
       - name: Internal link check
         run: npm run link:check

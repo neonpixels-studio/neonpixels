@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
 
 // Line-scoped like securityWorkflow.test.ts: no YAML parser is a project
 // dependency, so top-level blocks are sliced by indentation.
@@ -70,5 +71,37 @@ describe("ci.yml internal link check", () => {
     const linkCheck = WORKFLOW.indexOf("run: npm run link:check");
     expect(build).toBeGreaterThan(-1);
     expect(linkCheck).toBeGreaterThan(build);
+  });
+});
+
+describe("ci.yml single site build", () => {
+  const BUILD_COMMAND = "run: npm run build";
+  const TEST_COMMAND = "run: npm run test:ci";
+  const PUBLISH_DIR = ".vitepress/dist";
+
+  it("builds the site before running test:ci so the smoke suite can reuse it", () => {
+    const build = WORKFLOW.indexOf(BUILD_COMMAND);
+    const test = WORKFLOW.indexOf(TEST_COMMAND);
+    expect(build).toBeGreaterThan(-1);
+    expect(test).toBeGreaterThan(build);
+  });
+
+  it("builds only once", () => {
+    expect(WORKFLOW.split(BUILD_COMMAND)).toHaveLength(2);
+  });
+
+  it("passes SMOKE_BUILD_REUSE_DIR pointing at the publish dir to the test step", () => {
+    const testStart = WORKFLOW.indexOf(TEST_COMMAND);
+    const stepEnd = WORKFLOW.indexOf("\n      - name:", testStart);
+    const testStep = WORKFLOW.slice(
+      testStart,
+      stepEnd === -1 ? undefined : stepEnd,
+    );
+    expect(testStep).toMatch(
+      new RegExp(
+        `^\\s+${SMOKE_BUILD_REUSE_DIR_ENV}:\\s*${PUBLISH_DIR}\\s*$`,
+        "m",
+      ),
+    );
   });
 });
