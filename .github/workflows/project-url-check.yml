@@ -47,6 +47,7 @@ jobs:
     needs: check
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     permissions:
       contents: read
@@ -68,6 +69,7 @@ jobs:
     needs: check
     if: success() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     permissions:
       contents: read
