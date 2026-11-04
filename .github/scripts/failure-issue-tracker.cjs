@@ -33,8 +33,14 @@ function createFailureIssueTracker({
   title,
   logName,
   buildIssueBody,
-  buildRecoveryComment,
+  recoveryMessage,
 }) {
+  if (!label || !marker || !title) {
+    throw new Error(
+      "createFailureIssueTracker requires label, marker, and title.",
+    );
+  }
+
   // Returns every match, not just the first: the close path needs all of them
   // (a human reopening one, or two racing runs, could otherwise leave a second
   // tracked issue open forever).
@@ -74,7 +80,9 @@ function createFailureIssueTracker({
       repo,
       title,
       labels: [label],
-      body: buildIssueBody(runUrl),
+      // The marker is prepended here so a caller cannot forget it and break
+      // the find-open-issue match.
+      body: `${marker}\n${buildIssueBody(runUrl)}`,
     });
     core.info(`Opened ${logName} issue #${createdIssue.number}.`);
   }
@@ -95,7 +103,7 @@ function createFailureIssueTracker({
         owner,
         repo,
         issue_number: issue.number,
-        body: buildRecoveryComment(runUrl),
+        body: `${recoveryMessage} Closing this issue.\n\nRecovered run: ${runUrl}`,
       });
     } catch (error) {
       core.warning(

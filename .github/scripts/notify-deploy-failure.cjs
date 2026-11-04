@@ -11,7 +11,6 @@ const ISSUE_MARKER = "<!-- neonpixels:deploy-failure-notifier -->";
 
 function buildIssueBody(runUrl) {
   return [
-    ISSUE_MARKER,
     "The weekly production deploy did not complete successfully, so " +
       "production is likely stale until the next run.",
     "",
@@ -31,8 +30,7 @@ const tracker = createFailureIssueTracker({
   title: ISSUE_TITLE,
   logName: "deploy-failure",
   buildIssueBody,
-  buildRecoveryComment: (runUrl) =>
-    `The production deploy succeeded again. Closing this issue.\n\nRecovered run: ${runUrl}`,
+  recoveryMessage: "The production deploy succeeded again.",
 });
 
 module.exports = tracker.notify;

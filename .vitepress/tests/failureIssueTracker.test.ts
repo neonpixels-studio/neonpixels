@@ -22,8 +22,8 @@ function createTracker() {
     marker: MARKER,
     title: "Test failed",
     logName: "test-failure",
-    buildIssueBody: (runUrl) => `${MARKER}\nbody ${runUrl}`,
-    buildRecoveryComment: (runUrl) => `recovered ${runUrl}`,
+    buildIssueBody: (runUrl) => `body ${runUrl}`,
+    recoveryMessage: "recovered.",
   });
 }
 
@@ -113,9 +113,56 @@ describe("notify", () => {
       createTracker().notify({ github, context, core }),
     ).rejects.toThrow("boom");
   });
+
+  it("propagates create errors", async () => {
+    const { issues, github, core } = createStubs();
+    issues.create.mockRejectedValue(new Error("create failed"));
+    await expect(
+      createTracker().notify({ github, context, core }),
+    ).rejects.toThrow("create failed");
+  });
+
+  it("propagates still-failing comment errors", async () => {
+    const { issues, github, core } = createStubs([tracked(7)]);
+    issues.createComment.mockRejectedValue(new Error("comment failed"));
+    await expect(
+      createTracker().notify({ github, context, core }),
+    ).rejects.toThrow("comment failed");
+  });
+
+  it("prepends the marker even when the body builder omits it", async () => {
+    const { issues, github, core } = createStubs();
+    await createTracker().notify({ github, context, core });
+    expect(issues.create.mock.calls[0][0].body.startsWith(MARKER)).toBe(true);
+  });
+});
+
+describe("createFailureIssueTracker", () => {
+  it("rejects an empty label, marker, or title", () => {
+    const valid = {
+      label: LABEL,
+      marker: MARKER,
+      title: "t",
+      logName: "x",
+      buildIssueBody: () => "",
+      recoveryMessage: "r",
+    };
+    expect(() => createFailureIssueTracker({ ...valid, label: "" })).toThrow();
+    expect(() => createFailureIssueTracker({ ...valid, marker: "" })).toThrow();
+    expect(() => createFailureIssueTracker({ ...valid, title: "" })).toThrow();
+  });
 });
 
 describe("closeResolved", () => {
+  it("propagates lookup errors without closing anything", async () => {
+    const { issues, github, core } = createStubs();
+    issues.listForRepo.mockRejectedValue(new Error("boom"));
+    await expect(
+      createTracker().closeResolved({ github, context, core }),
+    ).rejects.toThrow("boom");
+    expect(issues.update).not.toHaveBeenCalled();
+  });
+
   it("does nothing when no tracked issue is open", async () => {
     const { issues, github, core } = createStubs();
     await createTracker().closeResolved({ github, context, core });
@@ -141,12 +188,12 @@ describe("closeResolved", () => {
       owner: "o",
       repo: "r",
       issue_number: 1,
-      body: `recovered ${RUN_URL}`,
+      body: `recovered. Closing this issue.\n\nRecovered run: ${RUN_URL}`,
     });
     expect(issues.createComment).toHaveBeenCalledWith(
       expect.objectContaining({
         issue_number: 2,
-        body: `recovered ${RUN_URL}`,
+        body: `recovered. Closing this issue.\n\nRecovered run: ${RUN_URL}`,
       }),
     );
     expect(issues.createComment).toHaveBeenCalledTimes(2);

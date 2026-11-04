@@ -26,7 +26,6 @@ const ISSUE_MARKER = "<!-- neonpixels:audit-failure-notifier -->";
 
 function buildIssueBody(runUrl) {
   return [
-    ISSUE_MARKER,
     "The scheduled (Monday) security audit workflow failed.",
     "",
     `Failed run: ${runUrl}`,
@@ -47,8 +46,7 @@ const tracker = createFailureIssueTracker({
   title: ISSUE_TITLE,
   logName: "audit-failure",
   buildIssueBody,
-  buildRecoveryComment: (runUrl) =>
-    `The scheduled security audit passed again. Closing this issue.\n\nRecovered run: ${runUrl}`,
+  recoveryMessage: "The scheduled security audit passed again.",
 });
 
 // Unguarded on purpose: a failure should surface loudly in the workflow log,

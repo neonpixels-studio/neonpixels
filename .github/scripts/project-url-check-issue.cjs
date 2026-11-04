@@ -11,7 +11,6 @@ const ISSUE_MARKER = "<!-- neonpixels:project-url-check-notifier -->";
 
 function buildIssueBody(runUrl) {
   return [
-    ISSUE_MARKER,
     "The scheduled project URL check failed. At least one project domain or " +
       "the /dashboard redirect target did not answer with a 2xx/3xx status, " +
       "or the check itself broke.",
@@ -29,8 +28,7 @@ const tracker = createFailureIssueTracker({
   title: ISSUE_TITLE,
   logName: "project-url",
   buildIssueBody,
-  buildRecoveryComment: (runUrl) =>
-    `All project URLs responded again. Closing this issue.\n\nRecovered run: ${runUrl}`,
+  recoveryMessage: "All project URLs responded again.",
 });
 
 module.exports = {

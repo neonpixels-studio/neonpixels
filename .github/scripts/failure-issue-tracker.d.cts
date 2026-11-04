@@ -63,7 +63,7 @@ export type FailureIssueTrackerConfig = {
   title: string;
   logName: string;
   buildIssueBody: (_runUrl: string) => string;
-  buildRecoveryComment: (_runUrl: string) => string;
+  recoveryMessage: string;
 };
 
 export type FailureIssueTracker = {
