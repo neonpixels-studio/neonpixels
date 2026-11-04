@@ -30,9 +30,11 @@ const EXIT_SUCCESS = 0;
 const EXIT_FAILURE = 1;
 
 const URL_ATTRIBUTE_PATTERN = /\s(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
-const SRCSET_ATTRIBUTE_PATTERN = /\ssrcset\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
-const META_TAG_PATTERN = /<meta\b[^>]*>/gi;
-const ATTRIBUTE_PATTERN = /([^\s"'<>/=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+const SRCSET_ATTRIBUTE_PATTERN =
+  /\s(?:image)?srcset\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+const META_TAG_PATTERN = /<meta\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
+const ATTRIBUTE_PATTERN =
+  /([^\s"'<>/=]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
 const IMAGE_META_KEYS = new Set([
   "og:image",
   "og:image:url",
@@ -176,7 +178,12 @@ export function extractSrcsetUrls(html: string): string[] {
 function readAttributes(tag: string): Map<string, string> {
   const attributes = new Map<string, string>();
   for (const match of tag.matchAll(ATTRIBUTE_PATTERN)) {
-    attributes.set(match[1].toLowerCase(), match[2] ?? match[3]);
+    const name = match[1].toLowerCase();
+    // HTML parsers keep the first occurrence of a duplicated attribute.
+    if (attributes.has(name)) {
+      continue;
+    }
+    attributes.set(name, match[2] ?? match[3] ?? match[4]);
   }
   return attributes;
 }

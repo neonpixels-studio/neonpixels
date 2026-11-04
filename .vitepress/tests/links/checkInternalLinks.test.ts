@@ -7,11 +7,11 @@ import {
   extractHtmlUrls,
   extractImageMetaUrls,
   extractSrcsetUrls,
-  parseSrcset,
   extractLlmsUrls,
   extractManifestIconUrls,
   findBrokenReferences,
   parseNetlifyRedirects,
+  parseSrcset,
   runInternalLinkCheckCli,
   toInternalPath,
 } from "../../links/checkInternalLinks";
@@ -173,6 +173,36 @@ describe("extractImageMetaUrls", () => {
       "https://neonpixels.dev/s.png",
       "/tw.png",
     ]);
+  });
+});
+
+describe("extractImageMetaUrls edge cases", () => {
+  it("is case-insensitive, accepts single and unquoted values", () => {
+    const html = `<META PROPERTY="OG:IMAGE" CONTENT="/a.png"><meta name='twitter:image' content='/b.png'><meta property=og:image content=/c.png>`;
+    expect(extractImageMetaUrls(html)).toEqual(["/a.png", "/b.png", "/c.png"]);
+  });
+
+  it("ignores empty content", () => {
+    expect(
+      extractImageMetaUrls(`<meta property="og:image" content="">`),
+    ).toEqual([]);
+  });
+
+  it("survives a > inside an attribute value", () => {
+    const html = `<meta content="a > b.png" property="og:image">`;
+    expect(extractImageMetaUrls(html)).toEqual(["a > b.png"]);
+  });
+
+  it("uses the first of duplicated attributes like browsers do", () => {
+    const html = `<meta property="og:image" content="/real.png" content="/x.png">`;
+    expect(extractImageMetaUrls(html)).toEqual(["/real.png"]);
+  });
+});
+
+describe("extractSrcsetUrls imagesrcset", () => {
+  it("reads imagesrcset on preload links", () => {
+    const html = `<link rel="preload" as="image" imagesrcset="/a.png 1x, /b.png 2x">`;
+    expect(extractSrcsetUrls(html)).toEqual(["/a.png", "/b.png"]);
   });
 });
 
