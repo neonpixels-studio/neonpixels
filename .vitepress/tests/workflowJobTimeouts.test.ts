@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const WORKFLOWS_DIR = resolve(process.cwd(), ".github/workflows");
-const JOBS_HEADER = /^jobs:\s*$/;
+const JOBS_HEADER = /^jobs:\s*(#.*)?$/;
 const JOB_LEVEL_LINE = /^ {2}[^\s#]/;
 const JOB_KEY = /^ {2}([A-Za-z0-9_-]+):\s*(#.*)?$/;
 const TIMEOUT_LINE =
@@ -16,6 +16,23 @@ type Job = {
   hasTimeout: boolean;
   callsReusableWorkflow: boolean;
 };
+
+function parseJobKey(line: string): Job {
+  const jobMatch = JOB_KEY.exec(line);
+  if (!jobMatch) {
+    throw new Error(`Unrecognized job key: ${line.trim()}`);
+  }
+  return {
+    name: jobMatch[1],
+    hasTimeout: false,
+    callsReusableWorkflow: false,
+  };
+}
+
+function recordJobProperties(job: Job, line: string) {
+  job.hasTimeout ||= TIMEOUT_LINE.test(line);
+  job.callsReusableWorkflow ||= REUSABLE_CALL_LINE.test(line);
+}
 
 function parseJobs(content: string): Job[] {
   const jobs: Job[] = [];
@@ -33,23 +50,14 @@ function parseJobs(content: string): Job[] {
       continue;
     }
     if (JOB_LEVEL_LINE.test(line)) {
-      const jobMatch = JOB_KEY.exec(line);
-      if (!jobMatch) {
-        throw new Error(`Unrecognized job key: ${line.trim()}`);
-      }
-      jobs.push({
-        name: jobMatch[1],
-        hasTimeout: false,
-        callsReusableWorkflow: false,
-      });
+      jobs.push(parseJobKey(line));
       continue;
     }
     const current = jobs[jobs.length - 1];
     if (!current) {
       continue;
     }
-    current.hasTimeout ||= TIMEOUT_LINE.test(line);
-    current.callsReusableWorkflow ||= REUSABLE_CALL_LINE.test(line);
+    recordJobProperties(current, line);
   }
   return jobs;
 }
@@ -57,17 +65,17 @@ function parseJobs(content: string): Job[] {
 const WORKFLOW_FILES = readdirSync(WORKFLOWS_DIR).filter((file) =>
   /\.ya?ml$/.test(file),
 );
-const JOBS = WORKFLOW_FILES.flatMap((file) =>
-  parseJobs(readFileSync(resolve(WORKFLOWS_DIR, file), "utf8")).map((job) => ({
-    ...job,
-    where: `${file}:${job.name}`,
-  })),
+const PARSED = WORKFLOW_FILES.map((file) => ({
+  file,
+  jobs: parseJobs(readFileSync(resolve(WORKFLOWS_DIR, file), "utf8")),
+}));
+const JOBS = PARSED.flatMap(({ file, jobs }) =>
+  jobs.map((job) => ({ ...job, where: `${file}:${job.name}` })),
 );
 
 describe("workflow job timeouts", () => {
-  it.each(WORKFLOW_FILES)("finds jobs in %s", (file) => {
-    const content = readFileSync(resolve(WORKFLOWS_DIR, file), "utf8");
-    expect(parseJobs(content).length).toBeGreaterThan(0);
+  it.each(PARSED)("finds jobs in $file", ({ jobs }) => {
+    expect(jobs.length).toBeGreaterThan(0);
   });
 
   it("declares timeout-minutes on every job", () => {
@@ -107,6 +115,18 @@ describe("parseJobs", () => {
   it("rejects timeout-minutes: 0", () => {
     const jobs = parseJobs(withJobs("  a:\n    timeout-minutes: 0\n"));
     expect(jobs[0].hasTimeout).toBe(false);
+  });
+
+  it("accepts an expression timeout", () => {
+    const jobs = parseJobs(
+      withJobs("  a:\n    timeout-minutes: ${{ inputs.t }}\n"),
+    );
+    expect(jobs[0].hasTimeout).toBe(true);
+  });
+
+  it("parses a jobs header with a trailing comment", () => {
+    const jobs = parseJobs("jobs: # all\n  a:\n    runs-on: x\n");
+    expect(jobs.map((job) => job.name)).toEqual(["a"]);
   });
 
   it("attributes timeouts to the right job across comments", () => {
