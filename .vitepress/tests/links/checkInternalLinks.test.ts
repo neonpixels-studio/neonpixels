@@ -5,6 +5,9 @@ import { dirname, join } from "node:path";
 
 import {
   extractHtmlUrls,
+  extractImageMetaUrls,
+  extractSrcsetUrls,
+  parseSrcset,
   extractLlmsUrls,
   extractManifestIconUrls,
   findBrokenReferences,
@@ -95,6 +98,10 @@ describe("extractors", () => {
     expect(extractHtmlUrls(html)).toEqual(["/a", "/b.png", "#top"]);
   });
 
+  it("does not mistake srcset for src", () => {
+    expect(extractHtmlUrls(`<img srcset="/a.png 1x">`)).toEqual([]);
+  });
+
   it("pulls manifest icon sources", () => {
     const manifest = JSON.stringify({ icons: [{ src: "/i.png" }, {}] });
     expect(extractManifestIconUrls(manifest)).toEqual(["/i.png"]);
@@ -104,6 +111,59 @@ describe("extractors", () => {
     expect(
       extractLlmsUrls("- [Home](https://neonpixels.dev/): Landing"),
     ).toEqual(["https://neonpixels.dev/"]);
+  });
+});
+
+describe("parseSrcset", () => {
+  it("handles width and density descriptors", () => {
+    expect(parseSrcset("/a.png 480w, /b.png 2x, /c.png")).toEqual([
+      "/a.png",
+      "/b.png",
+      "/c.png",
+    ]);
+  });
+
+  it("tolerates extra whitespace, newlines and missing spaces", () => {
+    expect(parseSrcset("  /a.png   1x ,\n  /b.png\t2x  ,/c.png 3x,")).toEqual([
+      "/a.png",
+      "/b.png",
+      "/c.png",
+    ]);
+  });
+
+  it("skips data: URIs, including their embedded commas", () => {
+    expect(parseSrcset("data:image/png;base64,AAAA 1x, /real.png 2x")).toEqual([
+      "/real.png",
+    ]);
+  });
+
+  it("returns nothing for an empty value", () => {
+    expect(parseSrcset("  ")).toEqual([]);
+  });
+});
+
+describe("extractSrcsetUrls", () => {
+  it("reads srcset from img and source elements", () => {
+    const html = `<picture><source srcset='/a.webp 1x, /b.webp 2x'><img src="/c.png" srcset="/c.png 1x"></picture>`;
+    expect(extractSrcsetUrls(html)).toEqual(["/a.webp", "/b.webp", "/c.png"]);
+  });
+});
+
+describe("extractImageMetaUrls", () => {
+  it("reads og and twitter image meta in any attribute order", () => {
+    const html = `
+      <meta property="og:image" content="/og.png">
+      <meta content="https://neonpixels.dev/url.png" property="og:image:url">
+      <meta property="og:image:secure_url" content="https://neonpixels.dev/s.png" />
+      <meta name="twitter:image" content="/tw.png">
+      <meta name="description" content="/not-an-image">
+      <meta property="og:title" content="x">`;
+    expect(extractImageMetaUrls(html)).toEqual([
+      "/og.png",
+      "https://neonpixels.dev/url.png",
+      "https://neonpixels.dev/s.png",
+      "/tw.png",
+    ]);
   });
 });
 
@@ -251,6 +311,34 @@ describe("runInternalLinkCheckCli", () => {
     expect(output).toContain("index.html: /missing");
     expect(output).toContain("images/site.webmanifest: /images/nope.png");
     expect(output).toContain("llms.txt: https://neonpixels.dev/gone");
+  });
+
+  it("reports dangling srcset candidates and og:image meta URLs", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    writeValidSite();
+    writeOutput(
+      "index.html",
+      `<meta property="og:image" content="https://neonpixels.dev/images/og-missing.png">
+       <meta name="twitter:image" content="https://cdn.example.com/x.png">
+       <img src="/images/a.png" srcset="/images/a.png 1x, /images/small-missing.png 480w, data:image/png;base64,AA 2x">`,
+    );
+    expect(runInternalLinkCheckCli(outDir, tomlPath)).toBe(1);
+    const output = errors.mock.calls.flat().join("\n");
+    expect(output).toContain("/images/og-missing.png");
+    expect(output).toContain("/images/small-missing.png");
+    expect(output).not.toContain("cdn.example.com");
+    expect(output).toContain("2 broken");
+  });
+
+  it("passes when srcset and og:image targets exist", () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    writeValidSite();
+    writeOutput(
+      "index.html",
+      `<meta property="og:image" content="https://neonpixels.dev/images/a.png">
+       <img srcset="/images/a.png 1x, /images/a.png 2x">`,
+    );
+    expect(runInternalLinkCheckCli(outDir, tomlPath)).toBe(0);
   });
 
   it("throws when llms.txt or the manifest is missing", () => {

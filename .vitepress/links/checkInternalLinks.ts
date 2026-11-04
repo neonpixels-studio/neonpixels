@@ -3,7 +3,8 @@ import { join, posix, relative, resolve, sep } from "node:path";
 
 // Hand-maintained links (llms.txt, the /privacy and /dashboard redirects in
 // netlify.toml, the manifest icons) can dangle without any test noticing.
-// This walks the real build output and fails on any internal href/src,
+// This walks the real build output and fails on any internal href/src, srcset candidate, og:image/twitter:image
+// meta URL,
 // manifest icon src or llms.txt link that resolves to neither a file in
 // dist nor a Netlify redirect/rewrite rule. Run after `npm run build` (see
 // the link:check script and .github/workflows/ci.yml); the resolver logic is
@@ -29,6 +30,17 @@ const EXIT_SUCCESS = 0;
 const EXIT_FAILURE = 1;
 
 const URL_ATTRIBUTE_PATTERN = /\s(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+const SRCSET_ATTRIBUTE_PATTERN = /\ssrcset\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+const META_TAG_PATTERN = /<meta\b[^>]*>/gi;
+const ATTRIBUTE_PATTERN = /([^\s"'<>/=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+const IMAGE_META_KEYS = new Set([
+  "og:image",
+  "og:image:url",
+  "og:image:secure_url",
+  "twitter:image",
+]);
+const DATA_URI_PREFIX = "data:";
+const SRCSET_SEPARATOR_PATTERN = /[\s,]/;
 const MARKDOWN_LINK_PATTERN = /\]\(([^)\s]+)\)/g;
 const REDIRECT_BLOCK_HEADER = "[[redirects]]";
 const SECTION_HEADER_PATTERN = /^\s*\[/;
@@ -106,6 +118,60 @@ export function extractHtmlUrls(html: string): string[] {
   return [...html.matchAll(URL_ATTRIBUTE_PATTERN)].map(
     (match) => match[1] ?? match[2],
   );
+}
+
+// Follows the HTML srcset grammar: a candidate is a whitespace-free URL
+// (which may itself contain commas, e.g. data: URIs) followed by optional
+// descriptors up to the next comma. A trailing comma on the URL ends it.
+export function parseSrcset(srcset: string): string[] {
+  const urls: string[] = [];
+  let position = 0;
+  while (position < srcset.length) {
+    while (
+      position < srcset.length &&
+      SRCSET_SEPARATOR_PATTERN.test(srcset[position])
+    ) {
+      position += 1;
+    }
+    const urlStart = position;
+    while (position < srcset.length && !/\s/.test(srcset[position])) {
+      position += 1;
+    }
+    const url = srcset.slice(urlStart, position).replace(/,+$/, "");
+    if (url && !url.toLowerCase().startsWith(DATA_URI_PREFIX)) {
+      urls.push(url);
+    }
+    const nextComma = srcset.indexOf(",", position);
+    position = nextComma === -1 ? srcset.length : nextComma + 1;
+  }
+  return urls;
+}
+
+export function extractSrcsetUrls(html: string): string[] {
+  return [...html.matchAll(SRCSET_ATTRIBUTE_PATTERN)].flatMap((match) =>
+    parseSrcset(match[1] ?? match[2]),
+  );
+}
+
+function readAttributes(tag: string): Map<string, string> {
+  const attributes = new Map<string, string>();
+  for (const match of tag.matchAll(ATTRIBUTE_PATTERN)) {
+    attributes.set(match[1].toLowerCase(), match[2] ?? match[3]);
+  }
+  return attributes;
+}
+
+export function extractImageMetaUrls(html: string): string[] {
+  return [...html.matchAll(META_TAG_PATTERN)].flatMap((match) => {
+    const attributes = readAttributes(match[0]);
+    const key = (
+      attributes.get("property") ??
+      attributes.get("name") ??
+      ""
+    ).toLowerCase();
+    const content = attributes.get("content");
+    return IMAGE_META_KEYS.has(key) && content ? [content] : [];
+  });
 }
 
 export function extractManifestIconUrls(manifestJson: string): string[] {
@@ -285,7 +351,12 @@ function toReferences(source: string, urls: string[]): LinkReference[] {
 function collectHtmlReferences(outDir: string): LinkReference[] {
   return listHtmlFiles(outDir).flatMap((file) => {
     const source = relative(outDir, file).split(sep).join("/");
-    return toReferences(source, extractHtmlUrls(readFileSync(file, "utf8")));
+    const html = readFileSync(file, "utf8");
+    return toReferences(source, [
+      ...extractHtmlUrls(html),
+      ...extractSrcsetUrls(html),
+      ...extractImageMetaUrls(html),
+    ]);
   });
 }
 
