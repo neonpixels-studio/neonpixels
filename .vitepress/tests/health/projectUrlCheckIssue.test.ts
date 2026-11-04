@@ -60,6 +60,7 @@ describe("notifyProjectUrlFailure", () => {
   it("ignores labeled items without the marker and pull requests", async () => {
     const { github, core, issues } = buildStubs([
       { number: 1, body: "unrelated" },
+      { number: 4, body: null },
       { number: 2, body: ISSUE_MARKER, pull_request: {} },
     ]);
     await notifyProjectUrlFailure({ github, context: CONTEXT, core });

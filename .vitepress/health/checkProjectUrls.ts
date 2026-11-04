@@ -79,8 +79,9 @@ async function requestStatus(
     redirect: "manual",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  await response.body?.cancel();
-  return response.status;
+  const { status } = response;
+  await response.body?.cancel().catch(() => {});
+  return status;
 }
 
 async function probeStatus(url: string, fetchImpl: FetchLike) {

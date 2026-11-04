@@ -132,14 +132,37 @@ describe("checkTarget", () => {
     ]);
   });
 
-  it("cancels the response body so the GET fallback does not leak a socket", async () => {
+  it("cancels every response body, including on the GET fallback", async () => {
     const cancel = vi.fn().mockResolvedValue(undefined);
+    const statuses = [405, 200];
     const fetchImpl = vi.fn<FetchLike>(async () => ({
-      status: 200,
+      status: statuses.shift() ?? 500,
       body: { cancel },
     }));
     await checkTarget(TARGET, fetchImpl, NO_DELAY);
-    expect(cancel).toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[1][1].method).toBe("GET");
+  });
+
+  it("stays alive when cancelling the body rejects", async () => {
+    const fetchImpl = vi.fn<FetchLike>(async () => ({
+      status: 200,
+      body: { cancel: () => Promise.reject(new Error("locked")) },
+    }));
+    const result = await checkTarget(TARGET, fetchImpl, NO_DELAY);
+    expect(result.ok).toBe(true);
+  });
+
+  it("retries the whole HEAD then GET probe when the GET fails too", async () => {
+    const fetchImpl = respondWith(405, 503, 405, 503);
+    const result = await checkTarget(TARGET, fetchImpl, NO_DELAY);
+    expect(result).toMatchObject({ ok: false, detail: "HTTP 503" });
+    expect(fetchImpl.mock.calls.map((call) => call[1].method)).toEqual([
+      "HEAD",
+      "GET",
+      "HEAD",
+      "GET",
+    ]);
   });
 
   it("passes a timeout signal to every request", async () => {

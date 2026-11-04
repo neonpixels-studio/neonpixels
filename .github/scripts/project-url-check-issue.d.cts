@@ -3,7 +3,7 @@
 // exist only for project-url-check-issue.test.ts.
 export type TrackedIssueOrPullRequest = {
   number: number;
-  body?: string;
+  body?: string | null;
   pull_request?: unknown;
 };
 
