@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterAll } from "vitest";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { mkdtempSync, readFileSync as readText, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { PROJECTS } from "@theme/data/projects";
 
@@ -96,10 +95,12 @@ describe("checkTarget", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it("treats a thrown network error as down and reports the reason", async () => {
+  it("treats a thrown network error as down and reports the cause code", async () => {
     const fetchImpl = vi
       .fn<FetchLike>()
-      .mockRejectedValue(new Error("ENOTFOUND"));
+      .mockRejectedValue(
+        new TypeError("fetch failed", { cause: { code: "ENOTFOUND" } }),
+      );
     const result = await checkTarget(TARGET, fetchImpl, NO_DELAY);
     expect(result.ok).toBe(false);
     expect(result.detail).toContain("ENOTFOUND");
@@ -114,6 +115,31 @@ describe("checkTarget", () => {
       "HEAD",
       "GET",
     ]);
+  });
+
+  it("also falls back to GET on a 501 HEAD response", async () => {
+    const fetchImpl = respondWith(501, 200);
+    await checkTarget(TARGET, fetchImpl, NO_DELAY);
+    expect(fetchImpl.mock.calls[1][1].method).toBe("GET");
+  });
+
+  it("does not fall back to GET when HEAD throws", async () => {
+    const fetchImpl = vi.fn<FetchLike>().mockRejectedValue(new Error("boom"));
+    await checkTarget(TARGET, fetchImpl, NO_DELAY);
+    expect(fetchImpl.mock.calls.map((call) => call[1].method)).toEqual([
+      "HEAD",
+      "HEAD",
+    ]);
+  });
+
+  it("cancels the response body so the GET fallback does not leak a socket", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchImpl = vi.fn<FetchLike>(async () => ({
+      status: 200,
+      body: { cancel },
+    }));
+    await checkTarget(TARGET, fetchImpl, NO_DELAY);
+    expect(cancel).toHaveBeenCalled();
   });
 
   it("passes a timeout signal to every request", async () => {
@@ -174,7 +200,7 @@ describe("run (exit code gate)", () => {
       "down.md",
     );
     expect(exitCode).toBe(1);
-    const summary = readText(join(summaryDir, "down.md"), "utf8");
+    const summary = readFileSync(join(summaryDir, "down.md"), "utf8");
     expect(summary).toMatch(/FAIL .*basin\.fm.*HTTP 503/);
   });
 });

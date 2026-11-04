@@ -42,7 +42,7 @@ export type UrlCheckResult = UrlTarget & {
 export type FetchLike = (
   _url: string,
   _init: { method: string; redirect: "manual"; signal: AbortSignal },
-) => Promise<{ status: number }>;
+) => Promise<{ status: number; body?: { cancel(): Promise<void> } | null }>;
 
 export function extractProjectTargets(projectsSource: string): UrlTarget[] {
   return [...projectsSource.matchAll(PROJECT_URL_PATTERN)].map((match) => ({
@@ -79,6 +79,7 @@ async function requestStatus(
     redirect: "manual",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
+  await response.body?.cancel();
   return response.status;
 }
 
@@ -90,13 +91,23 @@ async function probeStatus(url: string, fetchImpl: FetchLike) {
   return requestStatus(url, "GET", fetchImpl);
 }
 
+// Node's fetch throws TypeError("fetch failed") with the real reason (DNS,
+// refused, certificate) in `cause`; surface it so the summary is actionable.
+function describeError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+  const cause = error.cause as { code?: string; message?: string } | undefined;
+  const causeText = cause?.code ?? cause?.message;
+  return causeText ? `${error.message} (${causeText})` : error.message;
+}
+
 async function attemptProbe(url: string, fetchImpl: FetchLike) {
   try {
     const status = await probeStatus(url, fetchImpl);
     return { ok: isAliveStatus(status), detail: `HTTP ${status}` };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return { ok: false, detail: `request failed: ${reason}` };
+    return { ok: false, detail: `request failed: ${describeError(error)}` };
   }
 }
 
@@ -174,6 +185,14 @@ export async function run({
   }
   console.error(`${failures.length} of ${results.length} targets are down.`);
   return 1;
+}
+
+// Fail loud rather than silently skip the check on a Node without
+// import.meta.main (<22.18 / <24.2): a silent exit 0 would close the issue.
+if (import.meta.main === undefined) {
+  throw new Error(
+    "import.meta.main is unavailable on this Node version; need >=22.18 or >=24.2",
+  );
 }
 
 if (import.meta.main) {

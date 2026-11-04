@@ -6,6 +6,9 @@
 // issues. Both directions live in this one module because they share the
 // lookup; it is unit-tested against a stubbed `github` client. CommonJS
 // (.cjs) because package.json sets "type": "module".
+// @todo This is the third copy of the one-tracking-issue-per-failure-streak
+// logic (see notify-audit-failure.cjs, close-resolved-audit-failure.cjs).
+// Extract a shared createFailureIssueTracker and migrate all of them.
 const ISSUE_TITLE = "Scheduled project URL check failed";
 const PROJECT_URL_FAILURE_LABEL = "project-url-failure";
 const ISSUE_MARKER = "<!-- neonpixels:project-url-check-notifier -->";
