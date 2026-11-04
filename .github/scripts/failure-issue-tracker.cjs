@@ -162,20 +162,13 @@ function createFailureIssueTracker({
 
     // One stuck issue must not stop the rest from closing; failures are
     // collected and thrown afterward so they still surface in the log.
-    const closeFailures = [];
+    const closeResults = [];
     for (const issue of trackedIssues) {
-      const failure = await tryCloseIssue({
-        github,
-        owner,
-        repo,
-        issue,
-        runUrl,
-        core,
-      });
-      if (failure) {
-        closeFailures.push(failure);
-      }
+      closeResults.push(
+        await tryCloseIssue({ github, owner, repo, issue, runUrl, core }),
+      );
     }
+    const closeFailures = closeResults.filter(Boolean);
 
     if (closeFailures.length > 0) {
       throw new Error(

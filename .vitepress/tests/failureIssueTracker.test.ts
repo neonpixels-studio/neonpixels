@@ -141,18 +141,19 @@ describe("createFailureIssueTracker", () => {
       buildIssueBody: () => "",
       recoveryMessage: "r",
     };
-    const broken = [
-      { ...valid, label: "" },
-      { ...valid, marker: "" },
-      { ...valid, title: "" },
-      { ...valid, logName: "" },
-      { ...valid, recoveryMessage: "" },
-      { ...valid, buildIssueBody: undefined },
+    const broken: [string, Record<string, unknown>][] = [
+      ["label", { ...valid, label: "" }],
+      ["label", { ...valid, label: 123 }],
+      ["marker", { ...valid, marker: "" }],
+      ["title", { ...valid, title: "" }],
+      ["logName", { ...valid, logName: "" }],
+      ["recoveryMessage", { ...valid, recoveryMessage: "" }],
+      ["buildIssueBody", { ...valid, buildIssueBody: undefined }],
     ];
-    for (const config of broken) {
+    for (const [field, config] of broken) {
       expect(() =>
         createFailureIssueTracker(config as unknown as typeof valid),
-      ).toThrow(/invalid config/);
+      ).toThrow(new RegExp(`\\(${field}\\)`));
     }
   });
 });
@@ -225,6 +226,10 @@ describe("closeResolved", () => {
       createTracker().closeResolved({ github, context, core }),
     ).rejects.toThrow("Failed to close test-failure issue(s): #1: api down");
     expect(issues.update).toHaveBeenCalledTimes(2);
+    expect(issues.createComment).toHaveBeenCalledTimes(1);
+    expect(issues.createComment).toHaveBeenCalledWith(
+      expect.objectContaining({ issue_number: 2 }),
+    );
     expect(issues.update).toHaveBeenLastCalledWith(
       expect.objectContaining({ issue_number: 2 }),
     );
