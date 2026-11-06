@@ -9,6 +9,8 @@ const HOME_PATH = "/";
 const HOME_PAGE_SOURCE = "index.md";
 const HTML_EXTENSION = ".html";
 const NON_PAGE_MARKDOWN = new Set(["README.md"]);
+// Netlify treats a redirect rule with no status as a 301.
+const NETLIFY_DEFAULT_REDIRECT_STATUS = 301;
 const REDIRECT_STATUS_FLOOR = 300;
 const REDIRECT_STATUS_CEILING = 400;
 const EXPECTED_MIN_SCORES: Record<string, number> = {
@@ -36,6 +38,13 @@ const workflow = readFileSync(
 const netlifyToml = readFileSync(resolve(ROOT, "netlify.toml"), "utf8");
 const siteConfig = readFileSync(resolve(ROOT, ".vitepress/config.ts"), "utf8");
 
+function stripHtmlExtension(pathname: string) {
+  if (!pathname.endsWith(HTML_EXTENSION)) {
+    return pathname;
+  }
+  return pathname.slice(0, -HTML_EXTENSION.length);
+}
+
 function auditedPaths(): string[] {
   return lighthouseConfig.ci.collect.url.map(
     (url: string) => new URL(url).pathname,
@@ -47,12 +56,15 @@ function sourceFileForPath(pathname: string) {
   if (pathname === HOME_PATH) {
     return HOME_PAGE_SOURCE;
   }
-  return `${pathname.slice(1).replace(new RegExp(`${HTML_EXTENSION}$`), "")}.md`;
+  return `${stripHtmlExtension(pathname).slice(1)}.md`;
 }
 
 function publicPageSources() {
   return readdirSync(ROOT).filter(
-    (file) => file.endsWith(".md") && !NON_PAGE_MARKDOWN.has(file),
+    (file) =>
+      file.endsWith(".md") &&
+      !file.startsWith("_") &&
+      !NON_PAGE_MARKDOWN.has(file),
   );
 }
 
@@ -64,7 +76,10 @@ function parseRedirects(): Redirect[] {
     .slice(1)
     .map((block) => ({
       from: /^\s*from\s*=\s*"([^"]+)"/m.exec(block)?.[1] ?? "",
-      status: Number(/^\s*status\s*=\s*(\d+)/m.exec(block)?.[1] ?? 0),
+      status: Number(
+        /^\s*status\s*=\s*(\d+)/m.exec(block)?.[1] ??
+          NETLIFY_DEFAULT_REDIRECT_STATUS,
+      ),
     }));
 }
 
@@ -98,7 +113,7 @@ describe("lighthouse URL list", () => {
   });
 
   it.each(auditedPaths())("%s is not redirected away", (pathname) => {
-    const aliases = [pathname, pathname.replace(HTML_EXTENSION, "")];
+    const aliases = [pathname, stripHtmlExtension(pathname)];
     const redirected = parseRedirects().filter(
       (redirect) =>
         aliases.includes(redirect.from) &&
@@ -172,10 +187,12 @@ describe("lighthouse change detection", () => {
 
 describe("lighthouse job wiring", () => {
   it("gates with a job-level if, never workflow-level paths", () => {
+    const triggers = /^on:\n((?:[ \t].*\n|\n)+)/m.exec(workflow)?.[1] ?? "";
+    expect(triggers).toContain("pull_request:");
+    expect(triggers).not.toMatch(/^\s+paths(-ignore)?:/m);
     expect(workflow).toMatch(
       /^ {4}if: needs\.changes\.result == 'success' && needs\.changes\.outputs\.frontend == 'true'$/m,
     );
-    expect(workflow).not.toMatch(/^ {2}paths(-ignore)?:/m);
   });
 
   it("names the job exactly lighthouse", () => {
