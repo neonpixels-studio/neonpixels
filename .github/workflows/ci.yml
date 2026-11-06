@@ -100,7 +100,7 @@ jobs:
           path: .vitepress/dist
           include-hidden-files: true
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   # Error-level: every assertion in .lighthouserc.json is `error`, so scores
   # below threshold fail the job. Audits the
