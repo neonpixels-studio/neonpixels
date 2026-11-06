@@ -102,8 +102,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Warn-level only: every assertion in .lighthouserc.json is `warn`, so scores
-  # below threshold show in the log but never fail the job. Audits the
+  # Error-level: every assertion in .lighthouserc.json is `error`, so scores
+  # below threshold fail the job. Audits the
   # production static build from the ci job (never a dev server). Google
   # Analytics loads only after cookie consent at runtime, which a fresh
   # Lighthouse profile never grants, so no CONTEXT guard is needed here.

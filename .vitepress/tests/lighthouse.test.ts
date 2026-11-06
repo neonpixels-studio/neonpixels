@@ -140,10 +140,10 @@ describe("lighthouse assertions", () => {
   });
 
   it.each(Object.entries(EXPECTED_MIN_SCORES))(
-    "%s is warn-level at minScore %s on the median run",
+    "%s is error-level at minScore %s on the median run",
     (category, minScore) => {
       const [level, options] = assertions[category];
-      expect(level).toBe("warn");
+      expect(level).toBe("error");
       expect(options).toEqual({ minScore, aggregationMethod: "median-run" });
     },
   );
