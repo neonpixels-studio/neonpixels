@@ -16,6 +16,37 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # PR-only change detection for the lighthouse job. Gating happens with a
+  # job-level `if:` on lighthouse (never workflow-level `paths:`) so a skipped
+  # run still reports as passing and `lighthouse` can become a required check.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'index.md'
+              - 'privacy.md'
+              - 'public/**'
+              - '.vitepress/config.ts'
+              - '.vitepress/theme/**'
+              - '.vitepress/fonts/**'
+              - '.vitepress/csp/**'
+              - '.vitepress/seo/**'
+              - '.vitepress/robots/**'
+              - '.lighthouserc.json'
+              - '.github/workflows/ci.yml'
+
   ci:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -59,3 +90,52 @@ jobs:
 
       - name: Performance budget
         run: npm run perf:budget
+
+      # Only PR runs feed the lighthouse job; skip the upload on main pushes.
+      - name: Upload build output
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: site-build
+          path: .vitepress/dist
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # Warn-level only: every assertion in .lighthouserc.json is `warn`, so scores
+  # below threshold show in the log but never fail the job. Audits the
+  # production static build from the ci job (never a dev server). Google
+  # Analytics loads only after cookie consent at runtime, which a fresh
+  # Lighthouse profile never grants, so no CONTEXT guard is needed here.
+  lighthouse:
+    needs: [ci, changes]
+    if: needs.changes.result == 'success' && needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read .nvmrc
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.nvmrc.outputs.version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download build output
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: site-build
+          path: .vitepress/dist
+
+      - name: Run Lighthouse CI
+        run: npm run lighthouse

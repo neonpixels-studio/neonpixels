@@ -69,6 +69,11 @@ function packageNameFromOverrideKey(key: string) {
 // they are exempt. Keep in sync with package.json when adding another.
 const DELIBERATE_SCOPED_OVERRIDES: Record<string, readonly string[]> = {
   vitepress: ["vite", "esbuild"],
+  // Pulled in by @lhci/cli: get-uri declares a vulnerable basic-ftp 5.x range.
+  "get-uri": ["basic-ftp"],
+  // @lhci/cli -> rimraf -> minimatch@3 needs brace-expansion 1.x; the global
+  // 5.x override cannot apply there.
+  rimraf: ["brace-expansion"],
 };
 
 function isDeliberateScopedOverride(

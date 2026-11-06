@@ -16,12 +16,14 @@
     "perf:budget": "node .vitepress/perf/checkPerformanceBudget.ts",
     "lint": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",
-    "prepare": "husky"
+    "prepare": "husky",
+    "lighthouse": "lhci autorun"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@fontsource/archivo": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
+    "@lhci/cli": "^0.16.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/jsdom": "^30.0.0",
     "@types/semver": "^7.8.0",
@@ -53,7 +55,13 @@
       "vite": "^6.4.3",
       "esbuild": "^0.25.0"
     },
-    "brace-expansion": "^5.0.12"
+    "brace-expansion": "^5.0.12",
+    "rimraf": {
+      "brace-expansion": "^1.1.19"
+    },
+    "get-uri": {
+      "basic-ftp": "^6.2.5"
+    }
   },
   "dependencies": {
     "@netlify/blobs": "^11.1.7"

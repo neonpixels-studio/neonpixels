@@ -37,9 +37,16 @@ describe("ci.yml permissions", () => {
     expect(permissions.match(/^\s+\S+:/gm) ?? []).toHaveLength(1);
   });
 
-  it("has no job-level permissions override", () => {
+  // The change-detection job is the one exception: dorny/paths-filter lists
+  // PR files through the API, which needs pull-requests: read once the repo
+  // is private. Every other job inherits the top-level contents: read.
+  it("has no job-level permissions override outside the changes job", () => {
     const jobs = findTopLevelBlock("jobs") ?? "";
-    expect(jobs).not.toMatch(/^\s+permissions:/m);
+    const withoutChangesJob = jobs.replace(
+      /^ {2}changes:[\s\S]*?(?=^ {2}\S)/m,
+      "",
+    );
+    expect(withoutChangesJob).not.toMatch(/^\s+permissions:/m);
   });
 });
 
