@@ -70,6 +70,7 @@ export default [
       ".github/scripts/notify-deploy-failure.d.cts",
       ".github/scripts/project-url-check-issue.d.cts",
       ".github/scripts/verify-production-deploy.d.cts",
+      ".github/scripts/deploy-trigger.d.cts",
     ],
     rules: {
       "no-unused-vars": "off",

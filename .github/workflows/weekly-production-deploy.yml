@@ -59,32 +59,14 @@ jobs:
 
       - name: Check for commits in the last 7 days
         id: recent
-        run: |
-          if [ "$EVENT_NAME" != "schedule" ]; then
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          recent_commits=$(git rev-list --count --since="7 days ago" origin/main)
-          if [ "$recent_commits" -eq 0 ]; then
-            echo "main has no commits in the last 7 days; skipping production deploy."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "main has $recent_commits commit(s) in the last 7 days."
-          echo "skip=false" >> "$GITHUB_OUTPUT"
+        run: node .github/scripts/deploy-trigger.cjs recent
 
       # The run id and attempt make the title unique (a re-run keeps the run id) so the verify step can find exactly
       # this deploy; it is also what shows in the Netlify deploy list.
       - name: Trigger production deploy
         if: steps.recent.outputs.skip != 'true'
         run: |
-          trigger_title="Manual production deploy"
-          if [ "$EVENT_NAME" = "schedule" ]; then
-            trigger_title="Weekly production deploy"
-          fi
-          trigger_title="$trigger_title run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
-          echo "NETLIFY_DEPLOY_TITLE=$trigger_title" >> "$GITHUB_ENV"
-          encoded_title=$(printf '%s' "$trigger_title" | sed 's/ /+/g')
+          encoded_title=$(node .github/scripts/deploy-trigger.cjs title)
           curl --fail --silent --show-error -X POST -d '{}' "$NETLIFY_BUILD_HOOK_URL?trigger_title=$encoded_title"
 
       - name: Verify production deploy succeeded
