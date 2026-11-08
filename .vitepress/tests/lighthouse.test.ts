@@ -94,6 +94,63 @@ function filterCovers(entries: string[], file: string) {
   );
 }
 
+type JobResult = "success" | "failure" | "cancelled" | "skipped";
+type LighthouseContext = {
+  ci: JobResult;
+  changes: JobResult;
+  frontend?: string;
+  cancelled?: boolean;
+};
+
+const STATUS_FUNCTION = /\b(success|failure|cancelled|always)\(\)/;
+
+function lighthouseCondition() {
+  const block =
+    /^ {2}lighthouse:\n(?:(?: {4,}.*)?\n)*?^ {4}if: >-\n((?: {6}.*\n)+)/m;
+  const expression = block.exec(workflow)?.[1];
+  if (!expression) {
+    throw new Error("lighthouse job needs a folded `if: >-` condition");
+  }
+  return expression
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\$\{\{|\}\}$/g, "");
+}
+
+// GitHub adds an implicit success() to an `if:` with no status function, which
+// skips the job whenever any needed job did not succeed.
+function implicitSuccessHolds(condition: string, context: LighthouseContext) {
+  if (STATUS_FUNCTION.test(condition)) {
+    return true;
+  }
+  return context.ci === "success" && context.changes === "success";
+}
+
+// Evaluates the job `if:` for a combination of upstream results. Only the
+// small expression subset the condition uses is translated to JavaScript.
+function lighthouseRuns(context: LighthouseContext) {
+  const condition = lighthouseCondition();
+  if (/\b(success|failure|always)\(\)/.test(condition)) {
+    throw new Error("lighthouseRuns only models !cancelled(); extend it");
+  }
+  const script = condition
+    .replace(/needs\.(\w+)\.result/g, "results.$1")
+    .replace(/needs\.changes\.outputs\.frontend/g, "frontend")
+    .replace(/!cancelled\(\)/g, "!cancelled");
+  const evaluate = new Function(
+    "results",
+    "frontend",
+    "cancelled",
+    `return ${script};`,
+  );
+  const expressionHolds = evaluate(
+    { ci: context.ci, changes: context.changes },
+    context.frontend ?? "",
+    context.cancelled ?? false,
+  ) as boolean;
+  return implicitSuccessHolds(condition, context) && expressionHolds;
+}
+
 describe("lighthouse URL list", () => {
   it("audits at least one page, all on the static server origin", () => {
     const urls: string[] = lighthouseConfig.ci.collect.url;
@@ -195,12 +252,43 @@ describe("lighthouse job wiring", () => {
     const triggers = /^on:\n((?:[ \t].*\n|\n)+)/m.exec(workflow)?.[1] ?? "";
     expect(triggers).toContain("pull_request:");
     expect(triggers).not.toMatch(/^\s+paths(-ignore)?:/m);
-    expect(workflow).toMatch(
-      /^ {4}if: needs\.changes\.result == 'success' && needs\.changes\.outputs\.frontend == 'true'$/m,
-    );
   });
 
   it("names the job exactly lighthouse", () => {
     expect(workflow).toMatch(/^ {2}lighthouse:\s*$/m);
+  });
+
+  it("fails closed: runs the audit when the changes job did not succeed", () => {
+    expect(lighthouseRuns({ ci: "success", changes: "failure" })).toBe(true);
+    expect(lighthouseRuns({ ci: "success", changes: "cancelled" })).toBe(true);
+  });
+
+  it("runs only for relevant paths when changes succeeds", () => {
+    expect(
+      lighthouseRuns({ ci: "success", changes: "success", frontend: "true" }),
+    ).toBe(true);
+    expect(
+      lighthouseRuns({ ci: "success", changes: "success", frontend: "false" }),
+    ).toBe(false);
+  });
+
+  it("skips when changes succeeds but reports no frontend output", () => {
+    expect(lighthouseRuns({ ci: "success", changes: "success" })).toBe(false);
+  });
+
+  it("skips on push runs where changes is skipped", () => {
+    expect(lighthouseRuns({ ci: "success", changes: "skipped" })).toBe(false);
+  });
+
+  it("never runs when ci failed or the workflow was cancelled", () => {
+    expect(lighthouseRuns({ ci: "failure", changes: "failure" })).toBe(false);
+    expect(lighthouseRuns({ ci: "cancelled", changes: "failure" })).toBe(false);
+    expect(lighthouseRuns({ ci: "skipped", changes: "failure" })).toBe(false);
+    expect(
+      lighthouseRuns({ ci: "failure", changes: "success", frontend: "true" }),
+    ).toBe(false);
+    expect(
+      lighthouseRuns({ ci: "success", changes: "failure", cancelled: true }),
+    ).toBe(false);
   });
 });
