@@ -87,6 +87,13 @@ function prepareTrigger({ env, writeEnv, print = console.log }) {
   return title;
 }
 
+function escapeAnnotation(message) {
+  return message
+    .replace(/%/g, "%25")
+    .replace(/\r/g, "%0D")
+    .replace(/\n/g, "%0A");
+}
+
 function appender(path) {
   return (line) => appendFileSync(path, `${line}\n`);
 }
@@ -116,6 +123,7 @@ module.exports = {
   buildTriggerTitle,
   encodeTitle,
   prepareTrigger,
+  escapeAnnotation,
   main,
   WINDOW_DAYS,
   SCHEDULED_TITLE,
@@ -126,7 +134,7 @@ if (require.main === module) {
   try {
     main();
   } catch (error) {
-    console.error(`::error::${error.message.replace(/\r?\n/g, "%0A")}`);
+    console.error(`::error::${escapeAnnotation(error.message)}`);
     process.exit(1);
   }
 }

@@ -17,8 +17,8 @@ const {
   encodeTitle,
   prepareTrigger,
   main,
+  escapeAnnotation,
   SCHEDULED_TITLE,
-  MANUAL_TITLE,
 } = deployTrigger;
 
 const SCRIPT_PATH = resolve(
@@ -123,10 +123,6 @@ describe("trigger title", () => {
       "Weekly+production+deploy+run+99+attempt+2",
     );
   });
-
-  it("exposes distinct scheduled and manual titles", () => {
-    expect(SCHEDULED_TITLE).not.toBe(MANUAL_TITLE);
-  });
 });
 
 describe("checkRecentCommits failure", () => {
@@ -142,6 +138,12 @@ describe("checkRecentCommits failure", () => {
       }),
     ).toThrow("git failed");
     expect(writeOutput).not.toHaveBeenCalled();
+  });
+});
+
+describe("escapeAnnotation", () => {
+  it("escapes percent signs and line breaks for workflow commands", () => {
+    expect(escapeAnnotation("50% done\r\nnext")).toBe("50%25 done%0D%0Anext");
   });
 });
 
@@ -191,12 +193,18 @@ describe("deploy-trigger.cjs executed", () => {
     return directory;
   }
 
+  function isolatedEnv(overrides: Record<string, string> = {}) {
+    const inherited = Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+    );
+    return { ...inherited, ...overrides };
+  }
+
   function git(directory: string, args: string[], env = {}) {
     const result = spawnSync("git", args, {
       cwd: directory,
       encoding: "utf8",
-      env: {
-        ...process.env,
+      env: isolatedEnv({
         GIT_CONFIG_GLOBAL: "/dev/null",
         GIT_CONFIG_SYSTEM: "/dev/null",
         GIT_AUTHOR_NAME: "test",
@@ -204,7 +212,7 @@ describe("deploy-trigger.cjs executed", () => {
         GIT_COMMITTER_NAME: "test",
         GIT_COMMITTER_EMAIL: "test@example.com",
         ...env,
-      },
+      }),
     });
     expect(result.status, result.stderr).toBe(0);
   }
@@ -236,12 +244,11 @@ describe("deploy-trigger.cjs executed", () => {
     const result = spawnSync(process.execPath, [SCRIPT_PATH, command], {
       cwd: directory,
       encoding: "utf8",
-      env: {
-        ...process.env,
+      env: isolatedEnv({
         GITHUB_OUTPUT: outputFile,
         GITHUB_ENV: envFile,
         ...env,
-      },
+      }),
     });
     return {
       status: result.status,

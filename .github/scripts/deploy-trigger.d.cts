@@ -25,6 +25,7 @@ declare const deployTrigger: {
     writeEnv: (line: string) => void;
     print?: (message: string) => void;
   }) => string;
+  escapeAnnotation: (message: string) => string;
   main: (argv?: string[], env?: Env) => void;
   WINDOW_DAYS: number;
   SCHEDULED_TITLE: string;
