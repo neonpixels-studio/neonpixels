@@ -44,6 +44,8 @@ jobs:
               - '.vitepress/csp/**'
               - '.vitepress/seo/**'
               - '.vitepress/robots/**'
+              - 'package.json'
+              - 'package-lock.json'
               - '.lighthouserc.json'
               - '.github/workflows/ci.yml'
 
