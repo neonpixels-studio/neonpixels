@@ -77,6 +77,7 @@ const ORGANIZATION_TYPE = "Organization";
 // attribute would let an og tag emitted as name="" (which crawlers ignore) pass.
 const OG_ATTRIBUTE = "property";
 const TWITTER_ATTRIBUTE = "name";
+const NAME_ATTRIBUTE = "name";
 
 // [attribute, key] tags that must be present and non-empty in the built <head>.
 // A dropped head entry removes its whole tag, so requiring each key is what makes
@@ -427,9 +428,7 @@ describe("built index.html head", () => {
   });
 
   it("declares color-scheme dark so native UI matches the dark-only theme", () => {
-    expect(metaContent(builtHead, TWITTER_ATTRIBUTE, "color-scheme")).toBe(
-      "dark",
-    );
+    expect(metaContent(builtHead, NAME_ATTRIBUTE, "color-scheme")).toBe("dark");
   });
 
   it.each(ABSOLUTE_URL_META)(
