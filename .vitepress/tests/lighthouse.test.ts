@@ -102,19 +102,35 @@ type LighthouseContext = {
   cancelled?: boolean;
 };
 
+const STATUS_FUNCTION = /\b(success|failure|cancelled|always)\(\)/;
+
 function lighthouseCondition() {
-  const block = /^ {2}lighthouse:\n(?:.*\n)*?^ {4}if: >-\n((?: {6}.*\n)+)/m;
-  const expression = block.exec(workflow)?.[1] ?? "";
+  const block =
+    /^ {2}lighthouse:\n(?:(?: {4,}.*)?\n)*?^ {4}if: >-\n((?: {6}.*\n)+)/m;
+  const expression = block.exec(workflow)?.[1];
+  if (!expression) {
+    throw new Error("lighthouse job needs a folded `if: >-` condition");
+  }
   return expression
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^\$\{\{|\}\}$/g, "");
 }
 
+// GitHub adds an implicit success() to an `if:` with no status function, which
+// skips the job whenever any needed job did not succeed.
+function implicitSuccessHolds(condition: string, context: LighthouseContext) {
+  if (STATUS_FUNCTION.test(condition)) {
+    return true;
+  }
+  return context.ci === "success" && context.changes === "success";
+}
+
 // Evaluates the job `if:` for a combination of upstream results. Only the
 // small expression subset the condition uses is translated to JavaScript.
 function lighthouseRuns(context: LighthouseContext) {
-  const script = lighthouseCondition()
+  const condition = lighthouseCondition();
+  const script = condition
     .replace(/needs\.(\w+)\.result/g, "results.$1")
     .replace(/needs\.changes\.outputs\.frontend/g, "frontend")
     .replace(/!cancelled\(\)/g, "!cancelled");
@@ -124,11 +140,12 @@ function lighthouseRuns(context: LighthouseContext) {
     "cancelled",
     `return ${script};`,
   );
-  return evaluate(
+  const expressionHolds = evaluate(
     { ci: context.ci, changes: context.changes },
     context.frontend ?? "",
     context.cancelled ?? false,
   ) as boolean;
+  return implicitSuccessHolds(condition, context) && expressionHolds;
 }
 
 describe("lighthouse URL list", () => {
@@ -245,6 +262,10 @@ describe("lighthouse job wiring", () => {
     expect(
       lighthouseRuns({ ci: "success", changes: "success", frontend: "false" }),
     ).toBe(false);
+  });
+
+  it("skips when changes succeeds but reports no frontend output", () => {
+    expect(lighthouseRuns({ ci: "success", changes: "success" })).toBe(false);
   });
 
   it("skips on push runs where changes is skipped", () => {
