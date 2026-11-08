@@ -48,7 +48,11 @@ describe("/.well-known/security.txt (RFC 9116)", () => {
     const expiresValues = fields.get("expires") ?? [];
     expect(expiresValues).toHaveLength(1);
     expect(expiresValues[0]).toMatch(RFC3339_UTC_TIMESTAMP);
-    expect(Number.isNaN(new Date(expiresValues[0]).getTime())).toBe(false);
+    // toISOString() throws on Invalid Date; the comparison catches rolled-over dates like Feb 30.
+    const parsed = new Date(expiresValues[0]);
+    expect(parsed.toISOString().slice(0, 19)).toBe(
+      expiresValues[0].slice(0, 19),
+    );
   });
 
   it(`expires between ${RENEWAL_WINDOW_DAYS} and ${MAX_EXPIRY_DAYS} days from now (renew the file when this fails)`, () => {
