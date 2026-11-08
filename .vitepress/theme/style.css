@@ -115,6 +115,7 @@ body {
    section (#projects/#about/#contact) lands below the nav rather than tucked
    under it. */
 html {
+  color-scheme: dark;
   scroll-padding-top: 5rem;
 }
 

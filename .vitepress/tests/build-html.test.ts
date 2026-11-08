@@ -426,6 +426,12 @@ describe("built index.html head", () => {
     expect(content!.trim().length).toBeGreaterThan(0);
   });
 
+  it("declares color-scheme dark so native UI matches the dark-only theme", () => {
+    expect(metaContent(builtHead, TWITTER_ATTRIBUTE, "color-scheme")).toBe(
+      "dark",
+    );
+  });
+
   it.each(ABSOLUTE_URL_META)(
     "emits %s=%s as an absolute https URL",
     (attribute, key) => {
