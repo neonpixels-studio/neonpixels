@@ -109,7 +109,14 @@ jobs:
   # Lighthouse profile never grants, so no CONTEXT guard is needed here.
   lighthouse:
     needs: [ci, changes]
-    if: needs.changes.result == 'success' && needs.changes.outputs.frontend == 'true'
+    # Fails closed: a failed or cancelled `changes` job runs the audit instead
+    # of skipping it (a skipped required check reads as green). `!cancelled()`
+    # drops the implicit success() so the failure branch can be reached; ci must
+    # still pass. On push, `changes` is skipped, so the audit skips too.
+    if: >-
+      ${{ !cancelled() && needs.ci.result == 'success' &&
+      (needs.changes.result == 'failure' || needs.changes.result == 'cancelled' ||
+      (needs.changes.result == 'success' && needs.changes.outputs.frontend == 'true')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
