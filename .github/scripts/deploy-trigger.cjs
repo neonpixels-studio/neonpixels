@@ -30,7 +30,11 @@ function countRecentCommits() {
     ["rev-list", "--count", `--since=${WINDOW_DAYS} days ago`, DEPLOY_REF],
     { encoding: "utf8" },
   );
-  return Number.parseInt(output.trim(), 10);
+  const count = Number.parseInt(output.trim(), 10);
+  if (Number.isNaN(count)) {
+    throw new Error(`Unexpected git rev-list output: "${output.trim()}"`);
+  }
+  return count;
 }
 
 function checkRecentCommits({
@@ -65,11 +69,18 @@ function encodeTitle(title) {
   return title.replace(/ /g, "+");
 }
 
+function requireEnv(env, name) {
+  if (!env[name]) {
+    throw new Error(`Missing required environment variable ${name}`);
+  }
+  return env[name];
+}
+
 function prepareTrigger({ env, writeEnv, print = console.log }) {
   const title = buildTriggerTitle({
     eventName: env.EVENT_NAME,
-    runId: env.GITHUB_RUN_ID,
-    runAttempt: env.GITHUB_RUN_ATTEMPT,
+    runId: requireEnv(env, "GITHUB_RUN_ID"),
+    runAttempt: requireEnv(env, "GITHUB_RUN_ATTEMPT"),
   });
   writeEnv(`NETLIFY_DEPLOY_TITLE=${title}`);
   print(encodeTitle(title));
@@ -85,12 +96,12 @@ function main(argv = process.argv.slice(2), env = process.env) {
   if (command === "recent") {
     checkRecentCommits({
       eventName: env.EVENT_NAME,
-      writeOutput: appender(env.GITHUB_OUTPUT),
+      writeOutput: appender(requireEnv(env, "GITHUB_OUTPUT")),
     });
     return;
   }
   if (command === "title") {
-    prepareTrigger({ env, writeEnv: appender(env.GITHUB_ENV) });
+    prepareTrigger({ env, writeEnv: appender(requireEnv(env, "GITHUB_ENV")) });
     return;
   }
   throw new Error(

@@ -111,9 +111,20 @@ describe("weekly-production-deploy.yml", () => {
     );
   });
 
-  it("builds the trigger title, which the verify step reads, via the script", () => {
-    expect(WORKFLOW).toContain("deploy-trigger.cjs title");
+  it("leaves the title export to the script, which the verify script reads", () => {
     expect(WORKFLOW).not.toContain("GITHUB_ENV");
+    expect(
+      readFileSync(
+        resolve(process.cwd(), ".github/scripts/deploy-trigger.cjs"),
+        "utf8",
+      ),
+    ).toContain("NETLIFY_DEPLOY_TITLE=");
+    expect(
+      readFileSync(
+        resolve(process.cwd(), ".github/scripts/verify-production-deploy.cjs"),
+        "utf8",
+      ),
+    ).toContain('"NETLIFY_DEPLOY_TITLE"');
   });
 
   it("checks full history for commits in the last 7 days via the script", () => {

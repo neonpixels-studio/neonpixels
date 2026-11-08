@@ -129,7 +129,35 @@ describe("trigger title", () => {
   });
 });
 
+describe("checkRecentCommits failure", () => {
+  it("writes no output when the commit count cannot be read", () => {
+    const writeOutput = vi.fn();
+    expect(() =>
+      checkRecentCommits({
+        eventName: "schedule",
+        countCommits: () => {
+          throw new Error("git failed");
+        },
+        writeOutput,
+      }),
+    ).toThrow("git failed");
+    expect(writeOutput).not.toHaveBeenCalled();
+  });
+});
+
 describe("main", () => {
+  it("requires the run id and attempt for the title", () => {
+    expect(() =>
+      main(["title"], { EVENT_NAME: "schedule", GITHUB_ENV: "/dev/null" }),
+    ).toThrow("Missing required environment variable GITHUB_RUN_ID");
+  });
+
+  it("requires the output file for the recent check", () => {
+    expect(() => main(["recent"], { EVENT_NAME: "schedule" })).toThrow(
+      "Missing required environment variable GITHUB_OUTPUT",
+    );
+  });
+
   it("rejects an unknown command", () => {
     expect(() => main(["bogus"], {})).toThrow(/Unknown command "bogus"/);
   });
@@ -192,7 +220,7 @@ describe("deploy-trigger.cjs executed", () => {
     const envFile = join(directory, "github-env");
     writeFileSync(outputFile, "");
     writeFileSync(envFile, "");
-    const result = spawnSync("node", [SCRIPT_PATH, command], {
+    const result = spawnSync(process.execPath, [SCRIPT_PATH, command], {
       cwd: directory,
       encoding: "utf8",
       env: {
@@ -241,6 +269,7 @@ describe("deploy-trigger.cjs executed", () => {
     git(directory, ["init", "--quiet"]);
     const result = runScript("recent", directory, { EVENT_NAME: "schedule" });
     expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("::error::");
     expect(result.output).toBe("");
   });
 
