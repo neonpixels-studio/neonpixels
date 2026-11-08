@@ -78,7 +78,7 @@ function requireEnv(env, name) {
 
 function prepareTrigger({ env, writeEnv, print = console.log }) {
   const title = buildTriggerTitle({
-    eventName: env.EVENT_NAME,
+    eventName: requireEnv(env, "EVENT_NAME"),
     runId: requireEnv(env, "GITHUB_RUN_ID"),
     runAttempt: requireEnv(env, "GITHUB_RUN_ATTEMPT"),
   });
@@ -95,7 +95,7 @@ function main(argv = process.argv.slice(2), env = process.env) {
   const [command] = argv;
   if (command === "recent") {
     checkRecentCommits({
-      eventName: env.EVENT_NAME,
+      eventName: requireEnv(env, "EVENT_NAME"),
       writeOutput: appender(requireEnv(env, "GITHUB_OUTPUT")),
     });
     return;
@@ -126,7 +126,7 @@ if (require.main === module) {
   try {
     main();
   } catch (error) {
-    console.error(`::error::${error.message}`);
+    console.error(`::error::${error.message.replace(/\r?\n/g, "%0A")}`);
     process.exit(1);
   }
 }

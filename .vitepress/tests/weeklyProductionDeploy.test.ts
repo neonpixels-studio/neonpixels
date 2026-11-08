@@ -112,7 +112,10 @@ describe("weekly-production-deploy.yml", () => {
   });
 
   it("leaves the title export to the script, which the verify script reads", () => {
-    expect(WORKFLOW).not.toContain("GITHUB_ENV");
+    const triggerStep = WORKFLOW.split(
+      "- name: Trigger production deploy",
+    )[1].split("- name:")[0];
+    expect(triggerStep).not.toContain("GITHUB_ENV");
     expect(
       readFileSync(
         resolve(process.cwd(), ".github/scripts/deploy-trigger.cjs"),

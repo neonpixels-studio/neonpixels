@@ -158,6 +158,19 @@ describe("main", () => {
     );
   });
 
+  it("requires the event name for both commands", () => {
+    expect(() => main(["recent"], { GITHUB_OUTPUT: "/dev/null" })).toThrow(
+      "Missing required environment variable EVENT_NAME",
+    );
+    expect(() =>
+      main(["title"], {
+        GITHUB_ENV: "/dev/null",
+        GITHUB_RUN_ID: "1",
+        GITHUB_RUN_ATTEMPT: "1",
+      }),
+    ).toThrow("Missing required environment variable EVENT_NAME");
+  });
+
   it("rejects an unknown command", () => {
     expect(() => main(["bogus"], {})).toThrow(/Unknown command "bogus"/);
   });
@@ -270,6 +283,10 @@ describe("deploy-trigger.cjs executed", () => {
     const result = runScript("recent", directory, { EVENT_NAME: "schedule" });
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("::error::");
+    const annotation = result.stderr
+      .split("\n")
+      .find((line) => line.startsWith("::error::"));
+    expect(annotation).toContain("%0A");
     expect(result.output).toBe("");
   });
 
