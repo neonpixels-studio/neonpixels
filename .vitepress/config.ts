@@ -110,6 +110,8 @@ export default defineConfig({
     // transformHead below.
     // Theme color
     ["meta", { name: "theme-color", content: "#08080a" }],
+    // Dark-only site: native controls, scrollbars and autofill render dark
+    ["meta", { name: "color-scheme", content: "dark" }],
     // Open Graph
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:locale", content: "en_US" }],
