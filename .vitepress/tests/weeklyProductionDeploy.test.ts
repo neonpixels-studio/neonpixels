@@ -106,23 +106,21 @@ describe("weekly-production-deploy.yml", () => {
     expect(WORKFLOW).toContain(
       `curl --fail --silent --show-error -X POST -d '{}' "$NETLIFY_BUILD_HOOK_URL?trigger_title=$encoded_title"`,
     );
-    expect(WORKFLOW).toContain('trigger_title="Weekly production deploy"');
-    expect(WORKFLOW).toContain('trigger_title="Manual production deploy"');
-  });
-
-  it("makes the trigger title unique per run and shares it with the verify step", () => {
     expect(WORKFLOW).toContain(
-      'trigger_title="$trigger_title run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"',
-    );
-    expect(WORKFLOW).toContain(
-      'echo "NETLIFY_DEPLOY_TITLE=$trigger_title" >> "$GITHUB_ENV"',
+      "encoded_title=$(node .github/scripts/deploy-trigger.cjs title)",
     );
   });
 
-  it("checks full history for commits in the last 7 days on schedule only", () => {
+  it("builds the trigger title, which the verify step reads, via the script", () => {
+    expect(WORKFLOW).toContain("deploy-trigger.cjs title");
+    expect(WORKFLOW).not.toContain("GITHUB_ENV");
+  });
+
+  it("checks full history for commits in the last 7 days via the script", () => {
     expect(WORKFLOW).toMatch(/fetch-depth: 0/);
-    expect(WORKFLOW).toContain('--since="7 days ago"');
-    expect(WORKFLOW).toContain('"$EVENT_NAME" != "schedule"');
+    expect(WORKFLOW).toMatch(
+      /id: recent\n\s+run: node \.github\/scripts\/deploy-trigger\.cjs recent\n/,
+    );
   });
 
   it("declares a concurrency block", () => {
