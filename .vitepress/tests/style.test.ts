@@ -494,7 +494,7 @@ describe("style.css forced-colors coverage", () => {
 describe("style.css color-scheme", () => {
   it("declares color-scheme: dark on html for native controls and scrollbars", () => {
     expect(STYLE_CSS_WITHOUT_COMMENTS).toMatch(
-      /(^|\})\s*html\s*\{[^}]*color-scheme:\s*dark\s*;/,
+      /(^|\})\s*html\s*\{[^}]*[{;\s]color-scheme:\s*dark\s*;/,
     );
   });
 });
