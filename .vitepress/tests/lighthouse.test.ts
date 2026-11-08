@@ -130,6 +130,9 @@ function implicitSuccessHolds(condition: string, context: LighthouseContext) {
 // small expression subset the condition uses is translated to JavaScript.
 function lighthouseRuns(context: LighthouseContext) {
   const condition = lighthouseCondition();
+  if (/\b(success|failure|always)\(\)/.test(condition)) {
+    throw new Error("lighthouseRuns only models !cancelled(); extend it");
+  }
   const script = condition
     .replace(/needs\.(\w+)\.result/g, "results.$1")
     .replace(/needs\.changes\.outputs\.frontend/g, "frontend")
@@ -274,6 +277,11 @@ describe("lighthouse job wiring", () => {
 
   it("never runs when ci failed or the workflow was cancelled", () => {
     expect(lighthouseRuns({ ci: "failure", changes: "failure" })).toBe(false);
+    expect(lighthouseRuns({ ci: "cancelled", changes: "failure" })).toBe(false);
+    expect(lighthouseRuns({ ci: "skipped", changes: "failure" })).toBe(false);
+    expect(
+      lighthouseRuns({ ci: "failure", changes: "success", frontend: "true" }),
+    ).toBe(false);
     expect(
       lighthouseRuns({ ci: "success", changes: "failure", cancelled: true }),
     ).toBe(false);
