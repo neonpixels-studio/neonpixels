@@ -168,6 +168,11 @@ describe("lighthouse change detection", () => {
     expect(filterCovers(entries, ".github/workflows/ci.yml")).toBe(true);
   });
 
+  it("re-runs when dependency manifests change", () => {
+    expect(filterCovers(entries, "package.json")).toBe(true);
+    expect(filterCovers(entries, "package-lock.json")).toBe(true);
+  });
+
   it("covers every .vitepress module config.ts imports into the build", () => {
     const imported = [
       ...siteConfig.matchAll(/from "\.\/([^/"]+)\/[^"]*"/g),
