@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { readEnforcedCsp } from "./support/enforcedCsp.ts";
 import { trackCspViolations } from "./support/cspViolations.ts";
 
 const GTAG_URL_PATTERN = "https://www.googletagmanager.com/gtag/js**";
@@ -34,6 +37,13 @@ async function interceptFormPosts(page: Page) {
   return formPosts;
 }
 
+function readStoredConsent(page: Page) {
+  return page.evaluate(
+    (key) => window.localStorage.getItem(key),
+    CONSENT_STORAGE_KEY,
+  );
+}
+
 function consentBanner(page: Page) {
   return page.getByRole("region", { name: "Analytics consent" });
 }
@@ -41,8 +51,11 @@ function consentBanner(page: Page) {
 test("serves the production CSP header", async ({ page }) => {
   const response = await page.goto("/");
   const csp = response?.headers()["content-security-policy"] ?? "";
-  expect(csp).toContain("script-src 'self'");
-  expect(csp).toContain("https://www.googletagmanager.com");
+  const netlifyToml = readFileSync(
+    resolve(process.cwd(), "netlify.toml"),
+    "utf8",
+  );
+  expect(csp).toBe(readEnforcedCsp(netlifyToml));
 });
 
 test.describe("consent banner", () => {
@@ -59,13 +72,7 @@ test.describe("consent banner", () => {
     await consentBanner(page).getByRole("button", { name: "Accept" }).click();
     await expect(consentBanner(page)).toBeHidden();
     await expect.poll(() => gtagRequests.length).toBe(1);
-    await expect
-      .poll(() =>
-        page.evaluate(() =>
-          window.localStorage.getItem("np-analytics-consent"),
-        ),
-      )
-      .toBe("accepted");
+    await expect.poll(() => readStoredConsent(page)).toBe("accepted");
 
     await page.reload();
     await expect(consentBanner(page)).toBeHidden();
@@ -85,14 +92,7 @@ test.describe("consent banner", () => {
     await page.goto("/");
     await consentBanner(page).getByRole("button", { name: "Decline" }).click();
     await expect(consentBanner(page)).toBeHidden();
-    await expect
-      .poll(() =>
-        page.evaluate(
-          (key) => window.localStorage.getItem(key),
-          CONSENT_STORAGE_KEY,
-        ),
-      )
-      .toBe("declined");
+    await expect.poll(() => readStoredConsent(page)).toBe("declined");
 
     await page.reload();
     await expect(
@@ -139,6 +139,7 @@ test.describe("contact form", () => {
   test("valid submit posts to the intercepted endpoint and shows success", async ({
     page,
   }) => {
+    const cspViolations = await trackCspViolations(page);
     await stubGtag(page);
     const formPosts = await interceptFormPosts(page);
 
@@ -153,5 +154,6 @@ test.describe("contact form", () => {
     expect(formPosts).toHaveLength(1);
     expect(formPosts[0]).toContain("form-name=contact");
     expect(formPosts[0]).toContain("email=dev%40example.com");
+    expect(cspViolations).toEqual([]);
   });
 });

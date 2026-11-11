@@ -144,6 +144,15 @@ jobs:
       - name: E2E
         run: npm run e2e
 
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: playwright-traces
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
   # Error-level: every assertion in .lighthouserc.json is `error`, so scores
   # below threshold fail the job. Audits the
   # production static build from the ci job (never a dev server). Google
