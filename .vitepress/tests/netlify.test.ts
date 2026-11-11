@@ -206,11 +206,35 @@ function readNodeMajor(version: string) {
 // One year is the recommended HSTS floor for an HTTPS-only site; we serve two.
 const HSTS_MIN_MAX_AGE_SECONDS = 31536000;
 
+// Every powerful feature the site never uses is denied for itself and all
+// embeds. interest-cohort (FLoC) is deliberately absent: Chrome removed it and
+// now warns "Unrecognized feature" for it; browsing-topics is the live opt-out.
+const DENIED_PERMISSIONS = [
+  "camera",
+  "microphone",
+  "geolocation",
+  "payment",
+  "usb",
+  "browsing-topics",
+  "accelerometer",
+  "gyroscope",
+  "magnetometer",
+  "midi",
+  "serial",
+  "hid",
+  "bluetooth",
+  "display-capture",
+  "xr-spatial-tracking",
+];
+const PERMISSIONS_POLICY = DENIED_PERMISSIONS.map(
+  (feature) => `${feature}=()`,
+).join(", ");
+
 const STATIC_HEADERS = {
   "X-Frame-Options": "DENY",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Permissions-Policy": PERMISSIONS_POLICY,
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-origin",
 };
@@ -681,6 +705,22 @@ describe("netlify security headers", () => {
       expect(readHeader(headers, name)).toBe(expectedValue);
     },
   );
+
+  it.each(DENIED_PERMISSIONS)(
+    "denies %s in Permissions-Policy for every origin",
+    (feature) => {
+      const entries = readHeader(headers, "Permissions-Policy")
+        .split(",")
+        .map((entry) => entry.trim());
+      expect(entries).toContain(`${feature}=()`);
+    },
+  );
+
+  it("does not send the removed interest-cohort token", () => {
+    expect(readHeader(headers, "Permissions-Policy")).not.toContain(
+      "interest-cohort",
+    );
+  });
 
   it("sends an HSTS max-age of at least one year", () => {
     const maxAge = parseHstsMaxAge(
