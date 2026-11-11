@@ -35,6 +35,7 @@ The site is a single custom-themed page. The theme lives in `.vitepress/theme`:
 | `npm run typecheck`       | Type-check with `vue-tsc`                                                      |
 | `npm run lint`            | Check formatting (Prettier) and lint (ESLint)                                  |
 | `npm run lint:fix`        | Auto-fix formatting and lint issues                                            |
+| `npm run e2e`             | Real-browser (Playwright, Chromium) smoke test against the built `dist`        |
 | `npm run audit`           | Audit production dependencies                                                  |
 | `npm run check:overrides` | Fail if a package.json override forces a consumer onto an incompatible version |
 
@@ -44,6 +45,12 @@ Tests use [Vitest](https://vitest.dev) with `happy-dom` and `@vue/test-utils`. T
 cover the components, the SEO/social metadata in `config.ts` (Open Graph and Twitter
 cards, favicons resolve to real files), the Netlify security headers, and the ESLint
 accessibility ruleset.
+
+`npm run e2e` runs a [Playwright](https://playwright.dev) smoke test in real Chromium against
+the built site (run `npm run build` first; first-time setup is
+`npx playwright install chromium`). It serves `.vitepress/dist` with the enforcing
+CSP read from `netlify.toml`, and covers the consent banner and contact form hydration.
+Google Tag and the Netlify Forms POST are intercepted, so nothing leaves the machine.
 
 ## Deployment
 

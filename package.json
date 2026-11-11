@@ -17,13 +17,15 @@
     "lint": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",
     "prepare": "husky",
-    "lighthouse": "lhci autorun"
+    "lighthouse": "lhci autorun",
+    "e2e": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@fontsource/archivo": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@lhci/cli": "^0.16.0",
+    "@playwright/test": "^1.65.0",
     "@tailwindcss/vite": "^4.3.4",
     "@types/jsdom": "^30.0.0",
     "@types/semver": "^7.8.0",

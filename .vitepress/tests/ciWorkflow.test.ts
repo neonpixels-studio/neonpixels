@@ -114,3 +114,28 @@ describe("ci.yml single site build", () => {
     );
   });
 });
+
+describe("ci.yml e2e job", () => {
+  const jobs = () => findTopLevelBlock("jobs") ?? "";
+  const e2eJob = () =>
+    /^ {2}e2e:[\s\S]*?(?=^ {2}\S|(?![\s\S]))/m.exec(jobs())?.[0] ?? "";
+
+  it("exists and runs the e2e script", () => {
+    expect(e2eJob()).toMatch(/run: npm run e2e\s*$/m);
+  });
+
+  it("reuses the ci build artifact instead of building again", () => {
+    const job = e2eJob();
+    expect(job).toMatch(/needs: \[ci\]/);
+    expect(job).toMatch(/name: site-build/);
+    expect(job).not.toMatch(/npm run build/);
+  });
+
+  it("runs on pull requests only, where the artifact is uploaded", () => {
+    expect(e2eJob()).toMatch(/if: github\.event_name == 'pull_request'/);
+  });
+
+  it("installs only chromium", () => {
+    expect(e2eJob()).toMatch(/playwright install --with-deps chromium\s*$/m);
+  });
+});
