@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
+import { readE2ePort } from "./e2e/support/e2ePort.ts";
 
-const PORT = Number(process.env.E2E_PORT ?? 4321);
+const PORT = readE2ePort();
 
 export default defineConfig({
   testDir: "./e2e",

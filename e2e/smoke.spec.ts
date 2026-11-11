@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { loadEnforcedCsp } from "./support/enforcedCsp.ts";
 import { trackCspViolations } from "./support/cspViolations.ts";
+import { trackPageErrors } from "./support/pageErrors.ts";
 
 const GTAG_URL_PATTERN = "https://www.googletagmanager.com/gtag/js**";
 const CONSENT_STORAGE_KEY = "np-analytics-consent";
@@ -57,6 +58,7 @@ test.describe("consent banner", () => {
     page,
   }) => {
     const cspViolations = await trackCspViolations(page);
+    const pageErrors = trackPageErrors(page);
     const gtagRequests = await stubGtag(page);
 
     await page.goto("/");
@@ -67,6 +69,8 @@ test.describe("consent banner", () => {
     await consentBanner(page).getByRole("button", { name: "Accept" }).click();
     await expect(consentBanner(page)).toBeHidden();
     await expect.poll(() => gtagRequests.length).toBe(1);
+    await page.waitForLoadState("networkidle");
+    expect(gtagRequests).toHaveLength(1);
     await expect.poll(() => readStoredConsent(page)).toBe("accepted");
 
     await page.reload();
@@ -75,13 +79,17 @@ test.describe("consent banner", () => {
       page.getByRole("button", { name: "Analytics choice" }),
     ).toBeVisible();
     await expect.poll(() => gtagRequests.length).toBe(2);
+    await page.waitForLoadState("networkidle");
+    expect(gtagRequests).toHaveLength(2);
     expect(cspViolations).toEqual([]);
+    expect(pageErrors).toEqual([]);
   });
 
   test("decline never loads gtag and the choice survives a reload", async ({
     page,
   }) => {
     const cspViolations = await trackCspViolations(page);
+    const pageErrors = trackPageErrors(page);
     const gtagRequests = await stubGtag(page);
 
     await page.goto("/");
@@ -96,6 +104,7 @@ test.describe("consent banner", () => {
     await expect(consentBanner(page)).toBeHidden();
     expect(gtagRequests).toHaveLength(0);
     expect(cspViolations).toEqual([]);
+    expect(pageErrors).toEqual([]);
   });
 });
 
@@ -104,6 +113,7 @@ test.describe("contact form", () => {
     page,
   }) => {
     const cspViolations = await trackCspViolations(page);
+    const pageErrors = trackPageErrors(page);
     await stubGtag(page);
     const formPosts = await interceptFormPosts(page);
 
@@ -129,12 +139,14 @@ test.describe("contact form", () => {
     expect(page.url()).toBe(startUrl);
     expect(formPosts).toEqual([]);
     expect(cspViolations).toEqual([]);
+    expect(pageErrors).toEqual([]);
   });
 
   test("valid submit posts to the intercepted endpoint and shows success", async ({
     page,
   }) => {
     const cspViolations = await trackCspViolations(page);
+    const pageErrors = trackPageErrors(page);
     await stubGtag(page);
     const formPosts = await interceptFormPosts(page);
 
@@ -150,5 +162,6 @@ test.describe("contact form", () => {
     expect(formPosts[0]).toContain("form-name=contact");
     expect(formPosts[0]).toContain("email=dev%40example.com");
     expect(cspViolations).toEqual([]);
+    expect(pageErrors).toEqual([]);
   });
 });

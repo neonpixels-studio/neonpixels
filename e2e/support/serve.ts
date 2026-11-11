@@ -2,11 +2,12 @@
 // production CSP. Run `npm run build` first.
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { readE2ePort } from "./e2ePort.ts";
 import { loadEnforcedCsp } from "./enforcedCsp.ts";
 import { createStaticServer } from "./staticServer.ts";
 
 const DIST_DIR = resolve(process.cwd(), ".vitepress/dist");
-const PORT = Number(process.env.E2E_PORT ?? 4321);
+const PORT = readE2ePort();
 
 if (!existsSync(resolve(DIST_DIR, "index.html"))) {
   console.error(`No build found at ${DIST_DIR}; run "npm run build" first.`);
