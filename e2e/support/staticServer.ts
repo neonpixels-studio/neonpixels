@@ -22,9 +22,11 @@ const NOT_FOUND_ERROR_CODES = new Set(["ENOENT", "EISDIR", "ENOTDIR"]);
 
 function decodeUrlPath(rawUrl: string | undefined) {
   try {
-    return decodeURIComponent(
+    const decoded = decodeURIComponent(
       new URL(rawUrl ?? "/", "http://localhost").pathname,
     );
+    // A NUL byte makes readFile throw; treat it as a bad path, not a server error.
+    return decoded.includes("\0") ? null : decoded;
   } catch {
     return null;
   }

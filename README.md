@@ -51,6 +51,7 @@ the built site (run `npm run build` first; first-time setup is
 `npx playwright install chromium`). It serves `.vitepress/dist` with the enforcing
 CSP read from `netlify.toml`, and covers the consent banner and contact form hydration.
 Google Tag and the Netlify Forms POST are intercepted, so nothing leaves the machine.
+The server listens on port 4321; set `E2E_PORT` to change it.
 
 ## Deployment
 

@@ -73,9 +73,9 @@ describe("createStaticServer", () => {
     }
   });
 
-  it("answers 404 for a malformed percent-encoding instead of crashing", async () => {
-    const response = await fetch(`${baseUrl}/%E0%A4%A`);
-    expect(response.status).toBe(404);
+  it("answers 404 for malformed or NUL-byte paths instead of crashing", async () => {
+    expect(await rawGetStatus("/%E0%A4%A")).toBe(404);
+    expect(await rawGetStatus("/%00")).toBe(404);
     expect((await fetch(`${baseUrl}/`)).status).toBe(200);
   });
 });

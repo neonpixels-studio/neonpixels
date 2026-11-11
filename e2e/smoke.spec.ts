@@ -1,7 +1,5 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { readEnforcedCsp } from "./support/enforcedCsp.ts";
+import { loadEnforcedCsp } from "./support/enforcedCsp.ts";
 import { trackCspViolations } from "./support/cspViolations.ts";
 
 const GTAG_URL_PATTERN = "https://www.googletagmanager.com/gtag/js**";
@@ -51,11 +49,7 @@ function consentBanner(page: Page) {
 test("serves the production CSP header", async ({ page }) => {
   const response = await page.goto("/");
   const csp = response?.headers()["content-security-policy"] ?? "";
-  const netlifyToml = readFileSync(
-    resolve(process.cwd(), "netlify.toml"),
-    "utf8",
-  );
-  expect(csp).toBe(readEnforcedCsp(netlifyToml));
+  expect(csp).toBe(loadEnforcedCsp());
 });
 
 test.describe("consent banner", () => {
@@ -67,6 +61,7 @@ test.describe("consent banner", () => {
 
     await page.goto("/");
     await expect(consentBanner(page)).toBeVisible();
+    await page.waitForLoadState("networkidle");
     expect(gtagRequests).toHaveLength(0);
 
     await consentBanner(page).getByRole("button", { name: "Accept" }).click();
