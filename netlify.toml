@@ -56,7 +56,7 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=(), accelerometer=(), gyroscope=(), magnetometer=(), midi=(), serial=(), hid=(), bluetooth=(), display-capture=(), xr-spatial-tracking=()"
     Strict-Transport-Security = "max-age=63072000; includeSubDomains"
     # Same-origin isolation for this same-origin static site: COOP prevents
     # cross-origin windows from holding a reference to this one (no OAuth-style
