@@ -43,7 +43,7 @@ function buildPngHeader({
 
 function headMetaContent(property: string) {
   const entry = (config.head ?? []).find(
-    ([tag, attrs]) => tag === "meta" && attrs?.property === property,
+    ([tag, attributes]) => tag === "meta" && attributes?.property === property,
   );
   if (!entry) {
     throw new Error(`No <meta property="${property}"> in VitePress head`);
@@ -108,7 +108,10 @@ describe("readPngDimensions", () => {
 describe("declared og:image dimensions", () => {
   it("match the real image file", () => {
     const imageUrl = new URL(headMetaContent("og:image"));
-    const imagePath = resolve(PUBLIC_DIR, `.${imageUrl.pathname}`);
+    const imagePath = resolve(
+      PUBLIC_DIR,
+      `.${decodeURIComponent(imageUrl.pathname)}`,
+    );
     const actual = readPngDimensions(readFileSync(imagePath));
 
     expect({

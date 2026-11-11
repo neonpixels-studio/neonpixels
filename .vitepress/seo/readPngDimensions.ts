@@ -10,6 +10,10 @@ export const WIDTH_OFFSET = 16;
 export const HEIGHT_OFFSET = 20;
 export const IHDR_END_OFFSET = 24;
 
+function invalidPng(reason: string) {
+  return new Error(`Not a valid PNG: ${reason}`);
+}
+
 function hasPngSignature(bytes: Uint8Array) {
   return PNG_SIGNATURE.every((byte, index) => bytes[index] === byte);
 }
@@ -27,10 +31,10 @@ export function readPngDimensions(bytes: Uint8Array): PngDimensions {
     );
   }
   if (!hasPngSignature(bytes)) {
-    throw new Error("Not a valid PNG: missing PNG signature");
+    throw invalidPng("missing PNG signature");
   }
   if (readChunkType(bytes) !== IHDR_TYPE) {
-    throw new Error("Not a valid PNG: first chunk is not IHDR");
+    throw invalidPng("first chunk is not IHDR");
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   return {
