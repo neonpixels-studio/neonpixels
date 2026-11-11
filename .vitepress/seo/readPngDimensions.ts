@@ -3,12 +3,12 @@ export interface PngDimensions {
   height: number;
 }
 
-const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+export const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const IHDR_TYPE = "IHDR";
-const IHDR_TYPE_OFFSET = 12;
-const WIDTH_OFFSET = 16;
-const HEIGHT_OFFSET = 20;
-const IHDR_END_OFFSET = 24;
+export const IHDR_TYPE_OFFSET = 12;
+export const WIDTH_OFFSET = 16;
+export const HEIGHT_OFFSET = 20;
+export const IHDR_END_OFFSET = 24;
 
 function hasPngSignature(bytes: Uint8Array) {
   return PNG_SIGNATURE.every((byte, index) => bytes[index] === byte);

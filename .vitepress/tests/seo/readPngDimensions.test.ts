@@ -3,31 +3,41 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import config from "../../config";
-import { readPngDimensions } from "../../seo/readPngDimensions";
+import {
+  HEIGHT_OFFSET,
+  IHDR_END_OFFSET,
+  IHDR_TYPE_OFFSET,
+  PNG_SIGNATURE,
+  WIDTH_OFFSET,
+  readPngDimensions,
+} from "../../seo/readPngDimensions";
 
 const PUBLIC_DIR = resolve(process.cwd(), "public");
+const IHDR_LENGTH_OFFSET = 8;
+const IHDR_DATA_LENGTH = 13;
+const OFFSET_PADDING = 8;
 
 function buildPngHeader({
   width,
   height,
   chunkType = "IHDR",
-  signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  signature = PNG_SIGNATURE,
 }: {
   width: number;
   height: number;
   chunkType?: string;
   signature?: number[];
 }) {
-  const bytes = new Uint8Array(33);
+  const bytes = new Uint8Array(IHDR_END_OFFSET + 9);
   const view = new DataView(bytes.buffer);
   bytes.set(signature, 0);
-  view.setUint32(8, 13);
+  view.setUint32(IHDR_LENGTH_OFFSET, IHDR_DATA_LENGTH);
   bytes.set(
     [...chunkType].map((char) => char.charCodeAt(0)),
-    12,
+    IHDR_TYPE_OFFSET,
   );
-  view.setUint32(16, width);
-  view.setUint32(20, height);
+  view.setUint32(WIDTH_OFFSET, width);
+  view.setUint32(HEIGHT_OFFSET, height);
   return bytes;
 }
 
@@ -38,7 +48,11 @@ function headMetaContent(property: string) {
   if (!entry) {
     throw new Error(`No <meta property="${property}"> in VitePress head`);
   }
-  return String((entry[1] as Record<string, string>).content);
+  const content = (entry[1] as Record<string, unknown>).content;
+  if (typeof content !== "string") {
+    throw new Error(`<meta property="${property}"> has no content`);
+  }
+  return content;
 }
 
 describe("readPngDimensions", () => {
@@ -65,8 +79,29 @@ describe("readPngDimensions", () => {
     expect(() => readPngDimensions(bytes)).toThrow(/IHDR/);
   });
 
-  it("throws on truncated input", () => {
-    expect(() => readPngDimensions(new Uint8Array(10))).toThrow(/too short/);
+  it("throws one byte short of a full IHDR header", () => {
+    const bytes = buildPngHeader({ width: 1200, height: 630 });
+    expect(() =>
+      readPngDimensions(bytes.subarray(0, IHDR_END_OFFSET - 1)),
+    ).toThrow(/too short/);
+  });
+
+  it("accepts exactly a full IHDR header", () => {
+    const bytes = buildPngHeader({ width: 1200, height: 630 });
+    expect(readPngDimensions(bytes.subarray(0, IHDR_END_OFFSET))).toEqual({
+      width: 1200,
+      height: 630,
+    });
+  });
+
+  it("honors a non-zero byteOffset on the input view", () => {
+    const header = buildPngHeader({ width: 1200, height: 630 });
+    const padded = new Uint8Array(header.length + OFFSET_PADDING);
+    padded.set(header, OFFSET_PADDING);
+    expect(readPngDimensions(padded.subarray(OFFSET_PADDING))).toEqual({
+      width: 1200,
+      height: 630,
+    });
   });
 });
 
