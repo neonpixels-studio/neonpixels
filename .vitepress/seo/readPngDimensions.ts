@@ -26,9 +26,7 @@ function readChunkType(bytes: Uint8Array) {
 
 export function readPngDimensions(bytes: Uint8Array): PngDimensions {
   if (bytes.length < IHDR_END_OFFSET) {
-    throw new Error(
-      "Not a valid PNG: file is too short to contain an IHDR chunk",
-    );
+    throw invalidPng("file is too short to contain an IHDR chunk");
   }
   if (!hasPngSignature(bytes)) {
     throw invalidPng("missing PNG signature");
