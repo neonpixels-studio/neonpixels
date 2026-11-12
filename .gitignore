@@ -5,3 +5,5 @@ dist
 .DS_Store
 .netlify
 .lighthouseci
+test-results
+playwright-report

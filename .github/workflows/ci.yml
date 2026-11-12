@@ -104,6 +104,55 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Real-browser smoke test of the built site (consent banner, contact form)
+  # under the production CSP. Chromium only. Reuses the build artifact from the
+  # ci job (which only uploads it on PR runs), so like lighthouse it runs on
+  # PRs only and the site is still compiled exactly once.
+  e2e:
+    needs: [ci]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read .nvmrc
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.nvmrc.outputs.version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download build output
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: site-build
+          path: .vitepress/dist
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E
+        run: npm run e2e
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: playwright-traces
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
   # Error-level: every assertion in .lighthouserc.json is `error`, so scores
   # below threshold fail the job. Audits the
   # production static build from the ci job (never a dev server). Google

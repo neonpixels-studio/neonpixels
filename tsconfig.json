@@ -7,6 +7,9 @@
     "jsx": "preserve",
     "lib": ["ESNext", "DOM"],
     "noEmit": true,
+    // e2e/support runs directly under Node (type stripping), which requires
+    // explicit .ts extensions on relative imports. Safe because nothing emits.
+    "allowImportingTsExtensions": true,
     // Skip type-checking bundled .d.ts files: vitepress ships a self-referential
     // `Token` type and @vueuse/core references Web Bluetooth globals, neither of
     // which we can fix and neither of which lives in our code.
