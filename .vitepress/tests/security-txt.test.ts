@@ -6,7 +6,7 @@ const SECURITY_TXT = resolve(
   import.meta.dirname,
   "../../public/.well-known/security.txt",
 );
-const EXPECTED_EMAIL_CONTACT = "mailto:info@grimicorn.dev";
+const EXPECTED_EMAIL_CONTACT = "mailto:info@neonpixels.dev";
 const EXPECTED_ADVISORY_CONTACT =
   "https://github.com/neonpixels-studio/grimicorn/security/advisories/new";
 const EXPECTED_CANONICAL = "https://neonpixels.dev/.well-known/security.txt";
