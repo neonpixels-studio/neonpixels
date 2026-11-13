@@ -6,7 +6,8 @@ const SECURITY_TXT = resolve(
   import.meta.dirname,
   "../../public/.well-known/security.txt",
 );
-const EXPECTED_CONTACT =
+const EXPECTED_EMAIL_CONTACT = "mailto:info@grimicorn.dev";
+const EXPECTED_ADVISORY_CONTACT =
   "https://github.com/neonpixels-studio/grimicorn/security/advisories/new";
 const EXPECTED_CANONICAL = "https://neonpixels.dev/.well-known/security.txt";
 const RENEWAL_WINDOW_DAYS = 30;
@@ -32,8 +33,11 @@ function readFields(content: string): Map<string, string[]> {
 describe("/.well-known/security.txt (RFC 9116)", () => {
   const fields = readFields(readFileSync(SECURITY_TXT, "utf8"));
 
-  it("lists the studio's private vulnerability reporting URL as Contact", () => {
-    expect(fields.get("contact")).toEqual([EXPECTED_CONTACT]);
+  it("lists the mailto Contact first, then the advisory URL", () => {
+    expect(fields.get("contact")).toEqual([
+      EXPECTED_EMAIL_CONTACT,
+      EXPECTED_ADVISORY_CONTACT,
+    ]);
   });
 
   it("declares the production URL of the file as Canonical", () => {
