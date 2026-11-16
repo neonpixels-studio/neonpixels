@@ -1,5 +1,7 @@
 if ! command -v gitleaks >/dev/null 2>&1; then
-  echo "gitleaks is not installed; install it (e.g. 'brew install gitleaks') to enable the pre-commit secret scan." >&2
-  exit 1
+  echo "WARNING: gitleaks is not installed, so the pre-commit secret scan was SKIPPED." >&2
+  echo "Install it to enable the local scan (e.g. 'brew install gitleaks'); see https://github.com/gitleaks/gitleaks#installing" >&2
+  echo "CI runs gitleaks on pull requests and pushes to main (.github/workflows/security.yml), but a branch pushed before a PR is opened is not scanned: check your staged changes for secrets yourself." >&2
+  exit 0
 fi
 gitleaks git --staged --redact --config .gitleaks.toml

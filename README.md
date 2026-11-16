@@ -7,6 +7,7 @@ Built with [VitePress](https://vitepress.dev) and a fully custom [Tailwind CSS v
 ## Requirements
 
 - Node.js — the version pinned in [`.nvmrc`](.nvmrc) (`nvm use`)
+- [gitleaks](https://github.com/gitleaks/gitleaks#installing) (optional, e.g. `brew install gitleaks`) — the pre-commit hook scans staged changes for secrets. Without it the hook prints a warning and skips the scan; CI runs gitleaks on pull requests and pushes to `main`, but branches pushed before a PR is opened are not scanned
 
 ## Getting started
 
