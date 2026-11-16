@@ -1037,17 +1037,19 @@ describe("unhashed /images asset caching", () => {
     return block.map((line) => line.trim());
   }
 
+  const IMAGES_PATH = "/images/*";
   const handWrittenHeaders = readFileSync(HAND_WRITTEN_HEADERS_PATH, "utf8");
+  const imagesBlock = readHeaderBlock(handWrittenHeaders, IMAGES_PATH);
 
   it("gives /images/* a moderate max-age with stale-while-revalidate", () => {
-    expect(readHeaderBlock(handWrittenHeaders, "/images/*")).toContain(
+    expect(imagesBlock).toContain(
       `Cache-Control: public, max-age=${IMAGES_MAX_AGE_SECONDS}, stale-while-revalidate=${IMAGES_STALE_WHILE_REVALIDATE_SECONDS}`,
     );
   });
 
   // The URLs are not content-hashed, so immutable would pin stale bytes.
   it("never marks /images/* immutable", () => {
-    const block = readHeaderBlock(handWrittenHeaders, "/images/*").join("\n");
+    const block = imagesBlock.join("\n");
     expect(block).not.toMatch(/immutable/i);
   });
 
@@ -1055,9 +1057,7 @@ describe("unhashed /images asset caching", () => {
   // come from other blocks that Netlify merges, so overriding them here
   // would drop them for these files.
   it("sets nothing but Cache-Control in the /images/* block", () => {
-    const names = readHeaderBlock(handWrittenHeaders, "/images/*").map((line) =>
-      line.split(":")[0].toLowerCase(),
-    );
+    const names = imagesBlock.map((line) => line.split(":")[0].toLowerCase());
     expect(names).toEqual(["cache-control"]);
   });
 
@@ -1068,7 +1068,19 @@ describe("unhashed /images asset caching", () => {
   });
 
   it("fails the block reader when the rule is missing", () => {
-    expect(() => readHeaderBlock("/assets/*\n  X: y", "/images/*")).toThrow();
+    expect(() => readHeaderBlock("/assets/*\n  X: y", IMAGES_PATH)).toThrow(
+      "public/_headers has no /images/* block",
+    );
+  });
+
+  it("reads a block that runs to the end of the file", () => {
+    expect(readHeaderBlock("/images/*\n  A: b", IMAGES_PATH)).toEqual(["A: b"]);
+  });
+
+  it("ends a block at the blank line before the next rule", () => {
+    expect(
+      readHeaderBlock("/images/*\n  A: b\n\n/x\n  C: d", IMAGES_PATH),
+    ).toEqual(["A: b"]);
   });
 });
 
