@@ -1,6 +1,12 @@
 // @vitest-environment node
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import type { AddressInfo } from "node:net";
 import { request, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -18,6 +24,7 @@ beforeAll(async () => {
   mkdirSync(distDir);
   writeFileSync(join(distDir, "index.html"), "<p>home</p>");
   writeFileSync(join(distDir, "privacy.html"), "<p>privacy</p>");
+  writeFileSync(join(distDir, "404.html"), "<p>not found page</p>");
   writeFileSync(join(workspace, "secret.txt"), "secret");
   server = createStaticServer(distDir, TEST_CSP);
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
@@ -44,6 +51,20 @@ function rawGetStatus(path: string) {
   });
 }
 
+async function getFromServer(distDir: string, path: string) {
+  const isolatedServer = createStaticServer(distDir, TEST_CSP);
+  await new Promise<void>((done) =>
+    isolatedServer.listen(0, "127.0.0.1", done),
+  );
+  try {
+    const { port } = isolatedServer.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${port}${path}`);
+    return { response, body: await response.text() };
+  } finally {
+    await new Promise((done) => isolatedServer.close(done));
+  }
+}
+
 describe("createStaticServer", () => {
   it("serves index.html at / with the CSP header", async () => {
     const response = await fetch(`${baseUrl}/`);
@@ -63,6 +84,39 @@ describe("createStaticServer", () => {
     expect(response.headers.get("content-security-policy")).toBe(TEST_CSP);
   });
 
+  it("serves the built 404.html with a 404 status for missing paths", async () => {
+    const response = await fetch(`${baseUrl}/does-not-exist`);
+    expect(response.status).toBe(404);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(await response.text()).toBe("<p>not found page</p>");
+    expect(response.headers.get("content-security-policy")).toBe(TEST_CSP);
+  });
+
+  it("falls back to plain text when the build has no 404.html", async () => {
+    const bareDist = join(workspace, "bare-dist");
+    mkdirSync(bareDist);
+    const { response, body } = await getFromServer(bareDist, "/missing");
+    expect(response.status).toBe(404);
+    expect(response.headers.get("content-type")).toContain("text/plain");
+    expect(body).toBe("Not found");
+    expect(response.headers.get("content-security-policy")).toBe(TEST_CSP);
+  });
+
+  // root can read a chmod 000 file, so the failure cannot be provoked there.
+  it.skipIf(process.getuid?.() === 0)(
+    "answers 500 when 404.html exists but cannot be read",
+    async () => {
+      const brokenDist = join(workspace, "broken-dist");
+      mkdirSync(brokenDist);
+      const pagePath = join(brokenDist, "404.html");
+      writeFileSync(pagePath, "<p>hidden</p>");
+      chmodSync(pagePath, 0o000);
+      const { response, body } = await getFromServer(brokenDist, "/missing");
+      expect(response.status).toBe(500);
+      expect(body).toBe("Server error");
+    },
+  );
+
   it("refuses path traversal out of the dist directory", async () => {
     for (const path of [
       "/../secret.txt",
@@ -75,6 +129,8 @@ describe("createStaticServer", () => {
 
   it("answers 404 for malformed or NUL-byte paths instead of crashing", async () => {
     expect(await rawGetStatus("/%E0%A4%A")).toBe(404);
+    const malformed = await fetch(`${baseUrl}/%E0%A4%A`);
+    expect(await malformed.text()).toBe("<p>not found page</p>");
     expect(await rawGetStatus("/%00")).toBe(404);
     expect((await fetch(`${baseUrl}/`)).status).toBe(200);
   });

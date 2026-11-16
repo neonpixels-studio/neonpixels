@@ -19,6 +19,8 @@ const REWRITES: Record<string, string> = { "/privacy": "/privacy.html" };
 // A missing file or a directory path is a plain 404; any other read failure
 // (permissions, I/O) is a broken build output and must surface as a 500.
 const NOT_FOUND_ERROR_CODES = new Set(["ENOENT", "EISDIR", "ENOTDIR"]);
+// Netlify serves the built 404.html with a 404 status for any missing path.
+const NOT_FOUND_PAGE = "/404.html";
 
 function decodeUrlPath(rawUrl: string | undefined) {
   try {
@@ -56,10 +58,37 @@ function send(
   response.end(body);
 }
 
-function sendFailure(response: ServerResponse, csp: string, error: unknown) {
-  const code = (error as { code?: string }).code ?? "";
-  if (NOT_FOUND_ERROR_CODES.has(code)) {
-    send(response, 404, csp, "text/plain", "Not found");
+function errorCode(error: unknown) {
+  return (error as { code?: string }).code ?? "";
+}
+
+async function sendNotFound(
+  response: ServerResponse,
+  csp: string,
+  distDir: string,
+) {
+  try {
+    const body = await readFile(join(distDir, NOT_FOUND_PAGE));
+    send(response, 404, csp, CONTENT_TYPES[".html"], body);
+  } catch (error) {
+    // No built 404.html (e.g. a bare test fixture): fall back to plain text.
+    if (NOT_FOUND_ERROR_CODES.has(errorCode(error))) {
+      send(response, 404, csp, "text/plain", "Not found");
+      return;
+    }
+    console.error("e2e static server failed to read the 404 page", error);
+    send(response, 500, csp, "text/plain", "Server error");
+  }
+}
+
+async function sendFailure(
+  response: ServerResponse,
+  csp: string,
+  distDir: string,
+  error: unknown,
+) {
+  if (NOT_FOUND_ERROR_CODES.has(errorCode(error))) {
+    await sendNotFound(response, csp, distDir);
     return;
   }
   console.error("e2e static server failed to read a file", error);
@@ -72,7 +101,7 @@ export function createStaticServer(distDir: string, csp: string): Server {
     const urlPath = decodeUrlPath(request.url);
     const filePath = urlPath === null ? null : resolveFilePath(root, urlPath);
     if (!filePath) {
-      send(response, 404, csp, "text/plain", "Not found");
+      await sendNotFound(response, csp, root);
       return;
     }
     try {
@@ -81,7 +110,7 @@ export function createStaticServer(distDir: string, csp: string): Server {
         CONTENT_TYPES[extname(filePath)] ?? DEFAULT_CONTENT_TYPE;
       send(response, 200, csp, contentType, body);
     } catch (error) {
-      sendFailure(response, csp, error);
+      await sendFailure(response, csp, root, error);
     }
   });
 }
