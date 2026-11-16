@@ -6,8 +6,8 @@ import config from "../../config";
 import {
   HEIGHT_OFFSET,
   IHDR_DATA_LENGTH,
-  IHDR_LENGTH_OFFSET,
   IHDR_END_OFFSET,
+  IHDR_LENGTH_OFFSET,
   IHDR_TYPE_OFFSET,
   PNG_MAX_DIMENSION,
   PNG_SIGNATURE,
@@ -15,6 +15,8 @@ import {
   readPngDimensions,
 } from "../../seo/readPngDimensions";
 
+const SPEC_IHDR_DATA_LENGTH = 13;
+const SPEC_MAX_DIMENSION = 2 ** 31 - 1;
 const PUBLIC_DIR = resolve(process.cwd(), "public");
 const OFFSET_PADDING = 8;
 const DIMENSION_BYTES = 8;
@@ -27,7 +29,7 @@ function buildPngHeader({
   height,
   chunkType = "IHDR",
   signature = PNG_SIGNATURE,
-  ihdrLength = IHDR_DATA_LENGTH,
+  ihdrLength = SPEC_IHDR_DATA_LENGTH,
 }: {
   width: number;
   height: number;
@@ -87,27 +89,35 @@ describe("readPngDimensions", () => {
   it.each([
     ["width", { width: 0, height: 630 }],
     ["height", { width: 1200, height: 0 }],
-  ])("throws when %s is zero", (_name, dimensions) => {
+  ])("throws when %s is zero", (name, dimensions) => {
     expect(() => readPngDimensions(buildPngHeader(dimensions))).toThrow(
-      /greater than zero/,
+      new RegExp(`IHDR ${name} must be greater than zero`),
     );
   });
 
   it.each([
-    ["width", { width: PNG_MAX_DIMENSION + 1, height: 630 }],
-    ["height", { width: 1200, height: PNG_MAX_DIMENSION + 1 }],
-  ])("throws when %s exceeds the spec maximum", (_name, dimensions) => {
+    ["width", { width: SPEC_MAX_DIMENSION + 1, height: 630 }],
+    ["height", { width: 1200, height: SPEC_MAX_DIMENSION + 1 }],
+  ])("throws when %s exceeds the spec maximum", (name, dimensions) => {
     expect(() => readPngDimensions(buildPngHeader(dimensions))).toThrow(
-      /must not exceed/,
+      new RegExp(`IHDR ${name} must not exceed`),
     );
   });
 
+  it("keeps the exported limits in line with the PNG spec", () => {
+    expect(PNG_MAX_DIMENSION).toBe(SPEC_MAX_DIMENSION);
+    expect(IHDR_DATA_LENGTH).toBe(SPEC_IHDR_DATA_LENGTH);
+  });
+
   it("accepts dimensions at the spec maximum", () => {
-    const dimensions = { width: PNG_MAX_DIMENSION, height: PNG_MAX_DIMENSION };
+    const dimensions = {
+      width: SPEC_MAX_DIMENSION,
+      height: SPEC_MAX_DIMENSION,
+    };
     expect(readPngDimensions(buildPngHeader(dimensions))).toEqual(dimensions);
   });
 
-  it.each([IHDR_DATA_LENGTH - 1, IHDR_DATA_LENGTH + 1, 0])(
+  it.each([SPEC_IHDR_DATA_LENGTH - 1, SPEC_IHDR_DATA_LENGTH + 1, 0])(
     "throws when the IHDR length is %i",
     (ihdrLength) => {
       const bytes = buildPngHeader({ ...SOCIAL_CARD_DIMENSIONS, ihdrLength });
