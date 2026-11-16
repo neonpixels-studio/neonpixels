@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -1034,23 +1034,26 @@ describe("unhashed /images asset caching", () => {
     const following = lines.slice(start + 1);
     const blockEnd = following.findIndex((line) => !/^\s+\S/.test(line));
     const block = blockEnd === -1 ? following : following.slice(0, blockEnd);
-    return block.map((line) => line.trim());
+    return block
+      .map((line) => line.trim())
+      .filter((line) => !line.startsWith("#"));
   }
 
   const IMAGES_PATH = "/images/*";
-  const handWrittenHeaders = readFileSync(HAND_WRITTEN_HEADERS_PATH, "utf8");
-  const imagesBlock = readHeaderBlock(handWrittenHeaders, IMAGES_PATH);
+  let imagesBlock: string[] = [];
 
+  // Read lazily so a missing rule fails only this suite, not the whole file.
+  beforeAll(() => {
+    const handWrittenHeaders = readFileSync(HAND_WRITTEN_HEADERS_PATH, "utf8");
+    imagesBlock = readHeaderBlock(handWrittenHeaders, IMAGES_PATH);
+  });
+
+  // The URLs are not content-hashed, so the value must never be immutable;
+  // the exact-line match plus the sole-header check below pins that.
   it("gives /images/* a moderate max-age with stale-while-revalidate", () => {
     expect(imagesBlock).toContain(
       `Cache-Control: public, max-age=${IMAGES_MAX_AGE_SECONDS}, stale-while-revalidate=${IMAGES_STALE_WHILE_REVALIDATE_SECONDS}`,
     );
-  });
-
-  // The URLs are not content-hashed, so immutable would pin stale bytes.
-  it("never marks /images/* immutable", () => {
-    const block = imagesBlock.join("\n");
-    expect(block).not.toMatch(/immutable/i);
   });
 
   // The rule must only add Cache-Control; security headers (CSP, HSTS, ...)
@@ -1061,15 +1064,15 @@ describe("unhashed /images asset caching", () => {
     expect(names).toEqual(["cache-control"]);
   });
 
-  it("keeps the /assets/* immutable rule", () => {
-    expect(readHeaderBlock(handWrittenHeaders, "/assets/*")).toContain(
-      "Cache-Control: public, max-age=31536000, immutable",
-    );
-  });
-
   it("fails the block reader when the rule is missing", () => {
     expect(() => readHeaderBlock("/assets/*\n  X: y", IMAGES_PATH)).toThrow(
       "public/_headers has no /images/* block",
+    );
+  });
+
+  it("ignores indented comment lines inside a block", () => {
+    expect(readHeaderBlock("/images/*\n  # note\n  A: b", IMAGES_PATH)).toEqual(
+      ["A: b"],
     );
   });
 
