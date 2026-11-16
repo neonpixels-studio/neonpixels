@@ -1018,6 +1018,60 @@ describe("shipped immutable asset caching", () => {
   });
 });
 
+describe("unhashed /images asset caching", () => {
+  const SECONDS_PER_DAY = 86_400;
+  const IMAGES_MAX_AGE_SECONDS = SECONDS_PER_DAY;
+  const IMAGES_STALE_WHILE_REVALIDATE_SECONDS = 7 * SECONDS_PER_DAY;
+
+  // Returns the indented header lines under a path rule in _headers, so the
+  // assertions read one block rather than the whole file.
+  function readHeaderBlock(headersText: string, path: string) {
+    const lines = headersText.split("\n");
+    const start = lines.findIndex((line) => line.trim() === path);
+    if (start === -1) {
+      throw new Error(`public/_headers has no ${path} block`);
+    }
+    const following = lines.slice(start + 1);
+    const blockEnd = following.findIndex((line) => !/^\s+\S/.test(line));
+    const block = blockEnd === -1 ? following : following.slice(0, blockEnd);
+    return block.map((line) => line.trim());
+  }
+
+  const handWrittenHeaders = readFileSync(HAND_WRITTEN_HEADERS_PATH, "utf8");
+
+  it("gives /images/* a moderate max-age with stale-while-revalidate", () => {
+    expect(readHeaderBlock(handWrittenHeaders, "/images/*")).toContain(
+      `Cache-Control: public, max-age=${IMAGES_MAX_AGE_SECONDS}, stale-while-revalidate=${IMAGES_STALE_WHILE_REVALIDATE_SECONDS}`,
+    );
+  });
+
+  // The URLs are not content-hashed, so immutable would pin stale bytes.
+  it("never marks /images/* immutable", () => {
+    const block = readHeaderBlock(handWrittenHeaders, "/images/*").join("\n");
+    expect(block).not.toMatch(/immutable/i);
+  });
+
+  // The rule must only add Cache-Control; security headers (CSP, HSTS, ...)
+  // come from other blocks that Netlify merges, so overriding them here
+  // would drop them for these files.
+  it("sets nothing but Cache-Control in the /images/* block", () => {
+    const names = readHeaderBlock(handWrittenHeaders, "/images/*").map((line) =>
+      line.split(":")[0].toLowerCase(),
+    );
+    expect(names).toEqual(["cache-control"]);
+  });
+
+  it("keeps the /assets/* immutable rule", () => {
+    expect(readHeaderBlock(handWrittenHeaders, "/assets/*")).toContain(
+      "Cache-Control: public, max-age=31536000, immutable",
+    );
+  });
+
+  it("fails the block reader when the rule is missing", () => {
+    expect(() => readHeaderBlock("/assets/*\n  X: y", "/images/*")).toThrow();
+  });
+});
+
 // writeReportOnlyHeaders (.vitepress/csp) already fails loud if the build-time
 // noindex line collides with a *hand-written* header inside its own generated
 // block (see writeReportOnlyHeaders.test.ts), but that check only sees what's
