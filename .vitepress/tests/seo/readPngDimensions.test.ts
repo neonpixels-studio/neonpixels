@@ -5,16 +5,17 @@ import { resolve } from "node:path";
 import config from "../../config";
 import {
   HEIGHT_OFFSET,
+  IHDR_DATA_LENGTH,
+  IHDR_LENGTH_OFFSET,
   IHDR_END_OFFSET,
   IHDR_TYPE_OFFSET,
+  PNG_MAX_DIMENSION,
   PNG_SIGNATURE,
   WIDTH_OFFSET,
   readPngDimensions,
 } from "../../seo/readPngDimensions";
 
 const PUBLIC_DIR = resolve(process.cwd(), "public");
-const IHDR_LENGTH_OFFSET = 8;
-const IHDR_DATA_LENGTH = 13;
 const OFFSET_PADDING = 8;
 const DIMENSION_BYTES = 8;
 const CRC_LENGTH = 4;
@@ -26,16 +27,18 @@ function buildPngHeader({
   height,
   chunkType = "IHDR",
   signature = PNG_SIGNATURE,
+  ihdrLength = IHDR_DATA_LENGTH,
 }: {
   width: number;
   height: number;
   chunkType?: string;
   signature?: number[];
+  ihdrLength?: number;
 }) {
   const bytes = new Uint8Array(IHDR_END_OFFSET + IHDR_TRAILING_BYTES);
   const view = new DataView(bytes.buffer);
   bytes.set(signature, 0);
-  view.setUint32(IHDR_LENGTH_OFFSET, IHDR_DATA_LENGTH);
+  view.setUint32(IHDR_LENGTH_OFFSET, ihdrLength);
   bytes.set(
     [...chunkType].map((char) => char.charCodeAt(0)),
     IHDR_TYPE_OFFSET,
@@ -80,6 +83,37 @@ describe("readPngDimensions", () => {
     const bytes = buildPngHeader({ width: 1, height: 1, chunkType: "IDAT" });
     expect(() => readPngDimensions(bytes)).toThrow(/IHDR/);
   });
+
+  it.each([
+    ["width", { width: 0, height: 630 }],
+    ["height", { width: 1200, height: 0 }],
+  ])("throws when %s is zero", (_name, dimensions) => {
+    expect(() => readPngDimensions(buildPngHeader(dimensions))).toThrow(
+      /greater than zero/,
+    );
+  });
+
+  it.each([
+    ["width", { width: PNG_MAX_DIMENSION + 1, height: 630 }],
+    ["height", { width: 1200, height: PNG_MAX_DIMENSION + 1 }],
+  ])("throws when %s exceeds the spec maximum", (_name, dimensions) => {
+    expect(() => readPngDimensions(buildPngHeader(dimensions))).toThrow(
+      /must not exceed/,
+    );
+  });
+
+  it("accepts dimensions at the spec maximum", () => {
+    const dimensions = { width: PNG_MAX_DIMENSION, height: PNG_MAX_DIMENSION };
+    expect(readPngDimensions(buildPngHeader(dimensions))).toEqual(dimensions);
+  });
+
+  it.each([IHDR_DATA_LENGTH - 1, IHDR_DATA_LENGTH + 1, 0])(
+    "throws when the IHDR length is %i",
+    (ihdrLength) => {
+      const bytes = buildPngHeader({ ...SOCIAL_CARD_DIMENSIONS, ihdrLength });
+      expect(() => readPngDimensions(bytes)).toThrow(/IHDR length/);
+    },
+  );
 
   it("throws one byte short of a full IHDR header", () => {
     const bytes = buildPngHeader(SOCIAL_CARD_DIMENSIONS);
