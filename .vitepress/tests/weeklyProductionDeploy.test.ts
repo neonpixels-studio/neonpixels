@@ -71,13 +71,19 @@ describe("netlify.toml production ignore gate", () => {
   });
 });
 
-function readE2eJob() {
-  const job = /^ {2}e2e:[\s\S]*?(?=^ {2}\S|(?![\s\S]))/m.exec(WORKFLOW)?.[0];
+function readJob(name: string) {
+  const pattern = new RegExp(
+    `^ {2}${name}:[\\s\\S]*?(?=^ {2}\\S|(?![\\s\\S]))`,
+    "m",
+  );
+  const job = pattern.exec(WORKFLOW)?.[0];
   if (!job) {
-    throw new Error("weekly-production-deploy.yml has no e2e job");
+    throw new Error(`weekly-production-deploy.yml has no ${name} job`);
   }
   return job;
 }
+
+const readE2eJob = () => readJob("e2e");
 
 describe("weekly-production-deploy.yml", () => {
   it("runs on a Monday 14:00 UTC schedule", () => {
@@ -88,25 +94,27 @@ describe("weekly-production-deploy.yml", () => {
     const e2eJob = readE2eJob();
     expect(e2eJob).toContain("run: npm run build");
     expect(e2eJob).toMatch(/run: npm run e2e\s*$/m);
-    expect(e2eJob).toContain("if: github.ref == 'refs/heads/main'");
-    expect(WORKFLOW).toMatch(/^ {2}deploy:\n\s+needs: e2e\n/m);
+    expect(readJob("recent")).toContain("if: github.ref == 'refs/heads/main'");
+    expect(readJob("deploy")).toMatch(/needs: \[recent, e2e\]/);
   });
 
-  it("skips the e2e work on a quiet week, mirroring the deploy skip", () => {
+  it("skips the whole e2e job on a quiet week, mirroring the deploy skip", () => {
     const e2eJob = readE2eJob();
-    expect(e2eJob).toContain("deploy-trigger.cjs recent");
+    expect(readJob("recent")).toContain("deploy-trigger.cjs recent");
     expect(e2eJob).toMatch(
-      /name: E2E\n\s+if: steps\.recent\.outputs\.skip != 'true'\n\s+run: npm run e2e/,
+      /needs: recent\n\s+if: needs\.recent\.outputs\.skip != 'true'/,
     );
   });
 
   it("refuses to deploy when main moved, before the hook fires", () => {
-    const guardStart = WORKFLOW.indexOf("- name: Require main unchanged");
-    const triggerStart = WORKFLOW.indexOf("- name: Trigger production deploy");
+    const deployJob = readJob("deploy");
+    const guardStart = deployJob.indexOf("- name: Require main unchanged");
+    const triggerStart = deployJob.indexOf("- name: Trigger production deploy");
     expect(guardStart).toBeGreaterThan(-1);
     expect(guardStart).toBeLessThan(triggerStart);
-    const guard = WORKFLOW.slice(guardStart, triggerStart);
+    const guard = deployJob.slice(guardStart, triggerStart);
     expect(guard).toContain('"$GITHUB_SHA"');
+    expect(guard).toContain("if: steps.recent.outputs.skip != 'true'");
     expect(guard).toContain("exit 1");
   });
 
