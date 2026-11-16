@@ -5,6 +5,10 @@ import { trackPageErrors } from "./support/pageErrors.ts";
 
 const GTAG_URL_PATTERN = "https://www.googletagmanager.com/gtag/js**";
 const CONSENT_STORAGE_KEY = "np-analytics-consent";
+// Chromium logs the 404 navigation itself as a console error; it is the one
+// expected entry on the 404 page.
+const DOCUMENT_404_CONSOLE_ERROR =
+  "Failed to load resource: the server responded with a status of 404 (Not Found)";
 const GTAG_STUB = "window.__gtagStubLoaded = true;";
 
 // Stubs the Google Tag loader so nothing leaves the machine, while still
@@ -163,5 +167,49 @@ test.describe("contact form", () => {
     expect(formPosts[0]).toContain("email=dev%40example.com");
     expect(cspViolations).toEqual([]);
     expect(pageErrors).toEqual([]);
+  });
+});
+
+test.describe("privacy page", () => {
+  test("/privacy rewrite hydrates and reopens the analytics choice", async ({
+    page,
+  }) => {
+    const cspViolations = await trackCspViolations(page);
+    const pageErrors = trackPageErrors(page);
+    await stubGtag(page);
+
+    const response = await page.goto("/privacy");
+    expect(response?.status()).toBe(200);
+    expect(page.url()).toMatch(/\/privacy$/);
+    await expect(
+      page.getByRole("heading", { level: 1, name: /privacy/i }),
+    ).toBeVisible();
+
+    await consentBanner(page).getByRole("button", { name: "Decline" }).click();
+    await expect(consentBanner(page)).toBeHidden();
+    await page.getByRole("button", { name: "Analytics choice" }).click();
+    await expect(consentBanner(page)).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    expect(cspViolations).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+});
+
+test.describe("404 page", () => {
+  test("serves NotFound with a 404 status, hydrates, and echoes the path", async ({
+    page,
+  }) => {
+    const cspViolations = await trackCspViolations(page);
+    const pageErrors = trackPageErrors(page);
+    await stubGtag(page);
+
+    const response = await page.goto("/does-not-exist");
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("404");
+    // The path echo is only filled in on mount, so this proves hydration.
+    await expect(page.locator("main")).toContainText("cat /does-not-exist");
+    await page.waitForLoadState("networkidle");
+    expect(cspViolations).toEqual([]);
+    expect(pageErrors).toEqual([DOCUMENT_404_CONSOLE_ERROR]);
   });
 });
