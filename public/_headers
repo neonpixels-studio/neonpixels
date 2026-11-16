@@ -4,3 +4,10 @@
 # is appended after this (see .vitepress/csp); keep hand-written rules above it.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Files under /images/ (social card, manifest icons, SVG logos) keep stable,
+# unhashed URLs, so immutable would pin stale bytes. A day of freshness skips
+# the revalidation round trip on repeat visits, and stale-while-revalidate lets
+# a changed file refresh in the background for a further week.
+/images/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800

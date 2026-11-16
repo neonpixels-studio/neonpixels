@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -1015,6 +1015,75 @@ describe("shipped immutable asset caching", () => {
     expect(
       countKeyDefinitions(config, "Cache-Control", { caseInsensitive: true }),
     ).toBe(1);
+  });
+});
+
+describe("unhashed /images asset caching", () => {
+  const SECONDS_PER_DAY = 86_400;
+  const IMAGES_MAX_AGE_SECONDS = SECONDS_PER_DAY;
+  const IMAGES_STALE_WHILE_REVALIDATE_SECONDS = 7 * SECONDS_PER_DAY;
+
+  // Returns the indented header lines under a path rule in _headers, so the
+  // assertions read one block rather than the whole file.
+  function readHeaderBlock(headersText: string, path: string) {
+    const lines = headersText.split("\n");
+    const start = lines.findIndex((line) => line.trim() === path);
+    if (start === -1) {
+      throw new Error(`public/_headers has no ${path} block`);
+    }
+    const following = lines.slice(start + 1);
+    const blockEnd = following.findIndex((line) => !/^\s+\S/.test(line));
+    const block = blockEnd === -1 ? following : following.slice(0, blockEnd);
+    return block
+      .map((line) => line.trim())
+      .filter((line) => !line.startsWith("#"));
+  }
+
+  const IMAGES_PATH = "/images/*";
+  let imagesBlock: string[] = [];
+
+  // Read lazily so a missing rule fails only this suite, not the whole file.
+  beforeAll(() => {
+    const handWrittenHeaders = readFileSync(HAND_WRITTEN_HEADERS_PATH, "utf8");
+    imagesBlock = readHeaderBlock(handWrittenHeaders, IMAGES_PATH);
+  });
+
+  // The URLs are not content-hashed, so the value must never be immutable;
+  // the exact-line match plus the sole-header check below pins that.
+  it("gives /images/* a moderate max-age with stale-while-revalidate", () => {
+    expect(imagesBlock).toContain(
+      `Cache-Control: public, max-age=${IMAGES_MAX_AGE_SECONDS}, stale-while-revalidate=${IMAGES_STALE_WHILE_REVALIDATE_SECONDS}`,
+    );
+  });
+
+  // The rule must only add Cache-Control; security headers (CSP, HSTS, ...)
+  // come from other blocks that Netlify merges, so overriding them here
+  // would drop them for these files.
+  it("sets nothing but Cache-Control in the /images/* block", () => {
+    const names = imagesBlock.map((line) => line.split(":")[0].toLowerCase());
+    expect(names).toEqual(["cache-control"]);
+  });
+
+  it("fails the block reader when the rule is missing", () => {
+    expect(() => readHeaderBlock("/assets/*\n  X: y", IMAGES_PATH)).toThrow(
+      "public/_headers has no /images/* block",
+    );
+  });
+
+  it("ignores indented comment lines inside a block", () => {
+    expect(readHeaderBlock("/images/*\n  # note\n  A: b", IMAGES_PATH)).toEqual(
+      ["A: b"],
+    );
+  });
+
+  it("reads a block that runs to the end of the file", () => {
+    expect(readHeaderBlock("/images/*\n  A: b", IMAGES_PATH)).toEqual(["A: b"]);
+  });
+
+  it("ends a block at the blank line before the next rule", () => {
+    expect(
+      readHeaderBlock("/images/*\n  A: b\n\n/x\n  C: d", IMAGES_PATH),
+    ).toEqual(["A: b"]);
   });
 });
 
