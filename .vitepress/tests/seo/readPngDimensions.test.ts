@@ -87,8 +87,8 @@ describe("readPngDimensions", () => {
   });
 
   it.each([
-    ["width", { width: 0, height: 630 }],
-    ["height", { width: 1200, height: 0 }],
+    ["width", { ...SOCIAL_CARD_DIMENSIONS, width: 0 }],
+    ["height", { ...SOCIAL_CARD_DIMENSIONS, height: 0 }],
   ])("throws when %s is zero", (name, dimensions) => {
     expect(() => readPngDimensions(buildPngHeader(dimensions))).toThrow(
       new RegExp(`IHDR ${name} must be greater than zero`),
@@ -96,8 +96,8 @@ describe("readPngDimensions", () => {
   });
 
   it.each([
-    ["width", { width: SPEC_MAX_DIMENSION + 1, height: 630 }],
-    ["height", { width: 1200, height: SPEC_MAX_DIMENSION + 1 }],
+    ["width", { ...SOCIAL_CARD_DIMENSIONS, width: SPEC_MAX_DIMENSION + 1 }],
+    ["height", { ...SOCIAL_CARD_DIMENSIONS, height: SPEC_MAX_DIMENSION + 1 }],
   ])("throws when %s exceeds the spec maximum", (name, dimensions) => {
     expect(() => readPngDimensions(buildPngHeader(dimensions))).toThrow(
       new RegExp(`IHDR ${name} must not exceed`),
