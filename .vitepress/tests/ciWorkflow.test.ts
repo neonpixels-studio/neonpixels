@@ -131,8 +131,16 @@ describe("ci.yml e2e job", () => {
     expect(job).not.toMatch(/npm run build/);
   });
 
-  it("runs on pull requests only, where the artifact is uploaded", () => {
-    expect(e2eJob()).toMatch(/if: github\.event_name == 'pull_request'/);
+  it("runs on every event, including pushes to main", () => {
+    expect(e2eJob()).not.toMatch(/^\s+if:.*github\.event_name/m);
+  });
+
+  it("gets an artifact on push runs too (upload is not PR-gated)", () => {
+    const ciJob =
+      /^ {2}ci:[\s\S]*?(?=^ {2}\S|(?![\s\S]))/m.exec(jobs())?.[0] ?? "";
+    const uploadStep = ciJob.split("- name: Upload build output")[1] ?? "";
+    expect(uploadStep).toContain("name: site-build");
+    expect(uploadStep.split("uses:")[0]).not.toMatch(/\bif:/);
   });
 
   it("installs only chromium", () => {

@@ -16,7 +16,66 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Browser gate: the production build on Netlify runs test:ci but no browser,
+  # so a change that landed on main can break banner or form hydration
+  # unnoticed. Skips on a quiet week (no deploy, so nothing to gate). The
+  # deploy job needs this job, so a red e2e blocks the deploy.
+  e2e:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history so the 7-day commit check is correct.
+          fetch-depth: 0
+
+      - name: Check for commits in the last 7 days
+        id: recent
+        run: node .github/scripts/deploy-trigger.cjs recent
+
+      - name: Read .nvmrc
+        if: steps.recent.outputs.skip != 'true'
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        if: steps.recent.outputs.skip != 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.nvmrc.outputs.version }}
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.recent.outputs.skip != 'true'
+        run: npm ci
+
+      - name: Build
+        if: steps.recent.outputs.skip != 'true'
+        run: npm run build
+
+      - name: Install Chromium
+        if: steps.recent.outputs.skip != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E
+        if: steps.recent.outputs.skip != 'true'
+        run: npm run e2e
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: playwright-traces
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
   deploy:
+    needs: e2e
     # A manual run from another branch must not deploy production.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest

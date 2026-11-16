@@ -76,6 +76,27 @@ describe("weekly-production-deploy.yml", () => {
     expect(WORKFLOW).toMatch(/^\s+- cron: "0 14 \* \* 1"\s*$/m);
   });
 
+  it("gates the deploy on a passing e2e job that builds and runs Playwright", () => {
+    const e2eJob = /^ {2}e2e:[\s\S]*?(?=^ {2}\S)/m.exec(WORKFLOW)?.[0] ?? "";
+    expect(e2eJob).toContain("run: npm run build");
+    expect(e2eJob).toMatch(/run: npm run e2e\s*$/m);
+    expect(e2eJob).toContain("if: github.ref == 'refs/heads/main'");
+    expect(WORKFLOW).toMatch(/^ {2}deploy:\n\s+needs: e2e\n/m);
+  });
+
+  it("skips the e2e work on a quiet week, mirroring the deploy skip", () => {
+    const e2eJob = /^ {2}e2e:[\s\S]*?(?=^ {2}\S)/m.exec(WORKFLOW)?.[0] ?? "";
+    expect(e2eJob).toContain("deploy-trigger.cjs recent");
+    expect(e2eJob).toMatch(
+      /name: E2E\n\s+if: steps\.recent\.outputs\.skip != 'true'\n\s+run: npm run e2e/,
+    );
+  });
+
+  it("keeps Netlify secrets out of the e2e job", () => {
+    const e2eJob = /^ {2}e2e:[\s\S]*?(?=^ {2}\S)/m.exec(WORKFLOW)?.[0] ?? "";
+    expect(e2eJob).not.toContain("secrets.");
+  });
+
   it("is also manually dispatchable", () => {
     expect(WORKFLOW).toMatch(/^\s+workflow_dispatch:/m);
   });
