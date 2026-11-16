@@ -71,9 +71,56 @@ describe("netlify.toml production ignore gate", () => {
   });
 });
 
+function readJob(name: string) {
+  const pattern = new RegExp(
+    `^ {2}${name}:[\\s\\S]*?(?=^ {2}\\S|(?![\\s\\S]))`,
+    "m",
+  );
+  const job = pattern.exec(WORKFLOW)?.[0];
+  if (!job) {
+    throw new Error(`weekly-production-deploy.yml has no ${name} job`);
+  }
+  return job;
+}
+
+const readE2eJob = () => readJob("e2e");
+
 describe("weekly-production-deploy.yml", () => {
   it("runs on a Monday 14:00 UTC schedule", () => {
     expect(WORKFLOW).toMatch(/^\s+- cron: "0 14 \* \* 1"\s*$/m);
+  });
+
+  it("gates the deploy on a passing e2e job that builds and runs Playwright", () => {
+    const e2eJob = readE2eJob();
+    expect(e2eJob).toContain("run: npm run build");
+    expect(e2eJob).toMatch(/run: npm run e2e\s*$/m);
+    expect(readJob("recent")).toContain("if: github.ref == 'refs/heads/main'");
+    expect(readJob("deploy")).toMatch(/needs: \[recent, e2e\]/);
+  });
+
+  it("skips the whole e2e job on a quiet week, mirroring the deploy skip", () => {
+    const e2eJob = readE2eJob();
+    expect(readJob("recent")).toContain("deploy-trigger.cjs recent");
+    expect(e2eJob).toMatch(
+      /needs: recent\n\s+if: needs\.recent\.outputs\.skip != 'true'/,
+    );
+  });
+
+  it("refuses to deploy when main moved, before the hook fires", () => {
+    const deployJob = readJob("deploy");
+    const guardStart = deployJob.indexOf("- name: Require main unchanged");
+    const triggerStart = deployJob.indexOf("- name: Trigger production deploy");
+    expect(guardStart).toBeGreaterThan(-1);
+    expect(guardStart).toBeLessThan(triggerStart);
+    const guard = deployJob.slice(guardStart, triggerStart);
+    expect(guard).toContain('"$GITHUB_SHA"');
+    expect(guard).toContain("if: steps.recent.outputs.skip != 'true'");
+    expect(guard).toContain("exit 1");
+  });
+
+  it("keeps Netlify secrets out of the e2e job", () => {
+    const e2eJob = readE2eJob();
+    expect(e2eJob).not.toContain("secrets.");
   });
 
   it("is also manually dispatchable", () => {
@@ -166,7 +213,7 @@ describe("weekly-production-deploy.yml", () => {
 
   it("notifies on failure from a separate job, not the deploy job", () => {
     expect(WORKFLOW).toMatch(
-      /notify-deploy-failure:\n\s+needs: deploy\n\s+if: failure\(\)/,
+      /notify-deploy-failure:\n\s+needs: \[e2e, deploy\]\n\s+if: failure\(\)/,
     );
   });
 

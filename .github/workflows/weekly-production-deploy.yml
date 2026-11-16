@@ -16,7 +16,73 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Decides whether this week has anything to deploy; the e2e gate and the
+  # deploy both hang off it so a quiet week spends no browser minutes.
+  recent:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      skip: ${{ steps.recent.outputs.skip }}
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history so the 7-day commit check is correct.
+          fetch-depth: 0
+
+      - name: Check for commits in the last 7 days
+        id: recent
+        run: node .github/scripts/deploy-trigger.cjs recent
+
+  # Browser gate: the production build on Netlify runs test:ci but no browser,
+  # so a change that landed on main can break banner or form hydration
+  # unnoticed. The deploy job needs this job, so a red e2e blocks the deploy.
+  e2e:
+    needs: recent
+    if: needs.recent.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read .nvmrc
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.nvmrc.outputs.version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E
+        run: npm run e2e
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: playwright-traces
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
   deploy:
+    needs: [recent, e2e]
     # A manual run from another branch must not deploy production.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -61,6 +127,19 @@ jobs:
         id: recent
         run: node .github/scripts/deploy-trigger.cjs recent
 
+      # Netlify builds whatever main is when the hook fires. If main moved
+      # while e2e ran, the new commit was never browser-tested.
+      - name: Require main unchanged since the e2e gate
+        if: steps.recent.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          if [ "$head_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::main moved since the e2e gate ran; start a new run (a re-run reuses the old commit)."
+            exit 1
+          fi
+
       # The run id and attempt make the title unique (a re-run keeps the run id) so the verify step can find exactly
       # this deploy; it is also what shows in the Netlify deploy list.
       - name: Trigger production deploy
@@ -76,7 +155,7 @@ jobs:
   # Separate job so `issues: write` stays out of the job that handles the
   # Netlify secrets; same split as notify-audit-failure in security.yml.
   notify-deploy-failure:
-    needs: deploy
+    needs: [e2e, deploy]
     if: failure()
     runs-on: ubuntu-latest
     timeout-minutes: 5
