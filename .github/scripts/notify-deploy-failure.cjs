@@ -16,8 +16,9 @@ function buildIssueBody(runUrl) {
     "",
     `Failed run: ${runUrl}`,
     "",
-    "The Netlify build runs the full test suite and blocks on failure; " +
-      "check the deploy log in Netlify, fix the cause on main, then re-run " +
+    "The e2e gate or the Netlify build failed (the build runs the full " +
+      "test suite and blocks on failure); check the failed job in the run " +
+      "and the deploy log in Netlify, fix the cause on main, then re-run " +
       "the Weekly production deploy workflow. This issue closes " +
       "automatically after the next verified production deploy; closing " +
       "it manually also lets the next failure open a new one.",

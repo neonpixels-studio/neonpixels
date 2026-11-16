@@ -122,6 +122,17 @@ jobs:
 
       # The run id and attempt make the title unique (a re-run keeps the run id) so the verify step can find exactly
       # this deploy; it is also what shows in the Netlify deploy list.
+      # Netlify builds whatever main is when the hook fires. If main moved
+      # while e2e ran, the new commit was never browser-tested.
+      - name: Require main unchanged since the e2e gate
+        if: steps.recent.outputs.skip != 'true'
+        run: |
+          git fetch --quiet origin main
+          if [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; then
+            echo "::error::main moved since the e2e gate ran; re-run the workflow."
+            exit 1
+          fi
+
       - name: Trigger production deploy
         if: steps.recent.outputs.skip != 'true'
         run: |
@@ -135,7 +146,7 @@ jobs:
   # Separate job so `issues: write` stays out of the job that handles the
   # Netlify secrets; same split as notify-audit-failure in security.yml.
   notify-deploy-failure:
-    needs: deploy
+    needs: [e2e, deploy]
     if: failure()
     runs-on: ubuntu-latest
     timeout-minutes: 5

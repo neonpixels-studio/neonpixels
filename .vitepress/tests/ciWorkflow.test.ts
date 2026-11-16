@@ -117,8 +117,11 @@ describe("ci.yml single site build", () => {
 
 describe("ci.yml e2e job", () => {
   const jobs = () => findTopLevelBlock("jobs") ?? "";
-  const e2eJob = () =>
-    /^ {2}e2e:[\s\S]*?(?=^ {2}\S|(?![\s\S]))/m.exec(jobs())?.[0] ?? "";
+  const findJob = (name: string) =>
+    new RegExp(`^ {2}${name}:[\\s\\S]*?(?=^ {2}\\S|(?![\\s\\S]))`, "m").exec(
+      jobs(),
+    )?.[0] ?? "";
+  const e2eJob = () => findJob("e2e");
 
   it("exists and runs the e2e script", () => {
     expect(e2eJob()).toMatch(/run: npm run e2e\s*$/m);
@@ -132,7 +135,8 @@ describe("ci.yml e2e job", () => {
   });
 
   it("runs on every event, including pushes to main", () => {
-    expect(e2eJob()).not.toMatch(/^\s+if:.*github\.event_name/m);
+    const header = e2eJob().split("steps:")[0];
+    expect(header).not.toMatch(/^ {4}if:/m);
   });
 
   it("gets an artifact on push runs too (upload is not PR-gated)", () => {
