@@ -185,7 +185,7 @@ function lineHasKeyAssignment(
 // major and the exact-patch shape; a drift to another major (or a floating
 // value) fails here. An optional leading `v` is accepted — nvm, setup-node,
 // and Netlify all take it.
-const EXPECTED_NODE_MAJOR = 24;
+const EXPECTED_NODE_MAJOR = 26;
 const EXACT_NODE_VERSION = /^v?\d+\.\d+\.\d+$/;
 
 // Returns the 1-based line number of a NODE_VERSION pin (in any form
