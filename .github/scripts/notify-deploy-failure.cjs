@@ -16,10 +16,11 @@ function buildIssueBody(runUrl) {
     "",
     `Failed run: ${runUrl}`,
     "",
-    "The e2e gate or the Netlify build failed (the build runs the full " +
-      "test suite and blocks on failure); check the failed job in the run " +
-      "and the deploy log in Netlify, fix the cause on main, then re-run " +
-      "the Weekly production deploy workflow. This issue closes " +
+    "Either the e2e gate failed, main moved during the gate (start a new " +
+      "run; a re-run reuses the old commit), or the Netlify build failed " +
+      "(it runs the full test suite and blocks on failure). Check the " +
+      "failed job in the run and the deploy log in Netlify, fix the cause " +
+      "on main, then start the Weekly production deploy workflow again. This issue closes " +
       "automatically after the next verified production deploy; closing " +
       "it manually also lets the next failure open a new one.",
   ].join("\n");

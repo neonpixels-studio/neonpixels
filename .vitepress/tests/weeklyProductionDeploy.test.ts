@@ -100,8 +100,14 @@ describe("weekly-production-deploy.yml", () => {
     );
   });
 
-  it("refuses to deploy when main moved since the e2e gate ran", () => {
-    expect(WORKFLOW).toContain('git rev-parse FETCH_HEAD)" != "$GITHUB_SHA');
+  it("refuses to deploy when main moved, before the hook fires", () => {
+    const guardStart = WORKFLOW.indexOf("- name: Require main unchanged");
+    const triggerStart = WORKFLOW.indexOf("- name: Trigger production deploy");
+    expect(guardStart).toBeGreaterThan(-1);
+    expect(guardStart).toBeLessThan(triggerStart);
+    const guard = WORKFLOW.slice(guardStart, triggerStart);
+    expect(guard).toContain('"$GITHUB_SHA"');
+    expect(guard).toContain("exit 1");
   });
 
   it("keeps Netlify secrets out of the e2e job", () => {

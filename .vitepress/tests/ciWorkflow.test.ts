@@ -140,8 +140,7 @@ describe("ci.yml e2e job", () => {
   });
 
   it("gets an artifact on push runs too (upload is not PR-gated)", () => {
-    const ciJob =
-      /^ {2}ci:[\s\S]*?(?=^ {2}\S|(?![\s\S]))/m.exec(jobs())?.[0] ?? "";
+    const ciJob = findJob("ci");
     const uploadStep = ciJob.split("- name: Upload build output")[1] ?? "";
     expect(uploadStep).toContain("name: site-build");
     expect(uploadStep.split("uses:")[0]).not.toMatch(/\bif:/);

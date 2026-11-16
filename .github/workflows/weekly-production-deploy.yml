@@ -120,8 +120,6 @@ jobs:
         id: recent
         run: node .github/scripts/deploy-trigger.cjs recent
 
-      # The run id and attempt make the title unique (a re-run keeps the run id) so the verify step can find exactly
-      # this deploy; it is also what shows in the Netlify deploy list.
       # Netlify builds whatever main is when the hook fires. If main moved
       # while e2e ran, the new commit was never browser-tested.
       - name: Require main unchanged since the e2e gate
@@ -129,10 +127,12 @@ jobs:
         run: |
           git fetch --quiet origin main
           if [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; then
-            echo "::error::main moved since the e2e gate ran; re-run the workflow."
+            echo "::error::main moved since the e2e gate ran; start a new run (a re-run reuses the old commit)."
             exit 1
           fi
 
+      # The run id and attempt make the title unique (a re-run keeps the run id) so the verify step can find exactly
+      # this deploy; it is also what shows in the Netlify deploy list.
       - name: Trigger production deploy
         if: steps.recent.outputs.skip != 'true'
         run: |
