@@ -1,7 +1,7 @@
 import { BRAND_ACCENTS } from "../brand";
 
 // One record per project drives everything that repeats across the page: the
-// hero pills, the footer links, and the four project sections. Adding or
+// hero pills, the footer links, and the project sections. Adding or
 // editing a project is a data change here, never a markup copy. Each project's
 // accent `color` references the centralized BRAND_ACCENTS so it can't drift from
 // the wordmark gradient and CSS tokens built on the same hexes.
@@ -82,35 +82,6 @@ export const PROJECTS: Project[] = [
     },
   },
   {
-    id: "farflung",
-    name: "farflung",
-    tld: ".io",
-    url: "https://farflung.io",
-    color: BRAND_ACCENTS.cyan,
-    pillBg: "#08161b",
-    pillBgHover: "#0c2028",
-    pillBorder: "#123340",
-    order: "02",
-    category: "travel",
-    status: "IN PROGRESS",
-    variant: "outline",
-    flickerTld: false,
-    description:
-      "A travel blog and tracker in one. Log where you've been, plot it, write about it — without gluing together four apps and a spreadsheet to do it.",
-    accent: { text: "text-cyan", bg: "bg-cyan", border: "border-cyan" },
-    section: {
-      background: "linear-gradient(260deg, #04141a 0%, #08080a 58%)",
-      topLine: "linear-gradient(270deg, #22e0ff, transparent 65%)",
-      aurora: {
-        animation: "animate-aurora-reverse",
-        position: "top-[-26%] right-[-6%]",
-        size: "h-[520px] w-[520px]",
-        duration: "34s",
-        alpha: 0.16,
-      },
-    },
-  },
-  {
     id: "basin",
     name: "basin",
     tld: ".fm",
@@ -119,7 +90,7 @@ export const PROJECTS: Project[] = [
     pillBg: "#1a1305",
     pillBgHover: "#241a07",
     pillBorder: "#3d2f0c",
-    order: "03",
+    order: "02",
     category: "syndication",
     status: "IN PROGRESS",
     variant: "outline",
@@ -128,11 +99,11 @@ export const PROJECTS: Project[] = [
       "Everything you consume, in one stream. RSS, podcasts, YouTube and Bluesky today — Twitter, Instagram and whatever else annoys me next.",
     accent: { text: "text-amber", bg: "bg-amber", border: "border-amber" },
     section: {
-      background: "linear-gradient(100deg, #170f02 0%, #08080a 58%)",
-      topLine: "linear-gradient(90deg, #ffc21f, transparent 65%)",
+      background: "linear-gradient(260deg, #170f02 0%, #08080a 58%)",
+      topLine: "linear-gradient(270deg, #ffc21f, transparent 65%)",
       aurora: {
-        animation: "animate-aurora",
-        position: "bottom-[-34%] left-[2%]",
+        animation: "animate-aurora-reverse",
+        position: "bottom-[-34%] right-[2%]",
         size: "h-[520px] w-[520px]",
         duration: "30s",
         alpha: 0.15,
@@ -148,7 +119,7 @@ export const PROJECTS: Project[] = [
     pillBg: "#1b0713",
     pillBgHover: "#250a1a",
     pillBorder: "#3d1029",
-    order: "04",
+    order: "03",
     category: "capture",
     status: "IN PROGRESS",
     variant: "outline",
@@ -157,11 +128,11 @@ export const PROJECTS: Project[] = [
       "Send a webhook or an email, get a Markdown file on your own filesystem. Built for Obsidian, works with anything that reads Markdown.",
     accent: { text: "text-pink", bg: "bg-pink", border: "border-pink" },
     section: {
-      background: "linear-gradient(260deg, #180618 0%, #08080a 58%)",
-      topLine: "linear-gradient(270deg, #ff2ea6, transparent 65%)",
+      background: "linear-gradient(100deg, #180618 0%, #08080a 58%)",
+      topLine: "linear-gradient(90deg, #ff2ea6, transparent 65%)",
       aurora: {
-        animation: "animate-aurora-reverse",
-        position: "top-[-20%] right-0",
+        animation: "animate-aurora",
+        position: "top-[-20%] left-0",
         size: "h-[540px] w-[540px]",
         duration: "36s",
         alpha: 0.16,

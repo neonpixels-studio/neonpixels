@@ -89,7 +89,6 @@ describe("NeonPixelsPage accent bindings", () => {
       hexToRgba(BRAND_ACCENTS.pink, 0.15),
       hexToRgba(BRAND_ACCENTS.cyan, 0.13),
       hexToRgba(BRAND_ACCENTS.lime, 0.1),
-      hexToRgba(BRAND_ACCENTS.cyan, 0.1),
       hexToRgba(BRAND_ACCENTS.amber, 0.09),
       hexToRgba(BRAND_ACCENTS.pink, 0.8),
       hexToRgba(BRAND_ACCENTS.pink, 0.12),

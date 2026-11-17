@@ -310,8 +310,8 @@ describe("style.css reduced-motion coverage", () => {
 });
 
 // The `forced-colors: active` block (Windows High Contrast Mode) restyles the
-// ambient decoration, gradient wordmark text, color-only indicator dots, and
-// the FarFlung trip-log heatmap that would otherwise render uncontrolled,
+// ambient decoration, gradient wordmark text, and color-only indicator dots
+// that would otherwise render uncontrolled,
 // vanish, or paint with no visible fill once the OS takes over the palette.
 // Matched by its @media opener, then sliced out via `findMatchingBraceIndex`
 // so a naive regex can't be fooled by nested rules — happy-dom evaluates
@@ -359,12 +359,6 @@ try {
     error instanceof Error ? error : new Error(String(error));
 }
 const forcedColorsRules = parseCssRules(forcedColorsBlockBody ?? "");
-// Every rule in the whole file, forced-colors block included — `parseCssRules`
-// treats `@media`'s body as unwrapped content (see its doc comment above), so
-// this is how the "reads the trip-log cell fill from a custom property" check
-// below reaches the plain `.trip-cell` rule that lives outside that block.
-const ALL_CSS_RULES = parseCssRules(STYLE_CSS_WITHOUT_COMMENTS);
-
 // True if some rule matches `className` as a whole class token and declares
 // `property` to a value matching `expectedValue`. The lookahead (not `\b`)
 // is deliberate: `\b` treats `-` as a boundary, so `\.pill\b` would wrongly
@@ -372,25 +366,10 @@ const ALL_CSS_RULES = parseCssRules(STYLE_CSS_WITHOUT_COMMENTS);
 // inside `.animate-aurora-reverse`. `(?![\w-])` requires the class name not
 // be followed by another word/hyphen character, while still allowing it to
 // be followed by an attribute selector, combinator, comma, or `{` — so
-// `.trip-cell[data-visited="true"]` still counts as `.trip-cell` (a real
-// attribute-qualified instance of that same class), just not `.trip-cell-x`.
+// `.pill-dot[data-x]` still counts as `.pill-dot`, just not `.pill-dot-x`.
 function rulesMatchingClass(rules: CssRule[], className: string) {
   const classPattern = new RegExp(`\\.${className}(?![\\w-])`);
   return rules.filter((rule) => classPattern.test(rule.selectorText));
-}
-
-// Stricter than rulesMatchingClass: only rules where `.${className}` is a
-// whole selector in the comma-separated list (so `.trip-cell[data-visited=
-// "true"]` doesn't count as `.trip-cell`). Needed wherever a bare-class rule
-// and an attribute-qualified rule for the same class carry different
-// declarations that must not be conflated.
-function rulesWithBareSelector(rules: CssRule[], className: string) {
-  const bareSelector = `.${className}`;
-  return rules.filter((rule) =>
-    rule.selectorText
-      .split(",")
-      .some((selector) => selector.trim() === bareSelector),
-  );
 }
 
 function declares(rules: CssRule[], property: string, expectedValue: RegExp) {
@@ -452,43 +431,6 @@ describe("style.css forced-colors coverage", () => {
       ).toBe(true);
     },
   );
-
-  it("borders every plain trip-log cell in a system color", () => {
-    // rulesWithBareSelector, not rulesMatchingClass: the border must live on
-    // the bare `.trip-cell` rule (every cell), not only on the
-    // `[data-visited="true"]` rule (visited cells only) — the latter would
-    // also satisfy a looser class-token match and let an unvisited cell
-    // silently lose its border.
-    const bareTripCellRules = rulesWithBareSelector(
-      forcedColorsRules,
-      "trip-cell",
-    );
-    expect(
-      declares(bareTripCellRules, "border", /^1px solid CanvasText\b/i),
-    ).toBe(true);
-  });
-
-  it("fills visited trip-log cells so the visited/unvisited distinction survives", () => {
-    const visitedRules = forcedColorsRules.filter((rule) =>
-      /\.trip-cell\[data-visited="true"\]/.test(rule.selectorText),
-    );
-    expect(visitedRules.length).toBeGreaterThan(0);
-    expect(declares(visitedRules, "background", /^CanvasText\b/i)).toBe(true);
-  });
-
-  // Guards the cascade the visited-cell override above depends on: an
-  // inline `background` on the element would beat this rule regardless of
-  // selector specificity, so the base rule must read the fill from a
-  // custom property instead.
-  it("reads the trip-log cell fill from a custom property so the forced-colors override can outrank it", () => {
-    const baseRule = ALL_CSS_RULES.find(
-      (rule) => rule.selectorText.trim() === ".trip-cell",
-    );
-    expect(baseRule).not.toBeUndefined();
-    expect(lastDeclarationValue(baseRule?.body ?? "", "background")).toMatch(
-      /^var\(--trip-cell-bg\)/i,
-    );
-  });
 });
 
 describe("style.css color-scheme", () => {

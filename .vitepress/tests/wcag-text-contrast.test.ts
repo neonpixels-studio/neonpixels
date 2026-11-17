@@ -59,7 +59,6 @@ describe("muted text tokens meet WCAG AA", () => {
 // project panels, not --color-bg, so the guard mounts the page and reads each
 // label's *rendered* panel background rather than a hardcoded pairing.
 const LABELS_ON_PANELS = [
-  { token: "--color-farflung-label", className: "text-farflung-label" },
   { token: "--color-markpost-label", className: "text-markpost-label" },
 ];
 

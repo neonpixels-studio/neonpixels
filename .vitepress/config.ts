@@ -9,12 +9,12 @@ import { PROJECTS, type Project } from "./theme/data/projects";
 
 const SITE_URL = "https://neonpixels.dev";
 const DESCRIPTION =
-  "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, FarFlung, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
+  "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
 const OG_IMAGE = `${SITE_URL}/images/social-card.png`;
 const OG_IMAGE_ALT =
-  "Neon Pixels wordmark on a dark grid, with the pixel logo mark and the four project names — grimicorn.dev, farflung.io, basin.fm, markpost.io — glowing in lime, cyan, amber and pink.";
+  "Neon Pixels wordmark on a dark grid, with the pixel logo mark and the project names grimicorn.dev, basin.fm and markpost.io glowing in lime, amber and pink.";
 
-// The org exists to promote the four projects, but PROJECTS already owns their
+// The org exists to promote the projects, but PROJECTS already owns their
 // canonical name/url/description — deriving each project's ld+json node from
 // it means the project graph can't drift from what's rendered on the page
 // (issue #83).
@@ -22,9 +22,9 @@ const OG_IMAGE_ALT =
 // Each project is its own WebSite node, linked back to the org via
 // `publisher`, rather than folded into the Organization node as `sameAs` or
 // `hasPart`: schema.org defines `sameAs` as an identity assertion ("this page
-// and that page describe the same thing"), so listing the four project
+// and that page describe the same thing"), so listing the project
 // domains there would tell crawlers neonpixels.dev *is* grimicorn.dev,
-// farflung.io, basin.fm and markpost.io — the opposite of "the org publishes
+// basin.fm and markpost.io — the opposite of "the org publishes
 // these products". `hasPart` isn't defined on Organization at all (only on
 // CreativeWork/Place), so it validates as an unrecognized property there. A
 // `@graph` of sibling nodes tied together by `publisher` is the shape that
@@ -32,7 +32,7 @@ const OG_IMAGE_ALT =
 //
 // WebSite over SoftwareApplication deliberately: SoftwareApplication is a
 // rich-result type Google grades on `offers`/`aggregateRating` (neither of
-// which exists for these projects, three of which are still `"IN PROGRESS"`
+// which exists for these projects, most of which are still `"IN PROGRESS"`
 // per PROJECTS), so claiming it would trade "not present" for "invalid" in
 // Search Console. WebSite carries no such required-field contract.
 const ORGANIZATION_ID = `${SITE_URL}#organization`;

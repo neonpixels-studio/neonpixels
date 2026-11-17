@@ -469,7 +469,7 @@ describe("buildEnd wires the noindex context into the generated _headers", () =>
   });
 });
 
-// The org's ld+json exists to tell crawlers about the four projects it promotes
+// The org's ld+json exists to tell crawlers about the projects it promotes
 // (issue #83). Each project is a sibling WebSite node in a top-level @graph,
 // tied to the Organization node by `publisher` — see the rationale in
 // config.ts for why that shape was chosen over `sameAs`/`hasPart` (the
@@ -488,7 +488,6 @@ describe("buildEnd wires the noindex context into the generated _headers", () =>
 // usage above for the same convention).
 const EXPECTED_PROJECT_URLS = [
   "https://grimicorn.dev",
-  "https://farflung.io",
   "https://basin.fm",
   "https://markpost.io",
 ];
@@ -502,7 +501,7 @@ function findGraphNodesByType(jsonLd: any, type: string) {
   );
 }
 
-describe("Organization JSON-LD links the four projects", () => {
+describe("Organization JSON-LD links every project", () => {
   it("wraps the org and every project in a single @graph", () => {
     const jsonLd = findJsonLdScript();
     expect(Array.isArray(jsonLd["@graph"])).toBe(true);

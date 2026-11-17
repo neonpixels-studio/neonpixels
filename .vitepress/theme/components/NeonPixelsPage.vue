@@ -2,13 +2,12 @@
 import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "../brand";
 import { MAIN_CONTENT_ID } from "../a11y";
 // Two accent-alpha helpers, two output formats: `withAlpha` appends a 2-digit
-// hex alpha to an accent (an 8-digit hex) for solid swatch fills (heatmap/feed
+// hex alpha to an accent (an 8-digit hex) for solid swatch fills (feed
 // dots); `hexToRgba` yields an `rgba(r, g, b, a)` string for the
 // box-shadow/gradient glows below, matching how ProjectSection/ProjectSummary
 // already derive their glows.
 import { hexToRgba } from "../utils/color";
 import { PROJECTS } from "../data/projects";
-import { STATES_TOTAL, STATES_VISITED, STATE_VISITS } from "../data/states";
 import ProjectSection from "./ProjectSection.vue";
 import ContactForm from "./ContactForm.vue";
 
@@ -16,63 +15,6 @@ import ContactForm from "./ContactForm.vue";
 // data instead of a hand-typed number. PROJECTS is a static import, so a plain
 // constant is enough — no reactivity to track.
 const paddedProjectCount = String(PROJECTS.length).padStart(2, "0");
-
-// Trip-log heatmap for the FarFlung card: each cell is one of four brightness
-// states so the grid reads as visited / partly / faint / empty. The lit states
-// are the cyan accent at descending alpha; the alpha suffixes (88/55 hex) fade
-// it toward the empty tint.
-const TRIP_CELL_COLORS = {
-  on: BRAND_ACCENTS.cyan,
-  mid: withAlpha(BRAND_ACCENTS.cyan, "88"),
-  low: withAlpha(BRAND_ACCENTS.cyan, "55"),
-  off: "#0e2831",
-};
-
-// Visited states cycle through the three lit brightnesses for the heatmap's
-// visited / partly / faint texture; unvisited states take the empty tint.
-// Derived from STATE_VISITS so the grid always renders STATES_TOTAL cells with
-// STATES_VISITED lit — the picture can't drift from the caption. Typing the
-// arrays (rather than casting the result) keeps a typo like "lo" a compile
-// error instead of a silent `background: undefined`, and `Exclude<_, "off">`
-// stops the empty tint being listed as a lit brightness.
-type TripCellState = keyof typeof TRIP_CELL_COLORS;
-const LIT_CELL_STATES: Exclude<TripCellState, "off">[] = ["on", "mid", "low"];
-
-const TRIP_CELLS: TripCellState[] = STATE_VISITS.map((visited, cellIndex) => {
-  if (!visited) {
-    return "off";
-  }
-  return LIT_CELL_STATES[cellIndex % LIT_CELL_STATES.length];
-});
-
-// The FarFlung visual carries trip-scale figures, so unlike the other
-// decorative mockups it is exposed to assistive tech as a single labelled
-// image rather than hidden. The caption "47 / 50 states" is the canonical
-// figure; the footer total is reconciled to the same 47 (it previously read a
-// contradictory 26). The states figure is owned by data/states.ts, so the
-// caption, this label, and the heatmap grid (one cell per state, exactly
-// STATES_VISITED lit — see TRIP_CELLS) all read from one source and can't drift
-// apart the way 26/47 did.
-const FARFLUNG_STATES_VISITED = STATES_VISITED;
-const FARFLUNG_STATES_TOTAL = STATES_TOTAL;
-const FARFLUNG_MILES_TRAVELED = 60000;
-const FARFLUNG_COUNTRIES = 3;
-
-// Group thousands without Intl: a module-scope toLocaleString would depend on
-// the build machine's ICU data and could surface as a hydration mismatch on the
-// static aria-label. This one regex formats the trip mileage for both display
-// forms below off the single numeric source.
-function groupThousands(value: number) {
-  return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-}
-
-// Two display forms of the one mileage figure: the compact "60k+" the mockup
-// shows and the grouped "60,000+" the label announces. Both floor to thousands,
-// so the "+" is always truthful (the real value is at least what's shown), and
-// both derive from FARFLUNG_MILES_TRAVELED so they can't drift.
-const FARFLUNG_MILES_SHORT = `${Math.floor(FARFLUNG_MILES_TRAVELED / 1000)}k+`;
-const FARFLUNG_MILES_LABEL = `${groupThousands(FARFLUNG_MILES_TRAVELED)}+`;
-const FARFLUNG_MOCKUP_LABEL = `FarFlung trip log: ${FARFLUNG_STATES_VISITED} of ${FARFLUNG_STATES_TOTAL} US states visited, ${FARFLUNG_MILES_LABEL} miles traveled across ${FARFLUNG_COUNTRIES} countries.`;
 
 // Basin aggregates a mixed feed; opacity of the leading dot fades with recency
 // via descending alpha suffixes on the amber accent (88/55/33 hex). Only the
@@ -111,7 +53,7 @@ const BASIN_FEED = [
 
 const GRIMICORN_TERMINAL = [
   { text: "[03:14] merged a PR you haven't read" },
-  { text: "[03:16] shipped farflung map tiles" },
+  { text: "[03:16] shipped basin bluesky sync" },
   { text: "[03:19] broke staging. on purpose." },
 ];
 
@@ -144,7 +86,6 @@ function cardGlow(accent: string, alpha: number) {
   return `0 0 60px ${hexToRgba(accent, alpha)}`;
 }
 const GRIMICORN_GLOW = cardGlow(BRAND_ACCENTS.lime, 0.1);
-const FARFLUNG_GLOW = cardGlow(BRAND_ACCENTS.cyan, 0.1);
 const BASIN_GLOW = cardGlow(BRAND_ACCENTS.amber, 0.09);
 const MARKPOST_ARROW_GLOW = `0 0 14px ${hexToRgba(BRAND_ACCENTS.pink, 0.8)}`;
 const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
@@ -469,53 +410,6 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
                   class="bg-lime animate-blink inline-block h-[14px] w-2 align-[-2px]"
                 />
               </div>
-            </div>
-          </div>
-
-          <div
-            v-else-if="project.id === 'farflung'"
-            class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]"
-            :style="{ boxShadow: FARFLUNG_GLOW }"
-            role="img"
-            :aria-label="FARFLUNG_MOCKUP_LABEL"
-          >
-            <div
-              class="text-farflung-label flex justify-between text-[11px] tracking-[0.16em] uppercase"
-            >
-              <span>trip log</span
-              ><span
-                >{{ FARFLUNG_STATES_VISITED }} /
-                {{ FARFLUNG_STATES_TOTAL }} states</span
-              >
-            </div>
-            <!-- 10 columns lays the 50 state cells out as a clean 10x5 block;
-                 the taller card (vs. the old 3-row strip) is deliberate now that
-                 the grid holds all 50 states. -->
-            <div
-              class="grid grid-cols-[repeat(10,minmax(0,1fr))] gap-1"
-              data-testid="trip-log-heatmap"
-            >
-              <!-- Fill via --trip-cell-bg, not a plain `background`, so the
-                   forced-colors override in style.css's `.trip-cell` rule
-                   can win the cascade — see that rule for why. -->
-              <div
-                v-for="(state, cellIndex) in TRIP_CELLS"
-                :key="cellIndex"
-                data-testid="trip-log-cell"
-                class="trip-cell"
-                :data-visited="state !== 'off'"
-                :style="{
-                  aspectRatio: '1',
-                  '--trip-cell-bg': TRIP_CELL_COLORS[state],
-                  boxShadow:
-                    state === 'on' ? `0 0 8px ${BRAND_ACCENTS.cyan}` : 'none',
-                }"
-              />
-            </div>
-            <div class="text-farflung-label flex gap-5 text-[11px]">
-              <span>{{ FARFLUNG_MILES_SHORT }} miles</span
-              ><span>{{ FARFLUNG_STATES_VISITED }} states</span
-              ><span>{{ FARFLUNG_COUNTRIES }} countries</span>
             </div>
           </div>
 

@@ -2,7 +2,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 // Scheduled liveness check for every outbound target the homepage depends on:
-// the four project domains (PROJECTS in theme/data/projects.ts) and the
+// the project domains (PROJECTS in theme/data/projects.ts) and the
 // /dashboard redirect target (netlify.toml). The URL list is read from those
 // two files at run time, so adding or moving a project can never leave this
 // check watching a stale copy. Run by .github/workflows/project-url-check.yml.

@@ -46,7 +46,7 @@ describe("target extraction (no second copy of the URL list)", () => {
     expect(() => extractDashboardTarget(toml)).toThrow(/No \/dashboard/);
   });
 
-  it("loads the four projects plus the dashboard target", () => {
+  it("loads every project plus the dashboard target", () => {
     const urls = loadTargets(process.cwd()).map((target) => target.url);
     expect(urls).toHaveLength(PROJECTS.length + 1);
     expect(urls).toContain("https://dashboard.neonpixels.dev");

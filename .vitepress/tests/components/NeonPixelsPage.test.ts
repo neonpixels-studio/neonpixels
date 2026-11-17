@@ -16,15 +16,9 @@ function isExternalHref(href: string) {
   return EXTERNAL_HREF_PATTERN.test(href);
 }
 
-// The one project visual that carries real information (trip-scale stats) and
-// so is exposed to assistive tech as a labelled image instead of hidden. Every
-// other visual stays decorative and aria-hidden.
-const EXPOSED_VISUAL_PROJECT_ID = "farflung";
-
-// The four projects each get an external CTA and an external footer link.
+// The projects each get an external CTA and an external footer link.
 const PROJECT_URLS = [
   "https://grimicorn.dev",
-  "https://farflung.io",
   "https://basin.fm",
   "https://markpost.io",
 ];
@@ -88,7 +82,7 @@ describe("NeonPixelsPage", () => {
     wrapper.unmount();
   });
 
-  it("renders a section for each of the four projects", () => {
+  it("renders a section for each project", () => {
     const wrapper = mount(NeonPixelsPage);
     PROJECT_SECTION_IDS.forEach((id) => {
       // Exactly one — a duplicated id in the data would leave a second section
@@ -123,24 +117,15 @@ describe("NeonPixelsPage", () => {
   it("applies the correct assistive-technology treatment to each project visual", () => {
     const wrapper = mount(NeonPixelsPage);
     // Each section grid holds a summary column and a bespoke visual column.
-    // Most visuals are fabricated product mockups (a terminal, a feed, in/out
+    // Every visual is a fabricated product mockup (a terminal, a feed, in/out
     // panels) whose text is illustrative chrome, not information the page
     // commits to — so those containers must carry aria-hidden while the summary
-    // (the real prose and CTA) must not. The farflung visual is the sole
-    // exception: its trip-scale figures are real content, so it's exposed as a
-    // labelled image (asserted in its own test) rather than hidden.
+    // (the real prose and CTA) must not.
     PROJECTS.forEach((project) => {
       const { summaryColumn, visualColumn } = columnsFor(wrapper, project);
       expect(summaryColumn?.getAttribute("aria-hidden")).toBeNull();
-      // Every decorative visual is aria-hidden; the exposed farflung one must
-      // NOT be (it's a labelled image instead) — pinning both cases here means
-      // re-hiding farflung fails this test as well as its dedicated one.
-      const expectedAriaHidden =
-        project.id === EXPOSED_VISUAL_PROJECT_ID ? null : "true";
-      expect(visualColumn?.getAttribute("aria-hidden")).toBe(
-        expectedAriaHidden,
-      );
-      // aria-hidden (or the exposed role="img") on a container with a focusable
+      expect(visualColumn?.getAttribute("aria-hidden")).toBe("true");
+      // aria-hidden on a container with a focusable
       // descendant is itself an ARIA violation (the control stays tabbable but
       // has no accessible name), so a future mockup must not introduce one —
       // checked on the column root and its descendants. This also keeps the
@@ -149,48 +134,6 @@ describe("NeonPixelsPage", () => {
       expect(visualColumn?.matches(TABBABLE_SELECTOR)).toBe(false);
       expect(visualColumn?.querySelector(TABBABLE_SELECTOR)).toBeNull();
     });
-    wrapper.unmount();
-  });
-
-  it("exposes the farflung trip stats to assistive technology as a labelled image", () => {
-    const wrapper = mount(NeonPixelsPage);
-    const farflung = PROJECTS.find(
-      (project) => project.id === EXPOSED_VISUAL_PROJECT_ID,
-    );
-    expect(farflung).toBeDefined();
-    const { visualColumn } = columnsFor(wrapper, farflung!);
-    expect(visualColumn).toBeDefined();
-    // Real content, so it must be reachable — a summarizing role="img" label,
-    // not aria-hidden, or screen-reader users lose the stats entirely.
-    expect(visualColumn?.getAttribute("aria-hidden")).toBeNull();
-    expect(visualColumn?.getAttribute("role")).toBe("img");
-    const label = visualColumn?.getAttribute("aria-label") ?? "";
-    expect(label).toContain("47 of 50 US states");
-    expect(label).toContain("60,000+ miles");
-    expect(label).toContain("3 countries");
-    // The label must not drift from the visible mockup, so assert every figure
-    // it announces also renders on screen (the drift that produced 26 vs 47).
-    const visualText = visualColumn?.textContent ?? "";
-    expect(visualText).toContain("47 / 50 states");
-    expect(visualText).toContain("60k+ miles");
-    expect(visualText).toContain("3 countries");
-    // Pin the complete set of numbers in the two stat rows (caption + footer)
-    // in order — "47 / 50", then "60k+ miles", "47 states", "3 countries" — so
-    // re-hardcoding any figure (like the old contradictory 26) fails here.
-    // Scoped to the .text-farflung-label rows so unrelated future digits (a
-    // year, a badge) don't misreport as an accessibility regression.
-    const statRowText = Array.from(
-      visualColumn?.querySelectorAll(".text-farflung-label") ?? [],
-    )
-      .map((row) => row.textContent)
-      .join(" ");
-    expect(statRowText.match(/\d[\d,]*/g)).toEqual([
-      "47",
-      "50",
-      "60",
-      "47",
-      "3",
-    ]);
     wrapper.unmount();
   });
 

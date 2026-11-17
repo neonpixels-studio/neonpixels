@@ -10,10 +10,8 @@
   --color-fg-faint: #787882;
   /* Per-project stat-block micro-labels. These sit on the tinted project panels
      (not --color-bg), so they carry their own hue and are tuned to clear WCAG AA
-     4.5:1 against their panel: --color-farflung-label on #051216 (~4.77:1) and
-     --color-markpost-label on #150610 (~4.78:1). Guarded in
-     wcag-text-contrast.test.ts. */
-  --color-farflung-label: #6d838b;
+     4.5:1 against their panel: --color-markpost-label on #150610 (~4.78:1).
+     Guarded in wcag-text-contrast.test.ts. */
   --color-markpost-label: #957480;
   --color-border: #1c1c22;
   --color-lime: #b8ff2e;
@@ -185,19 +183,6 @@ html {
   }
 }
 
-/* FarFlung trip-log cells set their fill through this custom property
-   instead of `background` directly, purely so the forced-colors override
-   below can win the cascade: an inline `style="background: …"` attribute
-   always beats an external stylesheet rule regardless of selector
-   specificity, which would otherwise make that override unreachable. This
-   base rule is what makes the custom property visible at all outside
-   forced-colors mode — it must stay in lockstep with the override inside
-   the @media block below, so both live in this one file rather than
-   splitting across the component and here. */
-.trip-cell {
-  background: var(--trip-cell-bg);
-}
-
 /* Accessibility guard: under Windows High Contrast Mode (the `forced-colors`
    media feature), non-`url()` `background-image` (gradients) and
    `box-shadow` are nulled by the UA itself in spec-compliant engines, ahead
@@ -207,8 +192,7 @@ html {
    (`background-clip: text` + `color: transparent`) still needs a real fill
    once its background is gone, or the glyphs paint with nothing behind
    them; and small solid `background-color` shapes that carry meaning purely
-   through color (the nav status dot, the accent-pill swatch, the FarFlung
-   trip-log cells) get neutralized to `Canvas` — the same color as the page
+   through color (the nav status dot, the accent-pill swatch) get neutralized to `Canvas` — the same color as the page
    background — and can vanish outright rather than degrade gracefully.
    System color keywords (`Canvas`, `CanvasText`, `currentColor`) used below
    pass through forced-colors unchanged, since they already resolve to
@@ -255,26 +239,6 @@ html {
   .status-dot,
   .pill-dot {
     border: 1px solid currentColor;
-  }
-
-  /* FarFlung trip-log heatmap: unlike the other project visuals (pure
-     decoration, aria-hidden), this grid is the real content behind the
-     card's role="img"/aria-label — its four cyan brightness tiers encode
-     visited/partly/faint/empty. Forced-colors collapses all of them to the
-     same neutralized fill, erasing the distinction for sighted
-     forced-colors users even though the aria-label still carries the
-     figures for assistive tech. Redraw the binary visited/unvisited split
-     (the one the "N / 50 states" caption itself reports) with a
-     system-color border + fill; the finer three-tier brightness texture is
-     decorative polish, not information the caption promises. The
-     `[data-visited="true"]` override outranks the plain `.trip-cell` rule
-     above on selector specificity (class + attribute vs. class alone), so
-     it wins regardless of source order between the two rules. */
-  .trip-cell {
-    border: 1px solid CanvasText;
-  }
-  .trip-cell[data-visited="true"] {
-    background: CanvasText;
   }
 }
 
