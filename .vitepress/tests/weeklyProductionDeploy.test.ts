@@ -216,7 +216,7 @@ describe("weekly-production-deploy.yml", () => {
       "- name: Verify production deploy",
     );
     expect(afterVerifyName).toBeDefined();
-    const verifyStep = afterVerifyName.split(/\n {6}- /)[0];
+    const verifyStep = afterVerifyName.split(/\n(?= {0,6}\S)/)[0];
     expect(verifyStep).toContain("EXPECTED_COMMIT_SHA: ${{ github.sha }}");
   });
 

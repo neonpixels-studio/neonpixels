@@ -140,7 +140,7 @@ function enforceExpectedCommit(result, expectedCommitSha) {
   if (result.outcome !== OUTCOME_SUCCESS) {
     return result;
   }
-  const deployedSha = result.deploy?.commit_ref?.toLowerCase() ?? null;
+  const deployedSha = result.deploy?.commit_ref?.toLowerCase() || null;
   if (deployedSha === expectedCommitSha.toLowerCase()) {
     return result;
   }

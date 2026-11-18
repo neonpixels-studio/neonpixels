@@ -250,6 +250,15 @@ describe("enforceExpectedCommit", () => {
     ).toMatchObject({ outcome: OUTCOME_COMMIT_MISMATCH, deployedSha: null });
   });
 
+  it("treats an empty commit_ref as a missing one", () => {
+    expect(
+      enforceExpectedCommit(
+        { ...ready, deploy: { state: "ready", commit_ref: "" } },
+        GATED_SHA,
+      ),
+    ).toMatchObject({ outcome: OUTCOME_COMMIT_MISMATCH, deployedSha: null });
+  });
+
   it("compares case-insensitively against an uppercase expected sha", () => {
     expect(enforceExpectedCommit(ready, GATED_SHA.toUpperCase())).toBe(ready);
   });
