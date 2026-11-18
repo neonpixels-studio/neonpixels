@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   SUBMIT_TIMEOUT_MS,
   submitNetlifyForm,
@@ -13,6 +13,10 @@ function fakeFetch(response: { ok: boolean; status: number }): FetchLike {
 }
 
 describe("submitNetlifyForm", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("POSTs a url-encoded body carrying form-name plus every field", async () => {
     const fetchImpl = fakeFetch({ ok: true, status: 200 });
     await submitNetlifyForm(
@@ -74,7 +78,11 @@ describe("submitNetlifyForm", () => {
   it("rejects with a TimeoutError when fetch never settles before the deadline", async () => {
     const hangingFetch: FetchLike = (_input, init) =>
       new Promise((_resolve, reject) => {
-        init.signal?.addEventListener("abort", () => {
+        if (!init.signal) {
+          reject(new Error("fetch called without an abort signal"));
+          return;
+        }
+        init.signal.addEventListener("abort", () => {
           reject(init.signal?.reason);
         });
       });
@@ -91,7 +99,6 @@ describe("submitNetlifyForm", () => {
     expect(SUBMIT_TIMEOUT_MS).toBe(15_000);
     expect(timeoutSpy).toHaveBeenCalledWith(SUBMIT_TIMEOUT_MS);
     const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(init.signal).toBeInstanceOf(AbortSignal);
-    timeoutSpy.mockRestore();
+    expect(init.signal).toBe(timeoutSpy.mock.results[0].value);
   });
 });

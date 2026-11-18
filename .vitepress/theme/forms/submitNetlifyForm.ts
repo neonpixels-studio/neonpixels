@@ -10,7 +10,8 @@ const FORM_URLENCODED_CONTENT_TYPE = "application/x-www-form-urlencoded";
 const NETLIFY_FORMS_SUBMIT_PATH = "/";
 const FORM_NAME_FIELD = "form-name";
 // Without a deadline a stalled connection (e.g. a captive portal) leaves the
-// form stuck in "submitting" with no retry path.
+// form stuck in "submitting" with no retry path. AbortSignal.timeout needs
+// Chrome 103 / Safari 16 / Firefox 100 (2022), an accepted browser floor.
 export const SUBMIT_TIMEOUT_MS = 15_000;
 
 export interface NetlifyFormSubmission {
@@ -34,7 +35,8 @@ export type FetchLike = (
   _init: NonNullable<Parameters<typeof fetch>[1]>,
 ) => Promise<Pick<Response, "ok" | "status">>;
 
-// Aborts after timeoutMs (rejecting with a TimeoutError). Throws on a non-2xx response rather than swallowing it, so the caller
+// Aborts after timeoutMs (rejecting with a TimeoutError). Throws on a non-2xx
+// response rather than swallowing it, so the caller
 // (ContactForm.vue) can surface a real failure to the visitor instead of
 // silently reporting success for a submission Netlify never recorded.
 export async function submitNetlifyForm(
