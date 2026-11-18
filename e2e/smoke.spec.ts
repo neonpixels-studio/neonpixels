@@ -201,7 +201,9 @@ test.describe("contact form server error", () => {
       "Hello from the smoke test",
     );
     expect(formPosts).toHaveLength(1);
+    expect(formPosts[0]).toContain("form-name=contact");
     expect(formPosts[0]).toContain("email=dev%40example.com");
+    expect(formPosts[0]).toContain("message=Hello+from+the+smoke+test");
 
     response.status = 200;
     await form.getByRole("button", { name: "send message" }).click();
@@ -209,16 +211,17 @@ test.describe("contact form server error", () => {
     await expect(page.getByRole("status")).toContainText("that landed");
     await expect(page.getByRole("alert")).toBeEmpty();
     expect(formPosts).toHaveLength(2);
+    expect(formPosts[1]).toContain("form-name=contact");
     expect(formPosts[1]).toContain("email=dev%40example.com");
     expect(formPosts[1]).toContain("message=Hello+from+the+smoke+test");
     expect(cspViolations).toEqual([]);
     // A failed submit yields two expected console errors: the browser's own
     // failed-resource line and the component's log. Anything else is a bug.
-    expect(
-      pageErrors.filter(
-        (message) => !message.includes("Failed to load resource"),
-      ),
-    ).toEqual([expect.stringContaining("Contact form submission failed")]);
+    const unexpectedErrors = pageErrors.filter(
+      (message) => !message.includes("Failed to load resource"),
+    );
+    expect(unexpectedErrors).toHaveLength(1);
+    expect(unexpectedErrors[0]).toContain("Contact form submission failed");
   });
 });
 
