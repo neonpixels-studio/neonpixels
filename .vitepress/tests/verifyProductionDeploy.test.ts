@@ -241,6 +241,19 @@ describe("enforceExpectedCommit", () => {
     });
   });
 
+  it("treats a missing commit_ref as a mismatch", () => {
+    expect(
+      enforceExpectedCommit(
+        { ...ready, deploy: { state: "ready" } },
+        GATED_SHA,
+      ),
+    ).toMatchObject({ outcome: OUTCOME_COMMIT_MISMATCH, deployedSha: null });
+  });
+
+  it("compares case-insensitively against an uppercase expected sha", () => {
+    expect(enforceExpectedCommit(ready, GATED_SHA.toUpperCase())).toBe(ready);
+  });
+
   it("leaves non-success outcomes alone", () => {
     const failed = { ...ready, outcome: OUTCOME_FAILURE };
     expect(enforceExpectedCommit(failed, OTHER_SHA)).toBe(failed);
@@ -285,7 +298,11 @@ describe("verifyProductionDeploy", () => {
     }));
   }
 
-  function verify(state: string, extra = {}, commitRef = GATED_SHA) {
+  function verify(
+    state: string,
+    extra = {},
+    commitRef: string | null = GATED_SHA,
+  ) {
     const clock = buildFakeClock();
     return verifyProductionDeploy({
       env,
@@ -322,9 +339,7 @@ describe("verifyProductionDeploy", () => {
   });
 
   it("rejects a ready deploy that reports no commit_ref", async () => {
-    await expect(
-      verify("ready", {}, null as unknown as string),
-    ).rejects.toThrow(/unknown commit/);
+    await expect(verify("ready", {}, null)).rejects.toThrow(/no commit_ref/);
   });
 
   it("accepts a matching commit_ref regardless of case", async () => {

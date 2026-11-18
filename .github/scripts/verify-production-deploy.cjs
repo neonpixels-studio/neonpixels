@@ -152,6 +152,13 @@ function enforceExpectedCommit(result, expectedCommitSha) {
   };
 }
 
+function describeCommitMismatch({ expectedCommitSha, deployedSha }) {
+  if (deployedSha === null) {
+    return `Production deploy is ready but Netlify reported no commit_ref, so it cannot be shown to match the gated commit ${expectedCommitSha}.`;
+  }
+  return `Production is now serving ${deployedSha}, but the deploy gate approved ${expectedCommitSha}; main moved after the guard, so that commit was not gated. Start a new run, or roll back in Netlify if it is unsafe.`;
+}
+
 function describeResult({
   outcome,
   state,
@@ -160,7 +167,7 @@ function describeResult({
   deployedSha,
 }) {
   if (outcome === OUTCOME_COMMIT_MISMATCH) {
-    return `Production deploy built ${deployedSha ?? "an unknown commit"} but the deploy gate approved ${expectedCommitSha}; main moved after the guard, so the deployed commit was not gated. Start a new run.`;
+    return describeCommitMismatch({ expectedCommitSha, deployedSha });
   }
   const detail = deploy?.error_message
     ? ` (${deploy.error_message.replace(/\s+/g, " ")})`
