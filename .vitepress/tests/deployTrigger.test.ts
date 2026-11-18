@@ -280,6 +280,32 @@ describe("main", () => {
     },
   );
 
+  it("checks main against GITHUB_SHA for head-unchanged", async () => {
+    const fetchStub = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ sha: "abc" }),
+    }));
+    vi.stubGlobal("fetch", fetchStub);
+    try {
+      const env = { GITHUB_REPOSITORY: "o/r", GH_TOKEN: "t" };
+      await expect(
+        (async () => main(["head-unchanged"], { ...env, GITHUB_SHA: "abc" }))(),
+      ).resolves.toBe(true);
+      await expect(
+        (async () => main(["head-unchanged"], { ...env, GITHUB_SHA: "old" }))(),
+      ).rejects.toThrow("main moved");
+      expect(fetchStub).toHaveBeenCalledWith(
+        "https://api.github.com/repos/o/r/commits/main",
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: "Bearer t" }),
+        }),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("rejects an unknown command", () => {
     expect(() => main(["bogus"], {})).toThrow(/Unknown command "bogus"/);
   });
@@ -302,7 +328,12 @@ describe("deploy-trigger.cjs executed", () => {
 
   function isolatedEnv(overrides: Record<string, string> = {}) {
     const inherited = Object.fromEntries(
-      Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+      Object.entries(process.env).filter(
+        ([key]) =>
+          !key.startsWith("GIT_") &&
+          !key.startsWith("GITHUB_") &&
+          key !== "GH_TOKEN",
+      ),
     );
     return { ...inherited, ...overrides };
   }
@@ -420,7 +451,10 @@ describe("deploy-trigger.cjs executed", () => {
 
   it("exits non-zero with an error annotation when head-unchanged lacks env", () => {
     const directory = makeDirectory();
-    const result = runScript("head-unchanged", directory, {});
+    const result = runScript("head-unchanged", directory, {
+      GITHUB_REPOSITORY: "o/r",
+      GH_TOKEN: "t",
+    });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(
       "::error::Missing required environment variable GITHUB_SHA",

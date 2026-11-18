@@ -30,7 +30,7 @@ declare const deployTrigger: {
     token: string;
     fetchImpl?: (
       url: string,
-      init: { headers: Record<string, string> },
+      init: { headers: Record<string, string>; signal?: AbortSignal },
     ) => Promise<{
       ok: boolean;
       status: number;

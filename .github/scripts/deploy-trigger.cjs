@@ -26,6 +26,7 @@ const DEPLOY_BRANCH = "main";
 const DEPLOY_REF = `origin/${DEPLOY_BRANCH}`;
 const SCHEDULED_TITLE = "Weekly production deploy";
 const MANUAL_TITLE = "Manual production deploy";
+const GITHUB_API_TIMEOUT_MS = 30_000;
 const GITHUB_API_BASE_URL = "https://api.github.com";
 
 function isScheduled(eventName) {
@@ -103,6 +104,7 @@ async function fetchMainHeadSha({ repository, token, fetchImpl = fetch }) {
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
       },
+      signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
     },
   );
   if (!response.ok) {
