@@ -82,7 +82,9 @@ open one) via `.github/scripts/notify-deploy-failure.cjs`. This needs two more r
 secrets: `NETLIFY_AUTH_TOKEN` (a Netlify personal access token: User settings >
 Applications > Personal access tokens) and `NETLIFY_SITE_ID` (Site configuration > Site
 details > Project ID). The deploy is found by a unique per-run trigger title
-(`... run <run id> attempt <attempt>`) rather than the hook response. The workflow fails before firing the
+(`... run <run id> attempt <attempt>`) rather than the hook response. The hook carries no
+commit SHA, so the verify step also compares the deploy's `commit_ref` to the commit the
+main-moved guard gated (`EXPECTED_COMMIT_SHA`) and fails if they differ. The workflow fails before firing the
 hook if either secret is missing.
 
 ### Contact form ([Netlify Forms](https://docs.netlify.com/manage/forms/setup/))

@@ -18,10 +18,14 @@ const {
   OUTCOME_FAILURE,
   OUTCOME_CANCELLED,
   OUTCOME_TIMEOUT,
+  OUTCOME_COMMIT_MISMATCH,
+  enforceExpectedCommit,
 } = verifyProductionDeploy;
 
 const DEPLOY_BASE_TITLE = "Weekly production deploy run 99";
 const DEPLOY_TITLE = "Weekly production deploy run 99 attempt 1";
+const GATED_SHA = "a".repeat(40);
+const OTHER_SHA = "b".repeat(40);
 const INTERVAL_MS = 1000;
 const TIMEOUT_MS = 5000;
 
@@ -218,6 +222,31 @@ describe("escapeWorkflowCommand", () => {
   });
 });
 
+describe("enforceExpectedCommit", () => {
+  const ready = {
+    outcome: OUTCOME_SUCCESS,
+    state: "ready",
+    deploy: { state: "ready", commit_ref: GATED_SHA },
+  };
+
+  it("keeps a success whose commit_ref matches", () => {
+    expect(enforceExpectedCommit(ready, GATED_SHA)).toBe(ready);
+  });
+
+  it("turns a success of a different commit into a mismatch", () => {
+    expect(enforceExpectedCommit(ready, OTHER_SHA)).toMatchObject({
+      outcome: OUTCOME_COMMIT_MISMATCH,
+      expectedCommitSha: OTHER_SHA,
+      deployedSha: GATED_SHA,
+    });
+  });
+
+  it("leaves non-success outcomes alone", () => {
+    const failed = { ...ready, outcome: OUTCOME_FAILURE };
+    expect(enforceExpectedCommit(failed, OTHER_SHA)).toBe(failed);
+  });
+});
+
 describe("describeResult", () => {
   it("collapses multi-line Netlify error messages", () => {
     expect(
@@ -245,21 +274,22 @@ describe("verifyProductionDeploy", () => {
     NETLIFY_AUTH_TOKEN: "tok",
     NETLIFY_SITE_ID: "site",
     NETLIFY_DEPLOY_TITLE: DEPLOY_TITLE,
+    EXPECTED_COMMIT_SHA: GATED_SHA,
   };
 
-  function stubFetch(state: string) {
+  function stubFetch(state: string, commitRef: string | null = GATED_SHA) {
     return vi.fn(async () => ({
       ok: true,
       status: 200,
-      json: async () => [{ title: DEPLOY_TITLE, state }],
+      json: async () => [{ title: DEPLOY_TITLE, state, commit_ref: commitRef }],
     }));
   }
 
-  function verify(state: string, extra = {}) {
+  function verify(state: string, extra = {}, commitRef = GATED_SHA) {
     const clock = buildFakeClock();
     return verifyProductionDeploy({
       env,
-      fetchImpl: stubFetch(state),
+      fetchImpl: stubFetch(state, commitRef),
       sleep: clock.sleep,
       now: clock.now,
       log: vi.fn(),
@@ -285,12 +315,31 @@ describe("verifyProductionDeploy", () => {
     await expect(verify("building")).rejects.toThrow(/timeout/);
   });
 
-  it.each(["NETLIFY_AUTH_TOKEN", "NETLIFY_SITE_ID", "NETLIFY_DEPLOY_TITLE"])(
-    "fails with a clear message when %s is missing",
-    async (name) => {
-      await expect(
-        verify("ready", { env: { ...env, [name]: undefined } }),
-      ).rejects.toThrow(`${name} is not set`);
-    },
-  );
+  it("rejects a ready deploy of a commit other than the gated one", async () => {
+    await expect(verify("ready", {}, OTHER_SHA)).rejects.toThrow(
+      new RegExp(`${OTHER_SHA}.*${GATED_SHA}`),
+    );
+  });
+
+  it("rejects a ready deploy that reports no commit_ref", async () => {
+    await expect(
+      verify("ready", {}, null as unknown as string),
+    ).rejects.toThrow(/unknown commit/);
+  });
+
+  it("accepts a matching commit_ref regardless of case", async () => {
+    const upper = GATED_SHA.toUpperCase();
+    expect((await verify("ready", {}, upper)).outcome).toBe(OUTCOME_SUCCESS);
+  });
+
+  it.each([
+    "NETLIFY_AUTH_TOKEN",
+    "NETLIFY_SITE_ID",
+    "NETLIFY_DEPLOY_TITLE",
+    "EXPECTED_COMMIT_SHA",
+  ])("fails with a clear message when %s is missing", async (name) => {
+    await expect(
+      verify("ready", { env: { ...env, [name]: undefined } }),
+    ).rejects.toThrow(`${name} is not set`);
+  });
 });

@@ -211,6 +211,11 @@ describe("weekly-production-deploy.yml", () => {
     );
   });
 
+  it("passes the gated commit to the verify step", () => {
+    const verifyStep = WORKFLOW.split("- name: Verify production deploy")[1];
+    expect(verifyStep).toContain("EXPECTED_COMMIT_SHA: ${{ github.sha }}");
+  });
+
   it("notifies on failure from a separate job, not the deploy job", () => {
     expect(WORKFLOW).toMatch(
       /notify-deploy-failure:\n\s+needs: \[e2e, deploy\]\n\s+if: failure\(\)/,

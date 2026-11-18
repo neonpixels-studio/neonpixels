@@ -3,17 +3,21 @@
 // verifyProductionDeploy.test.ts wants static types. See
 // notify-audit-failure.d.cts for why `export default` is used.
 
-export type DeployOutcome = "success" | "failure" | "cancelled" | "timeout";
+export type DeployOutcome =
+  "success" | "failure" | "cancelled" | "timeout" | "commit mismatch";
 
 export type NetlifyDeploy = {
   state: string;
   error_message?: string;
+  commit_ref?: string | null;
 };
 
 export type PollResult = {
   outcome: DeployOutcome;
   state: string;
   deploy: NetlifyDeploy | null;
+  expectedCommitSha?: string;
+  deployedSha?: string | null;
 };
 
 export type PollArgs = {
@@ -55,6 +59,10 @@ declare namespace verifyProductionDeploy {
   }): { fetchDeploy: (deployTitle: string) => Promise<NetlifyDeploy | null> };
   function pollDeployStatus(args: PollArgs): Promise<PollResult>;
   function escapeWorkflowCommand(text: string): string;
+  function enforceExpectedCommit(
+    result: PollResult,
+    expectedCommitSha: string,
+  ): PollResult;
   function describeResult(result: PollResult): string;
   class NetlifyApiError extends Error {
     constructor(path: string, status: number);
@@ -66,6 +74,7 @@ declare namespace verifyProductionDeploy {
   const OUTCOME_FAILURE: "failure";
   const OUTCOME_CANCELLED: "cancelled";
   const OUTCOME_TIMEOUT: "timeout";
+  const OUTCOME_COMMIT_MISMATCH: "commit mismatch";
 }
 
 export default verifyProductionDeploy;
