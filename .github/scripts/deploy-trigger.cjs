@@ -22,7 +22,8 @@ const { appendFileSync } = require("node:fs");
 
 const SCHEDULE_EVENT = "schedule";
 const WINDOW_DAYS = 7;
-const DEPLOY_REF = "origin/main";
+const DEPLOY_BRANCH = "main";
+const DEPLOY_REF = `origin/${DEPLOY_BRANCH}`;
 const SCHEDULED_TITLE = "Weekly production deploy";
 const MANUAL_TITLE = "Manual production deploy";
 const GITHUB_API_BASE_URL = "https://api.github.com";
@@ -96,7 +97,7 @@ function prepareTrigger({ env, writeEnv, print = console.log }) {
 
 async function fetchMainHeadSha({ repository, token, fetchImpl = fetch }) {
   const response = await fetchImpl(
-    `${GITHUB_API_BASE_URL}/repos/${repository}/commits/main`,
+    `${GITHUB_API_BASE_URL}/repos/${repository}/commits/${DEPLOY_BRANCH}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -157,13 +158,11 @@ function main(argv = process.argv.slice(2), env = process.env) {
     return;
   }
   if (command === "head-unchanged") {
+    const repository = requireEnv(env, "GITHUB_REPOSITORY");
+    const token = requireEnv(env, "GH_TOKEN");
     return checkHeadUnchanged({
       expectedSha: requireEnv(env, "GITHUB_SHA"),
-      fetchHeadSha: () =>
-        fetchMainHeadSha({
-          repository: requireEnv(env, "GITHUB_REPOSITORY"),
-          token: requireEnv(env, "GH_TOKEN"),
-        }),
+      fetchHeadSha: () => fetchMainHeadSha({ repository, token }),
     });
   }
   throw new Error(

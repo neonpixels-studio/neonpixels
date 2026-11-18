@@ -265,12 +265,20 @@ describe("main", () => {
     ).toThrow("Missing required environment variable EVENT_NAME");
   });
 
-  it("requires the repository, sha and token for head-unchanged", async () => {
-    const env = { GITHUB_SHA: "a", GH_TOKEN: "t" };
-    await expect((async () => main(["head-unchanged"], env))()).rejects.toThrow(
-      "Missing required environment variable GITHUB_REPOSITORY",
-    );
-  });
+  it.each(["GITHUB_REPOSITORY", "GH_TOKEN", "GITHUB_SHA"])(
+    "requires %s for head-unchanged",
+    (missing) => {
+      const env: Record<string, string> = {
+        GITHUB_REPOSITORY: "o/r",
+        GH_TOKEN: "t",
+        GITHUB_SHA: "a",
+      };
+      delete env[missing];
+      expect(() => main(["head-unchanged"], env)).toThrow(
+        `Missing required environment variable ${missing}`,
+      );
+    },
+  );
 
   it("rejects an unknown command", () => {
     expect(() => main(["bogus"], {})).toThrow(/Unknown command "bogus"/);
