@@ -45,6 +45,7 @@ function runGate(report: unknown) {
   chmodSync(npmStub, 0o755);
   return spawnSync("bash", [SCRIPT_PATH], {
     encoding: "utf8",
+    timeout: 10_000,
     env: {
       ...process.env,
       GITHUB_STEP_SUMMARY: "",
@@ -115,7 +116,9 @@ describe("audit gate script", () => {
     );
     const result = runGate(report);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("failing the build");
+    expect(result.stderr).toContain(
+      "GHSA-aaaa-bbbb-cccc@node_modules/left-pad",
+    );
   });
 
   it("does not fail on moderate advisories", () => {
@@ -159,6 +162,24 @@ describe("audit gate script", () => {
     const result = runGate(buildReport([], "node_modules/picomatch"));
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Stale audit allowlist entries");
+  });
+
+  it("allowlists only the exact install path when a package has several", () => {
+    const report = buildReport(
+      [{ name: "picomatch", severity: "high", url: PICOMATCH_ADVISORY_URL }],
+      "node_modules/picomatch",
+    );
+    (
+      report.vulnerabilities as Record<string, { nodes: string[] }>
+    ).picomatch.nodes.push("node_modules/other/node_modules/picomatch");
+    const result = runGate(report);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "GHSA-fc5q-39xc-vjpf@node_modules/other/node_modules/picomatch",
+    );
+    expect(result.stderr).not.toMatch(
+      /GHSA-fc5q-39xc-vjpf@node_modules\/picomatch$/m,
+    );
   });
 
   it("ignores transitive string-only via entries", () => {
