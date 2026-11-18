@@ -45,7 +45,11 @@ function runGate(report: unknown) {
   chmodSync(npmStub, 0o755);
   return spawnSync("bash", [SCRIPT_PATH], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${fakeBinDirectory}:${process.env.PATH}` },
+    env: {
+      ...process.env,
+      GITHUB_STEP_SUMMARY: "",
+      PATH: `${fakeBinDirectory}:${process.env.PATH}`,
+    },
   });
 }
 
@@ -155,6 +159,34 @@ describe("audit gate script", () => {
     const result = runGate(buildReport([], "node_modules/picomatch"));
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Stale audit allowlist entries");
+  });
+
+  it("ignores transitive string-only via entries", () => {
+    const report = buildReport(
+      [{ name: "picomatch", severity: "high", url: PICOMATCH_ADVISORY_URL }],
+      "node_modules/picomatch",
+    );
+    (report.vulnerabilities as Record<string, unknown>).vite = {
+      via: ["picomatch"],
+      nodes: ["node_modules/vite"],
+    };
+    expect(runGate(report).status).toBe(0);
+  });
+
+  it("names non-GHSA advisories by source and package", () => {
+    const report = buildReport(
+      [{ name: "left-pad", severity: "high", url: "https://example.com/x" }],
+      "node_modules/left-pad",
+    );
+    (
+      (report.vulnerabilities as Record<string, { via: object[] }>)["left-pad"]
+        .via[0] as Record<string, unknown>
+    ).source = 123;
+    const result = runGate(report);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "source-123:left-pad@node_modules/left-pad",
+    );
   });
 
   it("fails when npm audit returns no vulnerability metadata", () => {

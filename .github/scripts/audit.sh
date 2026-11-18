@@ -91,7 +91,7 @@ allow_json="$(jq -cn '$ARGS.positional' --args ${ALLOWLISTED_ADVISORIES[@]+"${AL
 # back to source-<n>:<name>. `(.via // [])` and `(.nodes // [...])` tolerate a
 # vulnerability object missing either array instead of aborting under set -e.
 all_ids="$(jq_on "$report" -c '
-  [ .vulnerabilities[] as $vulnerability
+  [ (.vulnerabilities // {})[] as $vulnerability
     | ($vulnerability.via // [])[]
     | select(type == "object" and (.severity == "high" or .severity == "critical"))
     | ( (((.url // "") | capture("(?<id>GHSA-[-0-9a-z]+)").id)?)
