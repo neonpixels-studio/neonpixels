@@ -6,7 +6,13 @@
 //     Builds the unique trigger title, appends NETLIFY_DEPLOY_TITLE to
 //     GITHUB_ENV for the verify step and prints the URL-encoded title on
 //     stdout for the build hook call.
-// Needs EVENT_NAME; `title` also needs GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT.
+//   node .github/scripts/deploy-trigger.cjs head-unchanged
+//     Fails when main has moved past the commit this run started from (the
+//     one the e2e gate tested), since Netlify builds whatever main is when
+//     the hook fires.
+// Needs EVENT_NAME; `title` also needs GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT;
+// `head-unchanged` needs GITHUB_REPOSITORY, GITHUB_SHA and GH_TOKEN (and does
+// not use EVENT_NAME).
 //
 // Plain CommonJS (.cjs) for the same reason as verify-production-deploy.cjs:
 // package.json sets "type": "module". The git call and file writes are
@@ -19,6 +25,7 @@ const WINDOW_DAYS = 7;
 const DEPLOY_REF = "origin/main";
 const SCHEDULED_TITLE = "Weekly production deploy";
 const MANUAL_TITLE = "Manual production deploy";
+const GITHUB_API_BASE_URL = "https://api.github.com";
 
 function isScheduled(eventName) {
   return eventName === SCHEDULE_EVENT;
@@ -87,6 +94,43 @@ function prepareTrigger({ env, writeEnv, print = console.log }) {
   return title;
 }
 
+async function fetchMainHeadSha({ repository, token, fetchImpl = fetch }) {
+  const response = await fetchImpl(
+    `${GITHUB_API_BASE_URL}/repos/${repository}/commits/main`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `GitHub API request for the main head failed with status ${response.status}`,
+    );
+  }
+  const { sha } = await response.json();
+  if (!sha) {
+    throw new Error("GitHub API response for the main head had no sha");
+  }
+  return sha;
+}
+
+async function checkHeadUnchanged({
+  expectedSha,
+  fetchHeadSha,
+  log = console.log,
+}) {
+  const headSha = await fetchHeadSha();
+  if (headSha !== expectedSha) {
+    throw new Error(
+      "main moved since the e2e gate ran; start a new run (a re-run reuses the old commit).",
+    );
+  }
+  log(`main is still at ${expectedSha}.`);
+  return true;
+}
+
 function escapeAnnotation(message) {
   return message
     .replace(/%/g, "%25")
@@ -98,6 +142,7 @@ function appender(path) {
   return (line) => appendFileSync(path, `${line}\n`);
 }
 
+// Sync for `recent` and `title`; `head-unchanged` returns a promise.
 function main(argv = process.argv.slice(2), env = process.env) {
   const [command] = argv;
   if (command === "recent") {
@@ -111,8 +156,18 @@ function main(argv = process.argv.slice(2), env = process.env) {
     prepareTrigger({ env, writeEnv: appender(requireEnv(env, "GITHUB_ENV")) });
     return;
   }
+  if (command === "head-unchanged") {
+    return checkHeadUnchanged({
+      expectedSha: requireEnv(env, "GITHUB_SHA"),
+      fetchHeadSha: () =>
+        fetchMainHeadSha({
+          repository: requireEnv(env, "GITHUB_REPOSITORY"),
+          token: requireEnv(env, "GH_TOKEN"),
+        }),
+    });
+  }
   throw new Error(
-    `Unknown command "${command}"; expected "recent" or "title".`,
+    `Unknown command "${command}"; expected "recent", "title" or "head-unchanged".`,
   );
 }
 
@@ -123,6 +178,8 @@ module.exports = {
   buildTriggerTitle,
   encodeTitle,
   prepareTrigger,
+  fetchMainHeadSha,
+  checkHeadUnchanged,
   escapeAnnotation,
   main,
   WINDOW_DAYS,
@@ -131,10 +188,13 @@ module.exports = {
 };
 
 if (require.main === module) {
-  try {
-    main();
-  } catch (error) {
+  const fail = (error) => {
     console.error(`::error::${escapeAnnotation(error.message)}`);
     process.exit(1);
+  };
+  try {
+    Promise.resolve(main()).catch(fail);
+  } catch (error) {
+    fail(error);
   }
 }

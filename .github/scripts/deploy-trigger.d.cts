@@ -25,8 +25,25 @@ declare const deployTrigger: {
     writeEnv: (line: string) => void;
     print?: (message: string) => void;
   }) => string;
+  fetchMainHeadSha: (args: {
+    repository: string;
+    token: string;
+    fetchImpl?: (
+      url: string,
+      init: { headers: Record<string, string> },
+    ) => Promise<{
+      ok: boolean;
+      status: number;
+      json: () => Promise<{ sha?: string }>;
+    }>;
+  }) => Promise<string>;
+  checkHeadUnchanged: (args: {
+    expectedSha: string;
+    fetchHeadSha: () => Promise<string>;
+    log?: (message: string) => void;
+  }) => Promise<boolean>;
   escapeAnnotation: (message: string) => string;
-  main: (argv?: string[], env?: Env) => void;
+  main: (argv?: string[], env?: Env) => void | Promise<boolean>;
   WINDOW_DAYS: number;
   SCHEDULED_TITLE: string;
   MANUAL_TITLE: string;

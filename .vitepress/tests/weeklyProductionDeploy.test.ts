@@ -113,9 +113,9 @@ describe("weekly-production-deploy.yml", () => {
     expect(guardStart).toBeGreaterThan(-1);
     expect(guardStart).toBeLessThan(triggerStart);
     const guard = deployJob.slice(guardStart, triggerStart);
-    expect(guard).toContain('"$GITHUB_SHA"');
+    expect(guard).toContain("deploy-trigger.cjs head-unchanged");
+    expect(guard).toContain("GH_TOKEN: ${{ github.token }}");
     expect(guard).toContain("if: steps.recent.outputs.skip != 'true'");
-    expect(guard).toContain("exit 1");
   });
 
   it("keeps Netlify secrets out of the e2e job", () => {
