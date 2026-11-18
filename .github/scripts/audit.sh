@@ -6,7 +6,8 @@
 # Dev dependencies are intentionally in scope: build/test tooling runs in CI
 # and on developer machines, so its advisories matter here.
 #
-# Blocking is measured per distinct advisory (GHSA id), not per affected package.
+# Blocking is measured per distinct advisory/path pair (GHSA id at an install
+# path), not per affected package.
 # npm's package-level counts inflate a single root advisory into every package
 # that pulls it in transitively. Counting advisories keeps the gate honest about
 # how many real, un-remediated flaws exist.
@@ -37,6 +38,11 @@ ALLOWLISTED_ADVISORIES=(
   # that runs picomatch. Drop once picomatch ships >4.0.7 and bump via `overrides`.
   "GHSA-fc5q-39xc-vjpf@node_modules/picomatch" # picomatch: ReDoS via repeated extglobs
 )
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required to run the audit gate." >&2
+  exit 1
+fi
 
 report="$(npm audit --json || true)"
 
@@ -126,7 +132,7 @@ fi
 if [ "$blocking_count" -gt 0 ]; then
   {
     echo ""
-    echo "Found ${blocking_count} un-allowlisted high/critical advisories — failing the build:"
+    echo "Found ${blocking_count} un-allowlisted high/critical advisory/path pairs — failing the build:"
     jq_on "$blocking_ids" -r '.[] | "- " + .'
   } | append_summary >&2
   exit 1

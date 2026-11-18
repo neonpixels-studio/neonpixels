@@ -18,9 +18,16 @@ function buildReport(advisories: AuditAdvisory[], nodePath: string) {
       nodes: [nodePath],
     };
   }
+  const countOf = (severity: string) =>
+    advisories.filter((advisory) => advisory.severity === severity).length;
   return {
     metadata: {
-      vulnerabilities: { critical: 0, high: advisories.length, moderate: 0 },
+      vulnerabilities: {
+        critical: countOf("critical"),
+        high: countOf("high"),
+        moderate: countOf("moderate"),
+        low: countOf("low"),
+      },
     },
     vulnerabilities,
   };
@@ -66,7 +73,11 @@ describe("audit gate script", () => {
       [{ name: "picomatch", severity: "high", url: PICOMATCH_ADVISORY_URL }],
       "node_modules/other/node_modules/picomatch",
     );
-    expect(runGate(report).status).toBe(1);
+    const result = runGate(report);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "GHSA-fc5q-39xc-vjpf@node_modules/other/node_modules/picomatch",
+    );
   });
 
   it("fails on any other high advisory", () => {
@@ -80,7 +91,11 @@ describe("audit gate script", () => {
       ],
       "node_modules/left-pad",
     );
-    expect(runGate(report).status).toBe(1);
+    const result = runGate(report);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "GHSA-aaaa-bbbb-cccc@node_modules/left-pad",
+    );
   });
 
   it("fails on a critical advisory", () => {
@@ -94,10 +109,57 @@ describe("audit gate script", () => {
       ],
       "node_modules/left-pad",
     );
-    expect(runGate(report).status).toBe(1);
+    const result = runGate(report);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("failing the build");
+  });
+
+  it("does not fail on moderate advisories", () => {
+    const report = buildReport(
+      [
+        {
+          name: "left-pad",
+          severity: "moderate",
+          url: "https://github.com/advisories/GHSA-aaaa-bbbb-cccc",
+        },
+      ],
+      "node_modules/left-pad",
+    );
+    expect(runGate(report).status).toBe(0);
+  });
+
+  it("still blocks a second advisory next to the allowlisted one", () => {
+    const report = buildReport(
+      [{ name: "picomatch", severity: "high", url: PICOMATCH_ADVISORY_URL }],
+      "node_modules/picomatch",
+    );
+    (report.vulnerabilities as Record<string, unknown>)["left-pad"] = {
+      via: [
+        {
+          name: "left-pad",
+          severity: "high",
+          url: "https://github.com/advisories/GHSA-aaaa-bbbb-cccc",
+        },
+      ],
+      nodes: ["node_modules/left-pad"],
+    };
+    const result = runGate(report);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "GHSA-aaaa-bbbb-cccc@node_modules/left-pad",
+    );
+    expect(result.stderr).not.toContain("GHSA-fc5q-39xc-vjpf");
+  });
+
+  it("warns when the allowlisted advisory is no longer reported", () => {
+    const result = runGate(buildReport([], "node_modules/picomatch"));
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Stale audit allowlist entries");
   });
 
   it("fails when npm audit returns no vulnerability metadata", () => {
-    expect(runGate({ error: "registry down" }).status).toBe(1);
+    const result = runGate({ error: "registry down" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("no vulnerability metadata");
   });
 });
