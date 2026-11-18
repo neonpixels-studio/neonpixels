@@ -156,7 +156,7 @@ function describeCommitMismatch({ expectedCommitSha, deployedSha }) {
   if (deployedSha === null) {
     return `Production deploy is ready but Netlify reported no commit_ref, so it cannot be shown to match the gated commit ${expectedCommitSha}.`;
   }
-  return `Production is now serving ${deployedSha}, but the deploy gate approved ${expectedCommitSha}; main moved after the guard, so that commit was not gated. Start a new run, or roll back in Netlify if it is unsafe.`;
+  return `Netlify deployed ${deployedSha}, but the deploy gate approved ${expectedCommitSha}, so the deployed commit was not gated (most likely main moved after the guard). Start a new run, or roll back in Netlify if it is unsafe.`;
 }
 
 function describeResult({

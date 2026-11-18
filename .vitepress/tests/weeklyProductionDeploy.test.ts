@@ -212,9 +212,11 @@ describe("weekly-production-deploy.yml", () => {
   });
 
   it("passes the gated commit to the verify step", () => {
-    const verifyStep = WORKFLOW.split(
+    const [, afterVerifyName] = WORKFLOW.split(
       "- name: Verify production deploy",
-    )[1].split(/\n {2}\S/)[0];
+    );
+    expect(afterVerifyName).toBeDefined();
+    const verifyStep = afterVerifyName.split(/\n {6}- /)[0];
     expect(verifyStep).toContain("EXPECTED_COMMIT_SHA: ${{ github.sha }}");
   });
 
