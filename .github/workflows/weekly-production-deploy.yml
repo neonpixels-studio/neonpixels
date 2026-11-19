@@ -133,12 +133,7 @@ jobs:
         if: steps.recent.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          head_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
-          if [ "$head_sha" != "$GITHUB_SHA" ]; then
-            echo "::error::main moved since the e2e gate ran; start a new run (a re-run reuses the old commit)."
-            exit 1
-          fi
+        run: node .github/scripts/deploy-trigger.cjs head-unchanged
 
       # The run id and attempt make the title unique (a re-run keeps the run id) so the verify step can find exactly
       # this deploy; it is also what shows in the Netlify deploy list.
