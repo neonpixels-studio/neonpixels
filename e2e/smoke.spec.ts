@@ -24,7 +24,12 @@ async function stubGtag(page: Page) {
 }
 
 // Intercepts the Netlify Forms POST so no test ever reaches the real backend.
-async function interceptFormPosts(page: Page) {
+// The mutable `response` lets a test flip the endpoint from failing to
+// succeeding between submits.
+async function interceptFormPosts(
+  page: Page,
+  response: { status: number } = { status: 200 },
+) {
   const formPosts: string[] = [];
   await page.route(
     (url) => url.pathname === "/",
@@ -34,7 +39,7 @@ async function interceptFormPosts(page: Page) {
         return;
       }
       formPosts.push(route.request().postData() ?? "");
-      await route.fulfill({ status: 200, body: "ok" });
+      await route.fulfill({ status: response.status, body: "ok" });
     },
   );
   return formPosts;
@@ -167,6 +172,56 @@ test.describe("contact form", () => {
     expect(formPosts[0]).toContain("email=dev%40example.com");
     expect(cspViolations).toEqual([]);
     expect(pageErrors).toEqual([]);
+  });
+});
+
+test.describe("contact form server error", () => {
+  test("a 500 shows the alert, keeps the fields, and a retry succeeds", async ({
+    page,
+  }) => {
+    const cspViolations = await trackCspViolations(page);
+    const pageErrors = trackPageErrors(page);
+    await stubGtag(page);
+    const response = { status: 500 };
+    const formPosts = await interceptFormPosts(page, response);
+
+    await page.goto("/");
+    const form = page.locator("form[name='contact']");
+    await expect(form).toHaveAttribute("novalidate", "");
+    await page.locator("#contact-email").fill("dev@example.com");
+    await page.locator("#contact-message").fill("Hello from the smoke test");
+    await form.getByRole("button", { name: "send message" }).click();
+
+    await expect(page.getByRole("alert")).toHaveText(
+      "That didn't send. Please try again in a moment.",
+    );
+    await expect(page.getByRole("status")).toBeEmpty();
+    await expect(page.locator("#contact-email")).toHaveValue("dev@example.com");
+    await expect(page.locator("#contact-message")).toHaveValue(
+      "Hello from the smoke test",
+    );
+    expect(formPosts).toHaveLength(1);
+    expect(formPosts[0]).toContain("form-name=contact");
+    expect(formPosts[0]).toContain("email=dev%40example.com");
+    expect(formPosts[0]).toContain("message=Hello+from+the+smoke+test");
+
+    response.status = 200;
+    await form.getByRole("button", { name: "send message" }).click();
+
+    await expect(page.getByRole("status")).toContainText("that landed");
+    await expect(page.getByRole("alert")).toBeEmpty();
+    expect(formPosts).toHaveLength(2);
+    expect(formPosts[1]).toContain("form-name=contact");
+    expect(formPosts[1]).toContain("email=dev%40example.com");
+    expect(formPosts[1]).toContain("message=Hello+from+the+smoke+test");
+    expect(cspViolations).toEqual([]);
+    // A failed submit yields two expected console errors: the browser's own
+    // failed-resource line and the component's log. Anything else is a bug.
+    const unexpectedErrors = pageErrors.filter(
+      (message) => !message.includes("Failed to load resource"),
+    );
+    expect(unexpectedErrors).toHaveLength(1);
+    expect(unexpectedErrors[0]).toContain("Contact form submission failed");
   });
 });
 
