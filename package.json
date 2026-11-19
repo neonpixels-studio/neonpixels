@@ -10,7 +10,7 @@
     "test": "vitest",
     "test:ci": "vitest run",
     "typecheck": "vue-tsc --noEmit",
-    "audit": "npm audit --audit-level=high",
+    "audit": "bash .github/scripts/audit.sh",
     "check:overrides": "node .vitepress/security/checkOverrideCompatibility.ts",
     "link:check": "node .vitepress/links/checkInternalLinks.ts",
     "perf:budget": "node .vitepress/perf/checkPerformanceBudget.ts",
