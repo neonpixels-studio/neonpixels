@@ -110,7 +110,8 @@ jobs:
       # This is a static site with zero production dependencies, so all real
       # supply-chain exposure lives in devDependencies. Audit the full tree
       # (no --omit=dev) so the gate can actually fail on a high/critical
-      # advisory. `npm run audit` === `npm audit --audit-level=high`.
+      # advisory. `npm run audit` runs .github/scripts/audit.sh: the same
+      # high/critical gate, minus allowlisted advisories with no upstream fix.
       - name: Audit gate (fail on high or critical advisories)
         run: npm run audit
 
