@@ -150,6 +150,8 @@ jobs:
 
       - name: Verify production deploy succeeded
         if: steps.recent.outputs.skip != 'true'
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
         run: node .github/scripts/verify-production-deploy.cjs
 
   # Separate job so `issues: write` stays out of the job that handles the

@@ -5,7 +5,10 @@
 // production actually updated. This polls the Netlify API until the deploy
 // reaches a terminal state and exits non-zero otherwise, which lets the
 // workflow's notify job open an issue. Needs NETLIFY_AUTH_TOKEN,
-// NETLIFY_SITE_ID and NETLIFY_DEPLOY_TITLE (the unique trigger title).
+// NETLIFY_SITE_ID and NETLIFY_DEPLOY_TITLE (the unique trigger title), plus
+// EXPECTED_COMMIT_SHA (the commit the main-moved guard gated): the build hook
+// carries no SHA, so Netlify builds whatever main is when it picks the job
+// up, and a ready deploy of any other commit is reported as a failure.
 //
 // Plain CommonJS (.cjs) for the same reason as notify-audit-failure.cjs:
 // package.json sets "type": "module". All network and timing dependencies
@@ -24,6 +27,7 @@ const OUTCOME_FAILURE = "failure";
 const OUTCOME_CANCELLED = "cancelled";
 const OUTCOME_TIMEOUT = "timeout";
 const OUTCOME_PENDING = "pending";
+const OUTCOME_COMMIT_MISMATCH = "commit mismatch";
 
 const SUCCESS_STATES = new Set(["ready"]);
 const FAILURE_STATES = new Set(["error", "rejected"]);
@@ -130,7 +134,41 @@ async function pollDeployStatus({
   return { outcome: OUTCOME_TIMEOUT, state: lastState, deploy: null };
 }
 
-function describeResult({ outcome, state, deploy }) {
+// A ready deploy of a commit nobody gated is not a verified deploy. A missing
+// commit_ref also fails: it cannot be shown to match.
+function enforceExpectedCommit(result, expectedCommitSha) {
+  if (result.outcome !== OUTCOME_SUCCESS) {
+    return result;
+  }
+  const deployedSha = result.deploy?.commit_ref?.toLowerCase() || null;
+  if (deployedSha === expectedCommitSha.toLowerCase()) {
+    return result;
+  }
+  return {
+    ...result,
+    outcome: OUTCOME_COMMIT_MISMATCH,
+    expectedCommitSha,
+    deployedSha,
+  };
+}
+
+function describeCommitMismatch({ expectedCommitSha, deployedSha }) {
+  if (deployedSha === null) {
+    return `Production deploy is ready but Netlify reported no commit_ref, so it cannot be shown to match the gated commit ${expectedCommitSha}.`;
+  }
+  return `Netlify deployed ${deployedSha}, but the deploy gate approved ${expectedCommitSha}, so the deployed commit was not gated (most likely main moved after the guard). Start a new run, or roll back in Netlify if it is unsafe.`;
+}
+
+function describeResult({
+  outcome,
+  state,
+  deploy,
+  expectedCommitSha,
+  deployedSha,
+}) {
+  if (outcome === OUTCOME_COMMIT_MISMATCH) {
+    return describeCommitMismatch({ expectedCommitSha, deployedSha });
+  }
   const detail = deploy?.error_message
     ? ` (${deploy.error_message.replace(/\s+/g, " ")})`
     : "";
@@ -173,9 +211,10 @@ async function verifyProductionDeploy({
   const token = readRequiredEnv(env, "NETLIFY_AUTH_TOKEN");
   const siteId = readRequiredEnv(env, "NETLIFY_SITE_ID");
   const deployTitle = readRequiredEnv(env, "NETLIFY_DEPLOY_TITLE");
+  const expectedCommitSha = readRequiredEnv(env, "EXPECTED_COMMIT_SHA");
   const { fetchDeploy } = createNetlifyClient({ token, siteId, fetchImpl });
   log(`Polling Netlify for the deploy titled "${deployTitle}".`);
-  const result = await pollDeployStatus({
+  const polled = await pollDeployStatus({
     deployTitle,
     fetchDeploy,
     sleep,
@@ -183,6 +222,7 @@ async function verifyProductionDeploy({
     intervalMs,
     timeoutMs,
   });
+  const result = enforceExpectedCommit(polled, expectedCommitSha);
   const message = describeResult(result);
   log(message);
   if (result.outcome !== OUTCOME_SUCCESS) {
@@ -195,6 +235,7 @@ module.exports = verifyProductionDeploy;
 module.exports.classifyDeployState = classifyDeployState;
 module.exports.createNetlifyClient = createNetlifyClient;
 module.exports.pollDeployStatus = pollDeployStatus;
+module.exports.enforceExpectedCommit = enforceExpectedCommit;
 module.exports.describeResult = describeResult;
 module.exports.escapeWorkflowCommand = escapeWorkflowCommand;
 module.exports.NetlifyApiError = NetlifyApiError;
@@ -204,6 +245,7 @@ module.exports.OUTCOME_SUCCESS = OUTCOME_SUCCESS;
 module.exports.OUTCOME_FAILURE = OUTCOME_FAILURE;
 module.exports.OUTCOME_CANCELLED = OUTCOME_CANCELLED;
 module.exports.OUTCOME_TIMEOUT = OUTCOME_TIMEOUT;
+module.exports.OUTCOME_COMMIT_MISMATCH = OUTCOME_COMMIT_MISMATCH;
 
 if (require.main === module) {
   verifyProductionDeploy().catch((error) => {
