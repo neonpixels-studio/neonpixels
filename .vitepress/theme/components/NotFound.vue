@@ -126,8 +126,7 @@ onMounted(() => {
             <span class="text-fg-muted">{{ displayPath }}</span>
           </div>
           <div class="text-[#cdcac4]">
-            cat: <span class="text-fg-muted">{{ displayPath }}</span
-            >:
+            cat: <span class="text-fg-muted">{{ displayPath }}</span>:
             <span class="text-pink">{{ missingLine }}</span>
           </div>
           <div>
