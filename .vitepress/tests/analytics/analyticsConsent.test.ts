@@ -203,7 +203,16 @@ describe("stored consent choice", () => {
     };
     expect(getStoredConsentChoice(storage, NOW)).toBe(CONSENT_CHOICES.declined);
     expect(backing.get(LEGACY_CONSENT_STORAGE_KEY)).toBe("declined");
+    expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
+  });
+
+  it("does not revive a legacy value when the current key is expired", () => {
+    const storage = createFakeStorage({
+      [CONSENT_STORAGE_KEY]: storedRecord(CONSENT_CHOICES.declined, NOW - 1),
+      [LEGACY_CONSENT_STORAGE_KEY]: CONSENT_CHOICES.accepted,
+    });
+    expect(getStoredConsentChoice(storage, NOW)).toBeNull();
   });
 
   it("prefers the current key over a legacy value", () => {

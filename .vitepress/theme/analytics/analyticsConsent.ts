@@ -112,12 +112,9 @@ function parseJson(rawValue: string): unknown {
 // Returns null for anything that is not a well-formed, unexpired record, so
 // a malformed or expired value is treated exactly like "never answered".
 function parseStoredConsent(
-  rawValue: string | null,
+  rawValue: string,
   now: number,
 ): ConsentChoice | null {
-  if (rawValue === null) {
-    return null;
-  }
   const { choice, expiresAt } = (parseJson(rawValue) ??
     {}) as Partial<StoredConsent>;
   if (!isConsentChoice(choice) || typeof expiresAt !== "number") {

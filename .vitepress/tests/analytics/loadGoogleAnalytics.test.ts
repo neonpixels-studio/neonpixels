@@ -265,7 +265,6 @@ describe("clearGoogleAnalyticsCookies on a subdomain", () => {
   it("expires each GA cookie on the host and every parent domain", () => {
     const writes: string[] = [];
     const fakeDocument = {
-      cookie: "_ga=1; _ga_ABC=2; other=3",
       location: { hostname: "www.neonpixels.dev" },
     } as unknown as Document;
     Object.defineProperty(fakeDocument, "cookie", {
@@ -275,6 +274,7 @@ describe("clearGoogleAnalyticsCookies on a subdomain", () => {
       },
     });
     clearGoogleAnalyticsCookies(fakeDocument);
+    expect(writes).toContain("_ga=; path=/; max-age=0");
     expect(writes).toContain("_ga=; domain=.neonpixels.dev; path=/; max-age=0");
     expect(writes).toContain(
       "_ga_ABC=; domain=.www.neonpixels.dev; path=/; max-age=0",
@@ -291,7 +291,14 @@ describe("cookieDomainCandidates", () => {
     ]);
   });
 
-  it("returns nothing for IP and IPv6 hosts", () => {
+  it("ignores a trailing dot on the hostname", () => {
+    expect(cookieDomainCandidates("www.neonpixels.dev.")).toEqual([
+      ".www.neonpixels.dev",
+      ".neonpixels.dev",
+    ]);
+  });
+
+  it("returns nothing for IP, IPv6, and single-label hosts", () => {
     expect(cookieDomainCandidates("127.0.0.1")).toEqual([]);
     expect(cookieDomainCandidates("[::1]")).toEqual([]);
     expect(cookieDomainCandidates("localhost")).toEqual([]);

@@ -4,6 +4,8 @@ import ConsentBanner from "@components/ConsentBanner.vue";
 import {
   CONSENT_LIFETIME_MS,
   CONSENT_STORAGE_KEY,
+  setStoredConsentChoice,
+  type ConsentChoice,
   MANAGE_CHOICE_LABEL,
 } from "@theme/analytics/analyticsConsent";
 import { PRIVACY_POLICY_URL } from "@theme/routes";
@@ -48,14 +50,8 @@ function setGlobalPrivacyControl(value: boolean | undefined) {
   });
 }
 
-function storeChoice(
-  choice: string,
-  expiresAt = Date.now() + CONSENT_LIFETIME_MS,
-) {
-  localStorage.setItem(
-    CONSENT_STORAGE_KEY,
-    JSON.stringify({ choice, expiresAt }),
-  );
+function storeChoice(choice: ConsentChoice, now = Date.now()) {
+  setStoredConsentChoice(localStorage, choice, now);
 }
 
 function readStoredChoice() {
@@ -122,6 +118,14 @@ describe("ConsentBanner", () => {
     expect(loadGoogleAnalyticsMock).toHaveBeenCalledWith("G-TEST123");
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
     wrapper.unmount();
+  });
+
+  it("prompts again, without loading analytics, when the stored acceptance has expired", async () => {
+    storeChoice("accepted", Date.now() - CONSENT_LIFETIME_MS - 1);
+    const wrapper = mount(ConsentBanner);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(true);
+    expect(loadGoogleAnalyticsMock).not.toHaveBeenCalled();
   });
 
   it("stays hidden, with no banner shown again, when consent was already declined", async () => {
