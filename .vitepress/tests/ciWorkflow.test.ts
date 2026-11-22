@@ -115,12 +115,13 @@ describe("ci.yml single site build", () => {
   });
 });
 
+const jobs = () => findTopLevelBlock("jobs") ?? "";
+const findJob = (name: string) =>
+  new RegExp(`^ {2}${name}:[\\s\\S]*?(?=^ {2}\\S|(?![\\s\\S]))`, "m").exec(
+    jobs(),
+  )?.[0] ?? "";
+
 describe("ci.yml e2e job", () => {
-  const jobs = () => findTopLevelBlock("jobs") ?? "";
-  const findJob = (name: string) =>
-    new RegExp(`^ {2}${name}:[\\s\\S]*?(?=^ {2}\\S|(?![\\s\\S]))`, "m").exec(
-      jobs(),
-    )?.[0] ?? "";
   const e2eJob = () => findJob("e2e");
 
   it("exists and runs the e2e script", () => {
@@ -150,5 +151,23 @@ describe("ci.yml e2e job", () => {
 
   it("installs only chromium", () => {
     expect(e2eJob()).toMatch(/playwright install --with-deps chromium\s*$/m);
+  });
+});
+
+describe("ci.yml fallow audit", () => {
+  const ciJob = () => findJob("ci");
+
+  // A shallow checkout has no base ref, so `fallow audit` exits 2 with
+  // "could not detect base branch".
+  it("checks out full history so fallow can resolve a base", () => {
+    expect(ciJob()).toMatch(/^\s+fetch-depth:\s*0\s*$/m);
+  });
+
+  it("runs fallow audit against an explicit base", () => {
+    expect(ciJob()).toMatch(/npx fallow audit --base "\$BASE"/);
+  });
+
+  it("runs static lint before the fallow audit", () => {
+    expect(ciJob()).toMatch(/npm run lint:static[\s\S]*npx fallow audit/);
   });
 });
