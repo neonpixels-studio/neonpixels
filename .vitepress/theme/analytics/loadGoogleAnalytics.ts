@@ -180,12 +180,35 @@ function expireCookie(targetDocument: Document, name: string, domain?: string) {
   targetDocument.cookie = `${name}=;${domainAttribute} path=/; max-age=0`;
 }
 
+const IP_ADDRESS_PATTERN = /^\d+(\.\d+){3}$/;
+
+// The host and every parent suffix as a leading-dot domain, since GA sets its
+// cookies on the registrable parent domain. "www.example.com" yields
+// ".www.example.com" and ".example.com". IP hosts have no parent domains.
+export function cookieDomainCandidates(hostname: string): string[] {
+  if (IP_ADDRESS_PATTERN.test(hostname) || hostname.includes(":")) {
+    return [];
+  }
+  const labels = hostname.replace(/\.$/, "").split(".");
+  return labels
+    .slice(0, -1)
+    .map((_, index) => `.${labels.slice(index).join(".")}`);
+}
+
+function expireCookieEverywhere(
+  targetDocument: Document,
+  name: string,
+  domains: string[],
+) {
+  expireCookie(targetDocument, name);
+  domains.forEach((domain) => expireCookie(targetDocument, name, domain));
+}
+
 export function clearGoogleAnalyticsCookies(
   targetDocument: Document = document,
 ) {
-  const names = gaCookieNames(targetDocument.cookie);
-  for (const name of names) {
-    expireCookie(targetDocument, name);
-    expireCookie(targetDocument, name, `.${targetDocument.location.hostname}`);
-  }
+  const domains = cookieDomainCandidates(targetDocument.location.hostname);
+  gaCookieNames(targetDocument.cookie).forEach((name) =>
+    expireCookieEverywhere(targetDocument, name, domains),
+  );
 }
