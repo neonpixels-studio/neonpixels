@@ -87,6 +87,7 @@ jobs:
           if [ -n "$BASE" ] && git cat-file -e "$BASE" 2>/dev/null; then
             npx fallow audit --base "$BASE"
           else
+            echo "::warning::fallow audit base unavailable; using auto-detected base"
             npx fallow audit
           fi
 

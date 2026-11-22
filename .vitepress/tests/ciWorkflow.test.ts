@@ -166,4 +166,8 @@ describe("ci.yml fallow audit", () => {
   it("runs fallow audit against an explicit base", () => {
     expect(ciJob()).toMatch(/npx fallow audit --base "\$BASE"/);
   });
+
+  it("runs static lint before the fallow audit", () => {
+    expect(ciJob()).toMatch(/npm run lint:static[\s\S]*npx fallow audit/);
+  });
 });
