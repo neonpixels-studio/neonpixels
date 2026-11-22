@@ -195,14 +195,20 @@ export function cookieDomainCandidates(hostname: string): string[] {
     .map((_, index) => `.${labels.slice(index).join(".")}`);
 }
 
+function expireCookieEverywhere(
+  targetDocument: Document,
+  name: string,
+  domains: string[],
+) {
+  expireCookie(targetDocument, name);
+  domains.forEach((domain) => expireCookie(targetDocument, name, domain));
+}
+
 export function clearGoogleAnalyticsCookies(
   targetDocument: Document = document,
 ) {
   const domains = cookieDomainCandidates(targetDocument.location.hostname);
-  for (const name of gaCookieNames(targetDocument.cookie)) {
-    expireCookie(targetDocument, name);
-    for (const domain of domains) {
-      expireCookie(targetDocument, name, domain);
-    }
-  }
+  gaCookieNames(targetDocument.cookie).forEach((name) =>
+    expireCookieEverywhere(targetDocument, name, domains),
+  );
 }

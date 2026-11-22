@@ -42,6 +42,12 @@ function createNavigatorFixture(
   return { doNotTrack: null, globalPrivacyControl: false, ...overrides };
 }
 
+// Relative to the real clock, for tests that go through shouldLoadAnalytics
+// and shouldPromptForConsent, which read Date.now() themselves.
+function unexpiredRecord(choice: string) {
+  return storedRecord(choice, Date.now() + CONSENT_LIFETIME_MS);
+}
+
 describe("trackingSignalPresent", () => {
   it("is false when neither Do Not Track nor Global Privacy Control is set", () => {
     expect(trackingSignalPresent(createNavigatorFixture())).toBe(false);
@@ -183,6 +189,23 @@ describe("stored consent choice", () => {
     expect(storage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
   });
 
+  it("keeps the legacy key and still honors the choice when the migration write fails", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const backing = new Map([[LEGACY_CONSENT_STORAGE_KEY, "declined"]]);
+    const storage: ConsentStorage = {
+      getItem: (key) => backing.get(key) ?? null,
+      setItem: () => {
+        throw new Error("quota exceeded");
+      },
+      removeItem: (key) => {
+        backing.delete(key);
+      },
+    };
+    expect(getStoredConsentChoice(storage, NOW)).toBe(CONSENT_CHOICES.declined);
+    expect(backing.get(LEGACY_CONSENT_STORAGE_KEY)).toBe("declined");
+    warn.mockRestore();
+  });
+
   it("prefers the current key over a legacy value", () => {
     const storage = createFakeStorage({
       [CONSENT_STORAGE_KEY]: storedRecord(CONSENT_CHOICES.declined),
@@ -195,10 +218,7 @@ describe("stored consent choice", () => {
 describe("shouldLoadAnalytics", () => {
   it("is false when Do Not Track is set, even with a stored acceptance", () => {
     const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: storedRecord(
-        CONSENT_CHOICES.accepted,
-        Date.now() + CONSENT_LIFETIME_MS,
-      ),
+      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.accepted),
     });
     const navigatorFixture = createNavigatorFixture({ doNotTrack: "1" });
     expect(shouldLoadAnalytics(navigatorFixture, storage)).toBe(false);
@@ -206,10 +226,7 @@ describe("shouldLoadAnalytics", () => {
 
   it("is false when Global Privacy Control is set, even with a stored acceptance", () => {
     const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: storedRecord(
-        CONSENT_CHOICES.accepted,
-        Date.now() + CONSENT_LIFETIME_MS,
-      ),
+      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.accepted),
     });
     const navigatorFixture = createNavigatorFixture({
       globalPrivacyControl: true,
@@ -225,20 +242,14 @@ describe("shouldLoadAnalytics", () => {
 
   it("is false when neither signal is set and the stored choice is declined", () => {
     const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: storedRecord(
-        CONSENT_CHOICES.declined,
-        Date.now() + CONSENT_LIFETIME_MS,
-      ),
+      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.declined),
     });
     expect(shouldLoadAnalytics(createNavigatorFixture(), storage)).toBe(false);
   });
 
   it("is true only when neither signal is set and consent was accepted", () => {
     const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: storedRecord(
-        CONSENT_CHOICES.accepted,
-        Date.now() + CONSENT_LIFETIME_MS,
-      ),
+      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.accepted),
     });
     expect(shouldLoadAnalytics(createNavigatorFixture(), storage)).toBe(true);
   });
@@ -269,16 +280,10 @@ describe("shouldPromptForConsent", () => {
 
   it("is false once a choice has already been stored, accepted or declined", () => {
     const acceptedStorage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: storedRecord(
-        CONSENT_CHOICES.accepted,
-        Date.now() + CONSENT_LIFETIME_MS,
-      ),
+      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.accepted),
     });
     const declinedStorage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: storedRecord(
-        CONSENT_CHOICES.declined,
-        Date.now() + CONSENT_LIFETIME_MS,
-      ),
+      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.declined),
     });
     expect(
       shouldPromptForConsent(createNavigatorFixture(), acceptedStorage),

@@ -261,6 +261,28 @@ describe("clearGoogleAnalyticsCookies", () => {
   });
 });
 
+describe("clearGoogleAnalyticsCookies on a subdomain", () => {
+  it("expires each GA cookie on the host and every parent domain", () => {
+    const writes: string[] = [];
+    const fakeDocument = {
+      cookie: "_ga=1; _ga_ABC=2; other=3",
+      location: { hostname: "www.neonpixels.dev" },
+    } as unknown as Document;
+    Object.defineProperty(fakeDocument, "cookie", {
+      get: () => "_ga=1; _ga_ABC=2; other=3",
+      set: (value: string) => {
+        writes.push(value);
+      },
+    });
+    clearGoogleAnalyticsCookies(fakeDocument);
+    expect(writes).toContain("_ga=; domain=.neonpixels.dev; path=/; max-age=0");
+    expect(writes).toContain(
+      "_ga_ABC=; domain=.www.neonpixels.dev; path=/; max-age=0",
+    );
+    expect(writes.some((write) => write.startsWith("other="))).toBe(false);
+  });
+});
+
 describe("cookieDomainCandidates", () => {
   it("lists the host and each parent suffix", () => {
     expect(cookieDomainCandidates("www.neonpixels.dev")).toEqual([
@@ -271,6 +293,7 @@ describe("cookieDomainCandidates", () => {
 
   it("returns nothing for IP and IPv6 hosts", () => {
     expect(cookieDomainCandidates("127.0.0.1")).toEqual([]);
-    expect(cookieDomainCandidates("::1")).toEqual([]);
+    expect(cookieDomainCandidates("[::1]")).toEqual([]);
+    expect(cookieDomainCandidates("localhost")).toEqual([]);
   });
 });

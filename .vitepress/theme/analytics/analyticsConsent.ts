@@ -101,6 +101,14 @@ function isConsentChoice(value: unknown): value is ConsentChoice {
   );
 }
 
+function parseJson(rawValue: string): unknown {
+  try {
+    return JSON.parse(rawValue);
+  } catch {
+    return null;
+  }
+}
+
 // Returns null for anything that is not a well-formed, unexpired record, so
 // a malformed or expired value is treated exactly like "never answered".
 function parseStoredConsent(
@@ -110,30 +118,38 @@ function parseStoredConsent(
   if (rawValue === null) {
     return null;
   }
-  try {
-    const parsed: unknown = JSON.parse(rawValue);
-    const { choice, expiresAt } = (parsed ?? {}) as Partial<StoredConsent>;
-    if (!isConsentChoice(choice) || typeof expiresAt !== "number") {
-      return null;
-    }
-    return expiresAt > now ? choice : null;
-  } catch {
+  const { choice, expiresAt } = (parseJson(rawValue) ??
+    {}) as Partial<StoredConsent>;
+  if (!isConsentChoice(choice) || typeof expiresAt !== "number") {
     return null;
   }
+  if (expiresAt <= now) {
+    return null;
+  }
+  return choice;
 }
 
 // Moves a value under the previous key to the current key, keeping the choice
 // and starting the 180 days from now, then removes the old key. A legacy value
-// that is not a recognized choice is dropped.
-function migrateLegacyConsentChoice(storage: ConsentStorage, now: number) {
+// that is not a recognized choice is dropped. If the new value cannot be
+// written, the old key is kept so the choice is not lost, and the legacy
+// choice is still honored for this page load.
+function migrateLegacyConsentChoice(
+  storage: ConsentStorage,
+  now: number,
+): ConsentChoice | null {
   const legacyValue = storage.getItem(LEGACY_CONSENT_STORAGE_KEY);
   if (legacyValue === null) {
-    return;
+    return null;
   }
-  if (isConsentChoice(legacyValue)) {
-    setStoredConsentChoice(storage, legacyValue, now);
+  if (!isConsentChoice(legacyValue)) {
+    storage.removeItem(LEGACY_CONSENT_STORAGE_KEY);
+    return null;
   }
-  storage.removeItem(LEGACY_CONSENT_STORAGE_KEY);
+  if (setStoredConsentChoice(storage, legacyValue, now)) {
+    storage.removeItem(LEGACY_CONSENT_STORAGE_KEY);
+  }
+  return legacyValue;
 }
 
 // Reads the visitor's prior banner choice, if any. Returns null when no
@@ -143,23 +159,25 @@ export function getStoredConsentChoice(
   storage: ConsentStorage,
   now: number = Date.now(),
 ): ConsentChoice | null {
-  if (storage.getItem(CONSENT_STORAGE_KEY) === null) {
-    migrateLegacyConsentChoice(storage, now);
+  const currentValue = storage.getItem(CONSENT_STORAGE_KEY);
+  if (currentValue === null) {
+    return migrateLegacyConsentChoice(storage, now);
   }
-  return parseStoredConsent(storage.getItem(CONSENT_STORAGE_KEY), now);
+  return parseStoredConsent(currentValue, now);
 }
 
 export function setStoredConsentChoice(
   storage: ConsentStorage,
   choice: ConsentChoice,
   now: number = Date.now(),
-) {
+): boolean {
   const record: StoredConsent = {
     choice,
     expiresAt: now + CONSENT_LIFETIME_MS,
   };
   try {
     storage.setItem(CONSENT_STORAGE_KEY, JSON.stringify(record));
+    return true;
   } catch (error) {
     // Best-effort persistence: if this throws (e.g. a Safari private-mode
     // quota), the choice just doesn't survive a reload and the banner
@@ -169,6 +187,7 @@ export function setStoredConsentChoice(
       "Analytics consent choice could not be persisted; it will not survive a reload.",
       error,
     );
+    return false;
   }
 }
 
