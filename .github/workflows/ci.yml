@@ -73,13 +73,16 @@ jobs:
         run: npm ci
 
       - name: Lint
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
-          npx prettier --check .
-          npx eslint .
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="${{ github.event.pull_request.base.sha }}"
+          npm run lint:static
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="$PR_BASE_SHA"
           else
-            BASE="${{ github.event.before }}"
+            BASE="$PUSH_BEFORE_SHA"
           fi
           if [ -n "$BASE" ] && git cat-file -e "$BASE" 2>/dev/null; then
             npx fallow audit --base "$BASE"
