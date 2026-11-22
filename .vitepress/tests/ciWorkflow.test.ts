@@ -152,3 +152,20 @@ describe("ci.yml e2e job", () => {
     expect(e2eJob()).toMatch(/playwright install --with-deps chromium\s*$/m);
   });
 });
+
+describe("ci.yml fallow audit", () => {
+  const ciJob = () =>
+    /^ {2}ci:[\s\S]*?(?=^ {2}\S|(?![\s\S]))/m.exec(
+      findTopLevelBlock("jobs") ?? "",
+    )?.[0] ?? "";
+
+  // A shallow checkout has no base ref, so `fallow audit` exits 2 with
+  // "could not detect base branch".
+  it("checks out full history so fallow can resolve a base", () => {
+    expect(ciJob()).toMatch(/^\s+fetch-depth:\s*0\s*$/m);
+  });
+
+  it("runs fallow audit against an explicit base", () => {
+    expect(ciJob()).toMatch(/npx fallow audit --base "\$BASE"/);
+  });
+});
