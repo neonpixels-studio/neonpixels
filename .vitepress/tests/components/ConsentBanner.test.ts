@@ -126,6 +126,7 @@ describe("ConsentBanner", () => {
     await wrapper.vm.$nextTick();
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(true);
     expect(loadGoogleAnalyticsMock).not.toHaveBeenCalled();
+    wrapper.unmount();
   });
 
   it("stays hidden, with no banner shown again, when consent was already declined", async () => {

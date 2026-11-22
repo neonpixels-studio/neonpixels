@@ -99,6 +99,11 @@ describe("stored consent choice", () => {
       "a non-numeric expiry",
       JSON.stringify({ choice: "accepted", expiresAt: "soon" }),
     ],
+    [
+      "an expiry beyond one lifetime",
+      storedRecord("accepted", NOW + CONSENT_LIFETIME_MS + 1),
+    ],
+    ["an infinite expiry", '{"choice":"accepted","expiresAt":1e400}'],
     ["a missing expiry", JSON.stringify({ choice: "accepted" })],
   ])("returns null for %s", (_label, value) => {
     const storage = createFakeStorage({ [CONSENT_STORAGE_KEY]: value });

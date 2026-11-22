@@ -120,6 +120,11 @@ function parseStoredConsent(
   if (!isConsentChoice(choice) || typeof expiresAt !== "number") {
     return null;
   }
+  // Reject a non-finite or implausibly distant expiry (a skewed device clock
+  // or hand-edited value) rather than honoring it indefinitely.
+  if (!Number.isFinite(expiresAt) || expiresAt > now + CONSENT_LIFETIME_MS) {
+    return null;
+  }
   if (expiresAt <= now) {
     return null;
   }
