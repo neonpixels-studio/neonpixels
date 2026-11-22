@@ -4,7 +4,7 @@ import { trackCspViolations } from "./support/cspViolations.ts";
 import { trackPageErrors } from "./support/pageErrors.ts";
 
 const GTAG_URL_PATTERN = "https://www.googletagmanager.com/gtag/js**";
-const CONSENT_STORAGE_KEY = "np-analytics-consent";
+const CONSENT_STORAGE_KEY = "neonpixels:analytics-consent";
 // Chromium logs the 404 navigation itself as a console error; it is the one
 // expected entry on the 404 page.
 const DOCUMENT_404_CONSOLE_ERROR =
@@ -46,10 +46,10 @@ async function interceptFormPosts(
 }
 
 function readStoredConsent(page: Page) {
-  return page.evaluate(
-    (key) => window.localStorage.getItem(key),
-    CONSENT_STORAGE_KEY,
-  );
+  return page.evaluate((key) => {
+    const rawValue = window.localStorage.getItem(key);
+    return rawValue === null ? null : JSON.parse(rawValue).choice;
+  }, CONSENT_STORAGE_KEY);
 }
 
 function consentBanner(page: Page) {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   clearGoogleAnalyticsCookies,
+  cookieDomainCandidates,
   disableGoogleAnalytics,
   enableGoogleAnalytics,
   loadGoogleAnalytics,
@@ -257,5 +258,19 @@ describe("clearGoogleAnalyticsCookies", () => {
     const fakeDocument = createFakeCookieDocument("unrelated=keep-me");
     clearGoogleAnalyticsCookies(fakeDocument);
     expect(fakeDocument.cookie).toBe("unrelated=keep-me");
+  });
+});
+
+describe("cookieDomainCandidates", () => {
+  it("lists the host and each parent suffix", () => {
+    expect(cookieDomainCandidates("www.neonpixels.dev")).toEqual([
+      ".www.neonpixels.dev",
+      ".neonpixels.dev",
+    ]);
+  });
+
+  it("returns nothing for IP and IPv6 hosts", () => {
+    expect(cookieDomainCandidates("127.0.0.1")).toEqual([]);
+    expect(cookieDomainCandidates("::1")).toEqual([]);
   });
 });

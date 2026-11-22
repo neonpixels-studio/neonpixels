@@ -9,7 +9,15 @@
 // only widen coverage, never produce a false positive from a real signal.
 const DO_NOT_TRACK_ENABLED_VALUES = new Set(["1", "yes"]);
 
-export const CONSENT_STORAGE_KEY = "np-analytics-consent";
+export const CONSENT_STORAGE_KEY = "neonpixels:analytics-consent";
+
+// The bare-string key used before the fleet-wide `{ choice, expiresAt }`
+// shape. Read once for migration, then removed.
+export const LEGACY_CONSENT_STORAGE_KEY = "np-analytics-consent";
+
+export const CONSENT_LIFETIME_DAYS = 180;
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+export const CONSENT_LIFETIME_MS = CONSENT_LIFETIME_DAYS * MILLISECONDS_PER_DAY;
 
 // The visible label on ConsentBanner.vue's re-open control. Exported so
 // PrivacyPolicy.vue can reference the exact same string when it tells a
@@ -36,9 +44,18 @@ export interface TrackingSignalSource {
   globalPrivacyControl?: boolean;
 }
 
+export interface StoredConsent {
+  choice: ConsentChoice;
+  // Epoch milliseconds after which the choice no longer counts.
+  expiresAt: number;
+}
+
 // The subset of `Storage` this module reads/writes, so tests can pass an
 // in-memory fake instead of touching real localStorage/happy-dom.
-export type ConsentStorage = Pick<Storage, "getItem" | "setItem">;
+export type ConsentStorage = Pick<
+  Storage,
+  "getItem" | "setItem" | "removeItem"
+>;
 
 // Merely reading `window.localStorage` (not just calling a method on it)
 // throws a SecurityError in Safari with "Block all cookies", some locked-down
@@ -62,7 +79,7 @@ export function getConsentStorage(): ConsentStorage {
       "Analytics consent storage is unavailable; falling back to an in-memory choice for this page load.",
       error,
     );
-    return { getItem: () => null, setItem: () => {} };
+    return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
   }
 }
 
@@ -78,34 +95,76 @@ export function trackingSignalPresent(navigatorLike: TrackingSignalSource) {
   );
 }
 
-// Reads the visitor's prior banner choice, if any. Returns null both when no
-// choice has been recorded yet and when a corrupted/foreign value is present
-// — either way, "no valid stored choice" and "never answered" get the same
-// treatment from every caller.
+function isConsentChoice(value: unknown): value is ConsentChoice {
+  return (
+    value === CONSENT_CHOICES.accepted || value === CONSENT_CHOICES.declined
+  );
+}
+
+// Returns null for anything that is not a well-formed, unexpired record, so
+// a malformed or expired value is treated exactly like "never answered".
+function parseStoredConsent(
+  rawValue: string | null,
+  now: number,
+): ConsentChoice | null {
+  if (rawValue === null) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(rawValue);
+    const { choice, expiresAt } = (parsed ?? {}) as Partial<StoredConsent>;
+    if (!isConsentChoice(choice) || typeof expiresAt !== "number") {
+      return null;
+    }
+    return expiresAt > now ? choice : null;
+  } catch {
+    return null;
+  }
+}
+
+// Moves a value under the previous key to the current key, keeping the choice
+// and starting the 180 days from now, then removes the old key. A legacy value
+// that is not a recognized choice is dropped.
+function migrateLegacyConsentChoice(storage: ConsentStorage, now: number) {
+  const legacyValue = storage.getItem(LEGACY_CONSENT_STORAGE_KEY);
+  if (legacyValue === null) {
+    return;
+  }
+  if (isConsentChoice(legacyValue)) {
+    setStoredConsentChoice(storage, legacyValue, now);
+  }
+  storage.removeItem(LEGACY_CONSENT_STORAGE_KEY);
+}
+
+// Reads the visitor's prior banner choice, if any. Returns null when no
+// choice has been recorded, when it has expired, and when a corrupted/foreign
+// value is present: every caller treats those the same as "never answered".
 export function getStoredConsentChoice(
   storage: ConsentStorage,
+  now: number = Date.now(),
 ): ConsentChoice | null {
-  const storedValue = storage.getItem(CONSENT_STORAGE_KEY);
-  if (storedValue === CONSENT_CHOICES.accepted) {
-    return CONSENT_CHOICES.accepted;
+  if (storage.getItem(CONSENT_STORAGE_KEY) === null) {
+    migrateLegacyConsentChoice(storage, now);
   }
-  if (storedValue === CONSENT_CHOICES.declined) {
-    return CONSENT_CHOICES.declined;
-  }
-  return null;
+  return parseStoredConsent(storage.getItem(CONSENT_STORAGE_KEY), now);
 }
 
 export function setStoredConsentChoice(
   storage: ConsentStorage,
   choice: ConsentChoice,
+  now: number = Date.now(),
 ) {
+  const record: StoredConsent = {
+    choice,
+    expiresAt: now + CONSENT_LIFETIME_MS,
+  };
   try {
-    storage.setItem(CONSENT_STORAGE_KEY, choice);
+    storage.setItem(CONSENT_STORAGE_KEY, JSON.stringify(record));
   } catch (error) {
     // Best-effort persistence: if this throws (e.g. a Safari private-mode
     // quota), the choice just doesn't survive a reload and the banner
     // reappears next visit — safe degradation, not a thrown error mid-click,
-    // but still warned so it's diagnosable rather than a silent dead end.
+    // but still warned so it's diagnosable rather than a dead end.
     console.warn(
       "Analytics consent choice could not be persisted; it will not survive a reload.",
       error,

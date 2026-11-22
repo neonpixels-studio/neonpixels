@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount } from "@vue/test-utils";
 import ConsentBanner from "@components/ConsentBanner.vue";
 import {
+  CONSENT_LIFETIME_MS,
   CONSENT_STORAGE_KEY,
   MANAGE_CHOICE_LABEL,
 } from "@theme/analytics/analyticsConsent";
@@ -45,6 +46,21 @@ function setGlobalPrivacyControl(value: boolean | undefined) {
     value,
     configurable: true,
   });
+}
+
+function storeChoice(
+  choice: string,
+  expiresAt = Date.now() + CONSENT_LIFETIME_MS,
+) {
+  localStorage.setItem(
+    CONSENT_STORAGE_KEY,
+    JSON.stringify({ choice, expiresAt }),
+  );
+}
+
+function readStoredChoice() {
+  const rawValue = localStorage.getItem(CONSENT_STORAGE_KEY);
+  return rawValue === null ? null : JSON.parse(rawValue).choice;
 }
 
 describe("ConsentBanner", () => {
@@ -99,7 +115,7 @@ describe("ConsentBanner", () => {
   });
 
   it("initializes analytics immediately, with no banner, when consent was already accepted", async () => {
-    localStorage.setItem(CONSENT_STORAGE_KEY, "accepted");
+    storeChoice("accepted");
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     expect(loadGoogleAnalyticsMock).toHaveBeenCalledTimes(1);
@@ -109,7 +125,7 @@ describe("ConsentBanner", () => {
   });
 
   it("stays hidden, with no banner shown again, when consent was already declined", async () => {
-    localStorage.setItem(CONSENT_STORAGE_KEY, "declined");
+    storeChoice("declined");
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     expect(loadGoogleAnalyticsMock).not.toHaveBeenCalled();
@@ -124,7 +140,7 @@ describe("ConsentBanner", () => {
     expect(acceptButton.text()).toBe("Accept");
     await acceptButton.trigger("click");
     expect(loadGoogleAnalyticsMock).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem(CONSENT_STORAGE_KEY)).toBe("accepted");
+    expect(readStoredChoice()).toBe("accepted");
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
     wrapper.unmount();
   });
@@ -138,13 +154,13 @@ describe("ConsentBanner", () => {
     expect(loadGoogleAnalyticsMock).not.toHaveBeenCalled();
     // Nothing was ever loaded this session, so there is nothing to disable.
     expect(disableGoogleAnalyticsMock).not.toHaveBeenCalled();
-    expect(localStorage.getItem(CONSENT_STORAGE_KEY)).toBe("declined");
+    expect(readStoredChoice()).toBe("declined");
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
     wrapper.unmount();
   });
 
   it("offers a manage-choice control instead of the banner once a choice is already stored", async () => {
-    localStorage.setItem(CONSENT_STORAGE_KEY, "accepted");
+    storeChoice("accepted");
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     const manageButton = wrapper
@@ -156,7 +172,7 @@ describe("ConsentBanner", () => {
 
   it("offers no manage-choice control when Do Not Track overrides a stale stored acceptance", async () => {
     setDoNotTrack("1");
-    localStorage.setItem(CONSENT_STORAGE_KEY, "accepted");
+    storeChoice("accepted");
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     expect(loadGoogleAnalyticsMock).not.toHaveBeenCalled();
@@ -169,7 +185,7 @@ describe("ConsentBanner", () => {
   });
 
   it("reopens the accept/decline banner when the manage-choice control is clicked", async () => {
-    localStorage.setItem(CONSENT_STORAGE_KEY, "declined");
+    storeChoice("declined");
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     const manageButton = wrapper
@@ -204,7 +220,7 @@ describe("ConsentBanner", () => {
     // future hits — otherwise a later re-accept would resume the same client
     // id instead of starting fresh.
     expect(clearGoogleAnalyticsCookiesMock).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem(CONSENT_STORAGE_KEY)).toBe("declined");
+    expect(readStoredChoice()).toBe("declined");
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
     wrapper.unmount();
   });
@@ -240,7 +256,7 @@ describe("ConsentBanner", () => {
     expect(enableGoogleAnalyticsMock).toHaveBeenCalledTimes(2);
     expect(enableGoogleAnalyticsMock).toHaveBeenCalledWith("G-TEST123");
     expect(loadGoogleAnalyticsMock).toHaveBeenCalledTimes(2);
-    expect(localStorage.getItem(CONSENT_STORAGE_KEY)).toBe("accepted");
+    expect(readStoredChoice()).toBe("accepted");
     wrapper.unmount();
   });
 
@@ -258,7 +274,7 @@ describe("ConsentBanner", () => {
   });
 
   it("moves focus to the Accept button when the manage-choice control reopens the banner", async () => {
-    localStorage.setItem(CONSENT_STORAGE_KEY, "declined");
+    storeChoice("declined");
     const wrapper = mount(ConsentBanner, { attachTo: document.body });
     await wrapper.vm.$nextTick();
     const manageButton = wrapper
