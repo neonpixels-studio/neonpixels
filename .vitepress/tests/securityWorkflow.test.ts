@@ -104,13 +104,6 @@ function readStep(jobBlock: string, name: string) {
 }
 
 describe("audit job", () => {
-  // The audit job runs `npm ci`/`npm audit` over the full dependency tree,
-  // including install lifecycle scripts, with GITHUB_TOKEN visible to every
-  // process in the job. It must stay on the workflow-level `contents: read`
-  // default rather than being handed `issues: write` — see the
-  // notify-audit-failure job below, which is split out specifically to keep
-  // that elevated permission away from code that runs untrusted install
-  // scripts.
   it("keeps the local all-dependencies gate", () => {
     const step = readStep(
       readJob("audit"),
@@ -119,6 +112,13 @@ describe("audit job", () => {
     expect(step).toMatch(/run:\s*npm run audit\s*$/m);
   });
 
+  // The audit job runs `npm ci`/`npm audit` over the full dependency tree,
+  // including install lifecycle scripts, with GITHUB_TOKEN visible to every
+  // process in the job. It must stay on the workflow-level `contents: read`
+  // default rather than being handed `issues: write` — see the
+  // notify-audit-failure job below, which is split out specifically to keep
+  // that elevated permission away from code that runs untrusted install
+  // scripts.
   it("has no job-level permissions override", () => {
     const auditJob = readJob("audit");
     expect(findJobPermissions(auditJob)).toBeUndefined();

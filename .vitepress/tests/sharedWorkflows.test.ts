@@ -6,7 +6,7 @@ const ROOT = process.cwd();
 const WORKFLOWS_DIR = resolve(ROOT, ".github/workflows");
 const SCRIPTS_PACKAGE = "@neon-pixels/scripts";
 const REUSABLE_REFERENCE =
-  /^\s+uses:\s*neonpixels-studio\/packages\/\.github\/workflows\/(\S+?)@(\S+) # (\S.*)$/;
+  /^\s+uses:\s*neonpixels-studio\/packages\/\.github\/workflows\/(\S+?)@(\S+?)(?:\s+#\s*(\S.*))?$/;
 const FULL_COMMIT_SHA = /^[0-9a-f]{40}$/;
 const EXACT_VERSION = /^\d+\.\d+\.\d+$/;
 const SCRIPTS_VERSION_LINE = /^\s+scripts-version:\s*(\S+)\s*$/;
@@ -52,6 +52,7 @@ describe("shared reusable workflows", () => {
   it("pins every reusable workflow to a full commit SHA with a trailing comment", () => {
     for (const entry of references) {
       expect(entry.reference, entry.file).toMatch(FULL_COMMIT_SHA);
+      expect(entry.comment, entry.file).toBeTruthy();
     }
   });
 
