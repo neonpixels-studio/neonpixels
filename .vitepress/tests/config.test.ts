@@ -493,13 +493,14 @@ const EXPECTED_PROJECT_URLS = [
   "https://markpost.io",
 ];
 
-// jsonLd comes straight from JSON.parse via findJsonLdScript() — implicitly
-// `any`, left untyped deliberately, since asserting on its exact shape is
+// jsonLd comes straight from JSON.parse via findJsonLdScript(); only the
+// `@graph` array is typed here, since asserting on each node's exact shape is
 // what every test below does.
-function findGraphNodesByType(jsonLd: any, type: string) {
-  return (jsonLd["@graph"] as Array<Record<string, unknown>>).filter(
-    (node) => node["@type"] === type,
-  );
+function findGraphNodesByType(
+  jsonLd: { "@graph": Array<Record<string, unknown>> },
+  type: string,
+) {
+  return jsonLd["@graph"].filter((node) => node["@type"] === type);
 }
 
 describe("Organization JSON-LD links the four projects", () => {

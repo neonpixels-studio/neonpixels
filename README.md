@@ -54,6 +54,16 @@ CSP read from `netlify.toml`, and covers the consent banner and contact form hyd
 Google Tag and the Netlify Forms POST are intercepted, so nothing leaves the machine.
 The server listens on port 4321; set `E2E_PORT` to change it.
 
+## Tooling config
+
+Prettier, TypeScript, ESLint, Vitest, Playwright, and fallow settings come from the
+shared [`@neon-pixels`](https://github.com/neonpixels-studio/packages) packages
+(`@neon-pixels/prettier-config`, `@neon-pixels/tsconfig`, `@neon-pixels/eslint-config`,
+`@neon-pixels/vitest-preset`, `@neon-pixels/playwright-preset`, and
+`@neon-pixels/fallow-config`). The config files in this repo hold only what is specific
+to it: aliases, ignores, the test `include` glob, the e2e serve command, and the
+port.
+
 ## Deployment
 
 Deploys to [Netlify](https://www.netlify.com). See [`netlify.toml`](netlify.toml) for

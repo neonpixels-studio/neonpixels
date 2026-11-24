@@ -9,11 +9,6 @@ export const GA_MEASUREMENT_ID = "G-Y4448RR4CR";
 export const GTAG_SCRIPT_URL = "https://www.googletagmanager.com/gtag/js";
 
 declare global {
-  // Base ESLint (no type-aware TS plugin is configured here) doesn't
-  // understand declare-global interface merging and reads this as an unused
-  // local declaration of `Window` — same false positive already documented
-  // for .github/scripts/notify-audit-failure.d.cts in eslint.config.js.
-  // eslint-disable-next-line no-unused-vars
   interface Window {
     dataLayer?: unknown[];
   }
@@ -39,6 +34,7 @@ function pushGtagCommand(dataLayer: unknown[], ...args: unknown[]) {
     // Deliberately `arguments`, not `_args`: gtag.js's queue processor
     // requires the actual `arguments` object. `_args` exists only so
     // TypeScript accepts the rest-argument spread below.
+    // eslint-disable-next-line prefer-rest-params -- gtag.js needs the real arguments object
     dataLayer.push(arguments);
   }
   gtag(...args);
