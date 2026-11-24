@@ -11,6 +11,7 @@ import { PROJECTS } from "../data/projects";
 import { STATES_TOTAL, STATES_VISITED, STATE_VISITS } from "../data/states";
 import ProjectSection from "./ProjectSection.vue";
 import ContactForm from "./ContactForm.vue";
+import SiteNav from "./SiteNav.vue";
 
 // Zero-padded project total for the "NN / NN" counter, so the header tracks the
 // data instead of a hand-typed number. PROJECTS is a static import, so a plain
@@ -115,14 +116,12 @@ const GRIMICORN_TERMINAL = [
   { text: "[03:19] broke staging. on purpose." },
 ];
 
-// Accent-lit chrome that lives outside the project data above: the nav status
-// dot, the hero section rule, the drifting hero auroras, and each card's
-// ambient glow. Solid fills come straight from BRAND_ACCENTS; translucent
+// Accent-lit chrome that lives outside the project data above: the hero
+// section rule, the drifting hero auroras, and each card's ambient glow. Solid fills come straight from BRAND_ACCENTS; translucent
 // glows go through hexToRgba, so a palette change recolors every one of the
 // four accents in lockstep. Per-component surface tints (dark card
 // backgrounds/borders and muted greys) stay literal by design — brand.ts owns
 // only the four accents and the wordmark gradient.
-const NAV_DOT_GLOW = `0 0 8px ${BRAND_ACCENTS.lime}`;
 const HERO_RULE_GLOW = `0 0 6px ${BRAND_ACCENTS.lime}`;
 
 // Three hero auroras share one radial-wash shape at different accents, so it's
@@ -211,17 +210,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
           >
         </span>
       </a>
-      <nav class="text-fg-subtle flex items-center gap-[26px] text-[12.5px]">
-        <a href="#projects" class="nav-link text-fg-subtle">projects</a>
-        <a href="#about" class="nav-link text-fg-subtle">about</a>
-        <a href="#contact" class="nav-link text-fg-subtle">contact</a>
-        <span class="text-lime flex items-center gap-[7px]">
-          <span
-            class="bg-lime animate-pulse-dot status-dot h-[7px] w-[7px] rounded-full"
-            :style="{ boxShadow: NAV_DOT_GLOW }"
-          />{{ PROJECTS.length }} projects
-        </span>
-      </nav>
+      <SiteNav />
     </header>
 
     <!-- tabindex="-1" keeps <main> out of the Tab order while letting the skip
@@ -674,13 +663,6 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
 .pill:hover {
   background: var(--pill-bg-hover);
   border-color: var(--accent);
-}
-
-.nav-link {
-  transition: color 0.2s ease;
-}
-.nav-link:hover {
-  color: #e8e8ea;
 }
 
 .footer-link {
