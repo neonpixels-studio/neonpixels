@@ -71,6 +71,9 @@ jobs:
   # Secrets are passed by name, never with `secrets: inherit`.
   deploy:
     needs: e2e
+    # Also guarded by e2e being skipped off main; kept explicit so a later
+    # `always()` cannot deploy production from another branch.
+    if: github.ref == 'refs/heads/main'
     uses: neonpixels-studio/packages/.github/workflows/production-deploy.yml@c7becbdbbd7cacf8a4118465166b064931d017d6 # 2026-11-23 main
     permissions:
       contents: read

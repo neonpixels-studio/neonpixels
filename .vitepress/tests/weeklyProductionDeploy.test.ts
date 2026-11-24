@@ -110,6 +110,7 @@ describe("weekly-production-deploy.yml", () => {
     expect(e2eJob).toMatch(/run: npm run e2e\s*$/m);
     expect(e2eJob).toContain("if: github.ref == 'refs/heads/main'");
     expect(readJob("deploy")).toMatch(/^\s+needs: e2e\s*$/m);
+    expect(readJob("deploy")).toContain("if: github.ref == 'refs/heads/main'");
   });
 
   it("keeps Netlify secrets out of the e2e job", () => {

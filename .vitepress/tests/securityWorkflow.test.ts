@@ -153,8 +153,9 @@ describe("gitleaks job", () => {
 
   it("scans only on push and pull_request, not scheduled or manual runs", () => {
     const ifLine = readJob("gitleaks").match(/^\s*if:\s*(.+)$/m)?.[1] ?? "";
-    expect(ifLine).toContain("github.event_name == 'push'");
-    expect(ifLine).toContain("github.event_name == 'pull_request'");
+    expect(ifLine.trim()).toBe(
+      "github.event_name == 'push' || github.event_name == 'pull_request'",
+    );
   });
 
   it("has no local gitleaks install or scan steps left", () => {

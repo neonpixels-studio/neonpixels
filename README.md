@@ -75,7 +75,8 @@ suite before building, so a failing test blocks the deploy.
 Production deploys once a week, Mondays 14:00 UTC, through a Netlify build hook
 triggered by the `Weekly production deploy` workflow. Merging to `main` does not
 deploy. Pull requests get Deploy Previews as usual. To ship a hotfix, go to the
-Actions tab > Weekly production deploy > Run workflow (on `main`). Deploys started
+Actions tab > Weekly production deploy > Run workflow (on `main`). A run does
+nothing when the live deploy is already built from the current `main` commit. Deploys started
 from the Netlify UI on `main` are cancelled by the ignore gate; use the workflow
 instead. GitHub disables scheduled workflows after 60 days without repository
 activity; re-enable it from the Actions tab if that happens.

@@ -93,7 +93,7 @@ jobs:
       - name: Audit summary (report only, never fails)
         run: npm audit || true
 
-      # This is a static site with zero production dependencies, so all real
+      # This is a static site with one production dependency, so almost all real
       # supply-chain exposure lives in devDependencies. Audit the full tree
       # (no --omit=dev) so the gate can actually fail on a high/critical
       # advisory. `npm run audit` runs .github/scripts/audit.sh: the same
