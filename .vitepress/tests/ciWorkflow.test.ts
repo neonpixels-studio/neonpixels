@@ -37,16 +37,17 @@ describe("ci.yml permissions", () => {
     expect(permissions.match(/^\s+\S+:/gm) ?? []).toHaveLength(1);
   });
 
-  // The change-detection job is the one exception: dorny/paths-filter lists
-  // PR files through the API, which needs pull-requests: read once the repo
-  // is private. Every other job inherits the top-level contents: read.
-  it("has no job-level permissions override outside the changes job", () => {
+  // Two exceptions: the change-detection job (dorny/paths-filter lists PR
+  // files through the API, which needs pull-requests: read once the repo is
+  // private) and the lighthouse call (a reusable workflow cannot hold more
+  // permissions than its caller grants, and its report job files issues).
+  // Every other job inherits the top-level contents: read.
+  it("has no job-level permissions override outside the changes and lighthouse jobs", () => {
     const jobs = findTopLevelBlock("jobs") ?? "";
-    const withoutChangesJob = jobs.replace(
-      /^ {2}changes:[\s\S]*?(?=^ {2}\S)/m,
-      "",
-    );
-    expect(withoutChangesJob).not.toMatch(/^\s+permissions:/m);
+    const withoutExceptions = jobs
+      .replace(/^ {2}changes:[\s\S]*?(?=^ {2}\S)/m, "")
+      .replace(/^ {2}lighthouse:[\s\S]*?(?=^ {2}\S|(?![\s\S]))/m, "");
+    expect(withoutExceptions).not.toMatch(/^\s+permissions:/m);
   });
 });
 
@@ -169,5 +170,52 @@ describe("ci.yml fallow audit", () => {
 
   it("runs static lint before the fallow audit", () => {
     expect(ciJob()).toMatch(/npm run lint:static[\s\S]*npx fallow audit/);
+  });
+});
+
+describe("ci.yml shared checks", () => {
+  const ciJob = () => findJob("ci");
+
+  it("fails the build on an unpinned action reference", () => {
+    expect(ciJob()).toMatch(/run: npx np-check-action-pinning\s*$/m);
+  });
+
+  it("fails the build on drift from the synced templates", () => {
+    expect(ciJob()).toMatch(
+      /run: npx np-sync-templates --stack vitepress --check\s*$/m,
+    );
+  });
+
+  it("runs both checks after the install that provides the bins", () => {
+    const job = ciJob();
+    const install = job.indexOf("run: npm ci");
+    expect(install).toBeGreaterThan(-1);
+    expect(job.indexOf("np-check-action-pinning")).toBeGreaterThan(install);
+    expect(job.indexOf("np-sync-templates")).toBeGreaterThan(install);
+  });
+});
+
+describe("ci.yml lighthouse job", () => {
+  const lighthouseJob = () => findJob("lighthouse");
+
+  it("calls the reusable lighthouse workflow with this repo's config", () => {
+    const job = lighthouseJob();
+    expect(job).toMatch(
+      /^\s+uses: neonpixels-studio\/packages\/\.github\/workflows\/lighthouse\.yml@[0-9a-f]{40} # \S/m,
+    );
+    expect(job).toMatch(/^\s+package-manager: npm\s*$/m);
+    expect(job).toMatch(/^\s+config-path: \.\/\.lighthouserc\.json\s*$/m);
+  });
+
+  it("keeps its needs and grants contents: read and issues: write", () => {
+    const job = lighthouseJob();
+    expect(job).toMatch(/^\s+needs: \[ci, changes\]\s*$/m);
+    expect(job).toMatch(/^\s+contents: read\s*$/m);
+    expect(job).toMatch(/^\s+issues: write\s*$/m);
+  });
+
+  it("builds inside the reusable workflow instead of downloading the artifact", () => {
+    expect(lighthouseJob()).not.toContain("download-artifact");
+    expect(lighthouseJob()).toMatch(/^\s+build-script: build\s*$/m);
   });
 });

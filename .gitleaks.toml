@@ -1,19 +1,7 @@
-# Gitleaks configuration for neonpixels.dev.
-# Extends the bundled default ruleset and layers on two project-specific rules
-# that catch secret shapes the defaults miss — not because this stack uses
-# Clerk or Postgres/Neon today (it doesn't: this is a static VitePress site
-# with no auth, no database, and no server), but because a copy-pasted secret
-# in that shape is still worth catching wherever it lands (docs, a debugging
-# note, a copied snippet). Both gaps were confirmed empirically against
-# useDefault alone:
-#   - clerk-secret-key: the default stripe-access-token rule only matches
-#     sk_live_/sk_test_ keys followed by a quote/whitespace/end-of-string
-#     delimiter, so it misses one embedded in a URL query string, a function
-#     call, or a CSV/JSON value. This rule has no such boundary requirement.
-#   - postgres-connection-string-with-credentials: no default rule matches a
-#     postgres://user:pass@host connection string at all.
-# Publishable keys (pk_live_/pk_test_) are public by design and are
-# intentionally NOT flagged.
+# Gitleaks configuration. Extends the default ruleset and adds rules for the
+# secret shapes the defaults miss. Anything between the np-sync markers is kept
+# when templates are synced; everything else is overwritten.
+# Docs: https://github.com/gitleaks/gitleaks#configuration
 
 [extend]
 useDefault = true
@@ -21,29 +9,29 @@ useDefault = true
 [[rules]]
 id = "clerk-secret-key"
 description = "Clerk secret key (sk_live_ / sk_test_)"
-regex = '''sk_(?:live|test)_[A-Za-z0-9]{16,}'''
-keywords = [
-  "sk_live_",
-  "sk_test_",
-]
+# Publishable keys (pk_live_/pk_test_) are public by design and intentionally excluded.
+regex = '''sk_(?:live|test)_[A-Za-z0-9_-]{16,}'''
+keywords = ["sk_live_", "sk_test_"]
 
 [[rules]]
 id = "postgres-connection-string-with-credentials"
-description = "Postgres/Neon connection string containing user:password credentials"
+description = "Postgres connection string containing user:password credentials"
 regex = '''postgres(?:ql)?:\/\/[^\s:@\/]+:[^\s:@\/]+@[^\s\/]+'''
-keywords = [
-  "postgres://",
-  "postgresql://",
-]
+keywords = ["postgres://", "postgresql://"]
+
+# np-sync:begin extra-rules
+# np-sync:end extra-rules
 
 [allowlist]
 description = "Allow documented placeholders and test fixtures"
-# Excludes documented placeholders: example/sample env files, any *.example
-# file, and fixture directories. Test source files are still scanned, so a
-# secret hardcoded into a test is caught rather than silently allowed.
+# Example and sample env files hold documented placeholders, and fixture
+# directories hold synthetic secrets. Test source files are still scanned.
 paths = [
-  '''(^|/)\.env\.example$''',
-  '''(^|/)\.env\.sample$''',
+  '''(^|/)\.env\.(example|sample)$''',
   '''\.example$''',
-  '''(^|/)(fixtures|__fixtures__)/''',
+  '''(^|/)(fixtures?|__fixtures__|test-fixtures?)/''',
 ]
+# Add reviewed fingerprints or regexes for this repository here, for example
+# `commits = [...]` or `regexes = [...]`. Do not repeat the `paths` key.
+# np-sync:begin allowlist
+# np-sync:end allowlist

@@ -27,52 +27,38 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  GITLEAKS_VERSION: 8.30.1
-
 jobs:
+  # Secret scan from the shared reusable workflow: it scans the pull request
+  # commit range, or the full history on a push, with this repo's
+  # .gitleaks.toml (synced from the shared template; see np-sync-templates).
   gitleaks:
     # main's history is already scanned in full on every push (pinned
     # gitleaks version), so a scheduled/manual rescan can't surface
     # anything new. The schedule above exists for npm advisories, which
-    # only the audit job checks — skip gitleaks on those triggers.
+    # only the audit jobs check, so skip gitleaks on those triggers.
     if: github.event_name == 'push' || github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    uses: neonpixels-studio/packages/.github/workflows/gitleaks.yml@c7becbdbbd7cacf8a4118465166b064931d017d6 # 2026-11-23 main
+    permissions:
+      contents: read
 
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
+  # Shared production-dependencies gate. It reads the lockfile and installs
+  # nothing from this repo, so no dependency code runs in it. This repo has one
+  # production dependency, so the all-dependencies gate in `audit` below is the
+  # one that covers the build tooling.
+  dependency-audit:
+    uses: neonpixels-studio/packages/.github/workflows/dependency-audit.yml@c7becbdbbd7cacf8a4118465166b064931d017d6 # 2026-11-23 main
+    permissions:
+      contents: read
+    with:
+      package-manager: npm
+      scripts-version: 0.3.0
 
-      - name: Download and verify gitleaks
-        run: |
-          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
-          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -sSfL "${base}/${archive}" -o "${archive}"
-          curl -sSfL "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" -o gitleaks.checksums
-          grep " ${archive}\$" gitleaks.checksums | sha256sum -c -
-          tar -xzf "${archive}" gitleaks
-          chmod +x gitleaks
-
-      - name: Scan pull request commit range
-        if: github.event_name == 'pull_request'
-        run: |
-          ./gitleaks git \
-            --config .gitleaks.toml \
-            --no-banner \
-            --redact \
-            --log-opts "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
-
-      - name: Scan full history
-        if: github.event_name == 'push'
-        run: |
-          ./gitleaks git \
-            --config .gitleaks.toml \
-            --no-banner \
-            --redact
-
+  # All-dependencies gate, kept local because the shared gate's
+  # all-dependencies mode (`include-dev`) needs a @neon-pixels/scripts release
+  # newer than the 0.3.0 pinned here. @todo Replace this job's gate step with a
+  # second `dependency-audit.yml` call using `include-dev: true` once
+  # neonpixels-studio/packages#77 is released; keep the check:overrides step
+  # either way, it is specific to this repo.
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -121,14 +107,15 @@ jobs:
   # every process in the job — granting that job `issues: write` would hand
   # issue-create to any malicious postinstall, on the one workflow whose job
   # is to catch malicious dependencies; and (2) a job-level `if: failure()`
-  # against `needs: audit` fires on ANY failure in that job (checkout, npm
+  # against `needs` fires on ANY failure in either audit job (checkout, npm
   # ci, a registry blip, or the audit gate itself), not just the gate step,
   # so a scheduled run can't fail silently no matter which step breaks (see
-  # issue #109). Scoped to the `schedule` trigger only — a push/pull_request
+  # issue #109). It needs both the local `audit` job and the shared
+  # `dependency-audit` call, so either one failing opens the issue. Scoped to the `schedule` trigger only — a push/pull_request
   # failure is already visible as a failing required check, so opening an
   # issue there would just be noise on top of that.
   notify-audit-failure:
-    needs: audit
+    needs: [audit, dependency-audit]
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -156,11 +143,11 @@ jobs:
   # is visible to every process it runs (including install lifecycle
   # scripts), so `issues: write` stays out of that job and lives only here,
   # scoped to the schedule trigger. Runs on success where notify-audit-failure
-  # runs on failure — `needs: audit` alone would already skip this job on a
-  # failed audit, but the explicit `success()` mirrors notify-audit-failure's
-  # explicit `failure()` for symmetry.
+  # runs on failure. It closes the issue only when both audit jobs passed:
+  # `needs` on both would already skip this job on a failed audit, but the
+  # explicit `success()` mirrors notify-audit-failure's explicit `failure()`.
   close-resolved-audit-failure:
-    needs: audit
+    needs: [audit, dependency-audit]
     if: success() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5

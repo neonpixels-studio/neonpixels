@@ -72,6 +72,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check action pinning
+        run: npx np-check-action-pinning
+
+      # Fails on drift in the files synced from the shared templates (.nvmrc,
+      # .gitleaks.toml, dependabot.yml, husky hooks, package.json engines).
+      # Repo-specific lines belong in the np-sync sections.
+      - name: Check synced templates
+        run: npx np-sync-templates --stack vitepress --check
+
       - name: Lint
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -110,7 +119,7 @@ jobs:
       - name: Performance budget
         run: npm run perf:budget
 
-      # Feeds the e2e job on every run and the lighthouse job on PR runs.
+      # Feeds the e2e job. The lighthouse job builds its own copy.
       - name: Upload build output
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -169,10 +178,16 @@ jobs:
           retention-days: 7
 
   # Error-level: every assertion in .lighthouserc.json is `error`, so scores
-  # below threshold fail the job. Audits the
-  # production static build from the ci job (never a dev server). Google
-  # Analytics loads only after cookie consent at runtime, which a fresh
-  # Lighthouse profile never grants, so no CONTEXT guard is needed here.
+  # below threshold fail the job. Audits the production static build (never a
+  # dev server). Google Analytics loads only after cookie consent at runtime,
+  # which a fresh Lighthouse profile never grants, so no CONTEXT guard is
+  # needed here.
+  #
+  # Calls the shared reusable workflow. It installs and builds on its own
+  # (`build-script`), so it no longer downloads the ci job's build artifact:
+  # this costs one extra site build per audited run. Its report job only files
+  # issues outside pull requests, and this job is skipped on push, so no
+  # issue is ever filed from here.
   lighthouse:
     needs: [ci, changes]
     # Fails closed: a failed or cancelled `changes` job runs the audit instead
@@ -183,32 +198,12 @@ jobs:
       ${{ !cancelled() && needs.ci.result == 'success' &&
       (needs.changes.result == 'failure' || needs.changes.result == 'cancelled' ||
       (needs.changes.result == 'success' && needs.changes.outputs.frontend == 'true')) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Read .nvmrc
-        id: nvmrc
-        run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
-
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: ${{ steps.nvmrc.outputs.version }}
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Download build output
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: site-build
-          path: .vitepress/dist
-
-      - name: Run Lighthouse CI
-        run: npm run lighthouse
+    uses: neonpixels-studio/packages/.github/workflows/lighthouse.yml@c7becbdbbd7cacf8a4118465166b064931d017d6 # 2026-11-23 main
+    permissions:
+      contents: read
+      issues: write
+    with:
+      package-manager: npm
+      build-script: build
+      config-path: ./.lighthouserc.json
+      scripts-version: 0.3.0

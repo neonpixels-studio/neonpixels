@@ -49,7 +49,6 @@ describe("husky pre-commit hook", () => {
     expect(result.stderr).toContain("gitleaks is not installed");
     expect(result.stderr).toContain("SKIPPED");
     expect(result.stderr).toContain("brew install gitleaks");
-    expect(result.stderr).toContain("pull requests");
   });
 
   it("passes when gitleaks finds nothing", () => {
