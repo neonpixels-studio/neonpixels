@@ -1,4 +1,9 @@
+# Mirrors the `ci` job in .github/workflows/ci.yml. Keep the two in sync.
 set -e
+
+# np-sync:begin repo-specific
+# np-sync:end repo-specific
+
 npm run lint
 npm run typecheck
 npm run test:ci

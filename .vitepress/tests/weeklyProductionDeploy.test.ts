@@ -13,7 +13,11 @@ const WORKFLOW = readFileSync(
 );
 
 const HOOK_TITLE_ENV = "INCOMING_HOOK_TITLE";
-const SECRET_REFERENCE = "secrets.NETLIFY_BUILD_HOOK_URL";
+const SECRET_NAMES = [
+  "NETLIFY_BUILD_HOOK_URL",
+  "NETLIFY_AUTH_TOKEN",
+  "NETLIFY_SITE_ID",
+];
 const PRODUCTION_HEADER = /^\[context\.production\]\s*$/m;
 
 // Slices the [context.production] table up to the next table header.
@@ -84,170 +88,76 @@ function readJob(name: string) {
 }
 
 const readE2eJob = () => readJob("e2e");
+const REUSABLE_DEPLOY =
+  /^\s+uses: neonpixels-studio\/packages\/\.github\/workflows\/production-deploy\.yml@[0-9a-f]{40} # \S.*$/m;
 
 describe("weekly-production-deploy.yml", () => {
   it("runs on a Monday 14:00 UTC schedule", () => {
     expect(WORKFLOW).toMatch(/^\s+- cron: "0 14 \* \* 1"\s*$/m);
   });
 
-  it("gates the deploy on a passing e2e job that builds and runs Playwright", () => {
-    const e2eJob = readE2eJob();
-    expect(e2eJob).toContain("run: npm run build");
-    expect(e2eJob).toMatch(/run: npm run e2e\s*$/m);
-    expect(readJob("recent")).toContain("if: github.ref == 'refs/heads/main'");
-    expect(readJob("deploy")).toMatch(/needs: \[recent, e2e\]/);
-  });
-
-  it("skips the whole e2e job on a quiet week, mirroring the deploy skip", () => {
-    const e2eJob = readE2eJob();
-    expect(readJob("recent")).toContain("deploy-trigger.cjs recent");
-    expect(e2eJob).toMatch(
-      /needs: recent\n\s+if: needs\.recent\.outputs\.skip != 'true'/,
-    );
-  });
-
-  it("refuses to deploy when main moved, before the hook fires", () => {
-    const deployJob = readJob("deploy");
-    const guardStart = deployJob.indexOf("- name: Require main unchanged");
-    const triggerStart = deployJob.indexOf("- name: Trigger production deploy");
-    expect(guardStart).toBeGreaterThan(-1);
-    expect(guardStart).toBeLessThan(triggerStart);
-    const guard = deployJob.slice(guardStart, triggerStart);
-    expect(guard).toContain("deploy-trigger.cjs head-unchanged");
-    expect(guard).toContain("GH_TOKEN: ${{ github.token }}");
-    expect(guard).toContain("if: steps.recent.outputs.skip != 'true'");
-  });
-
-  it("keeps Netlify secrets out of the e2e job", () => {
-    const e2eJob = readE2eJob();
-    expect(e2eJob).not.toContain("secrets.");
-  });
-
   it("is also manually dispatchable", () => {
     expect(WORKFLOW).toMatch(/^\s+workflow_dispatch:/m);
   });
 
-  it("grants only contents: read", () => {
+  it("grants only contents: read at the workflow level", () => {
     expect(WORKFLOW).toMatch(/^permissions:\n\s+contents:\s*read\n/m);
   });
 
-  it("only deploys from main", () => {
-    expect(WORKFLOW).toMatch(/^\s+if: github\.ref == 'refs\/heads\/main'\s*$/m);
+  it("gates the deploy on a passing e2e job that builds and runs Playwright", () => {
+    const e2eJob = readE2eJob();
+    expect(e2eJob).toContain("run: npm run build");
+    expect(e2eJob).toMatch(/run: npm run e2e\s*$/m);
+    expect(e2eJob).toContain("if: github.ref == 'refs/heads/main'");
+    expect(readJob("deploy")).toMatch(/^\s+needs: e2e\s*$/m);
+    expect(readJob("deploy")).toContain("if: github.ref == 'refs/heads/main'");
   });
 
-  it("passes the secret only via env, never inline in a run script", () => {
-    const references = WORKFLOW.split("\n").filter((line) =>
-      line.includes(SECRET_REFERENCE),
-    );
-    expect(references).toHaveLength(1);
-    expect(references[0]).toMatch(
-      /^\s+NETLIFY_BUILD_HOOK_URL: \$\{\{ secrets\.NETLIFY_BUILD_HOOK_URL \}\}\s*$/,
-    );
+  it("keeps Netlify secrets out of the e2e job", () => {
+    expect(readE2eJob()).not.toContain("secrets.");
   });
 
-  it("fails when the secret is empty", () => {
-    expect(WORKFLOW).toMatch(/if \[ -z "\$NETLIFY_BUILD_HOOK_URL" \]/);
+  it("calls the reusable production deploy pinned to a commit SHA", () => {
+    expect(readJob("deploy")).toMatch(REUSABLE_DEPLOY);
   });
 
-  it("calls the hook with failing curl and the documented titles", () => {
-    expect(WORKFLOW).toContain(
-      `curl --fail --silent --show-error -X POST -d '{}' "$NETLIFY_BUILD_HOOK_URL?trigger_title=$encoded_title"`,
-    );
-    expect(WORKFLOW).toContain(
-      "encoded_title=$(node .github/scripts/deploy-trigger.cjs title)",
-    );
+  it("no longer runs the local recent-commits check or deploy scripts", () => {
+    expect(WORKFLOW).not.toMatch(/^ {2}recent:/m);
+    expect(WORKFLOW).not.toContain(".github/scripts/");
+    expect(WORKFLOW).not.toContain("curl");
   });
 
-  it("leaves the title export to the script, which the verify script reads", () => {
-    const triggerStep = WORKFLOW.split(
-      "- name: Trigger production deploy",
-    )[1].split("- name:")[0];
-    expect(triggerStep).not.toContain("GITHUB_ENV");
-    expect(
-      readFileSync(
-        resolve(process.cwd(), ".github/scripts/deploy-trigger.cjs"),
-        "utf8",
-      ),
-    ).toContain("NETLIFY_DEPLOY_TITLE=");
-    expect(
-      readFileSync(
-        resolve(process.cwd(), ".github/scripts/verify-production-deploy.cjs"),
-        "utf8",
-      ),
-    ).toContain('"NETLIFY_DEPLOY_TITLE"');
+  it("grants the deploy job exactly the permissions the reusable workflow needs", () => {
+    const permissions = readJob("deploy")
+      .split("permissions:")[1]
+      .split(/\n {4}\S/)[0];
+    expect(permissions).toMatch(/^\s+contents: read$/m);
+    expect(permissions).toMatch(/^\s+actions: read$/m);
+    expect(permissions).toMatch(/^\s+issues: write$/m);
+    expect(permissions.match(/^\s+\S+:/gm)).toHaveLength(3);
   });
 
-  it("checks full history for commits in the last 7 days via the script", () => {
-    expect(WORKFLOW).toMatch(/fetch-depth: 0/);
-    expect(WORKFLOW).toMatch(
-      /id: recent\n\s+run: node \.github\/scripts\/deploy-trigger\.cjs recent\n/,
-    );
+  it("grants issues: write to the deploy call only", () => {
+    expect(WORKFLOW.match(/^\s+issues: write$/gm)).toHaveLength(1);
   });
 
-  it("declares a concurrency block", () => {
-    expect(WORKFLOW).toMatch(/^concurrency:/m);
-  });
-
-  it("fails before firing the hook when the Netlify token is missing", () => {
-    const tokenCheck = WORKFLOW.indexOf('if [ -z "$NETLIFY_AUTH_TOKEN" ]');
-    expect(tokenCheck).toBeGreaterThan(-1);
-    expect(tokenCheck).toBeLessThan(
-      WORKFLOW.indexOf("Trigger production deploy"),
-    );
-  });
-
-  it("passes the token only via env from the secret", () => {
-    const references = WORKFLOW.split("\n").filter((line) =>
-      line.includes("secrets.NETLIFY_AUTH_TOKEN"),
-    );
-    expect(references).toEqual([
-      "      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}",
-    ]);
-  });
-
-  it("verifies the deploy after triggering it", () => {
-    expect(WORKFLOW.indexOf("verify-production-deploy.cjs")).toBeGreaterThan(
-      WORKFLOW.indexOf("Trigger production deploy"),
-    );
-  });
-
-  it("passes the gated commit to the verify step", () => {
-    const [, afterVerifyName] = WORKFLOW.split(
-      "- name: Verify production deploy",
-    );
-    expect(afterVerifyName).toBeDefined();
-    const verifyStep = afterVerifyName.split(/\n(?= {0,6}\S)/)[0];
-    expect(verifyStep).toContain("EXPECTED_COMMIT_SHA: ${{ github.sha }}");
-  });
-
-  it("notifies on failure from a separate job, not the deploy job", () => {
-    expect(WORKFLOW).toMatch(
-      /notify-deploy-failure:\n\s+needs: \[e2e, deploy\]\n\s+if: failure\(\)/,
-    );
-  });
-
-  it("grants issues: write only to the notify and recovery jobs", () => {
-    expect(WORKFLOW.match(/^\s+issues: write$/gm)).toHaveLength(2);
-  });
-
-  it("closes the failure issue only after a verified, non-skipped deploy", () => {
-    expect(WORKFLOW).toMatch(
-      /close-resolved-deploy-failure:\n\s+needs: deploy\n\s+if: success\(\) && needs\.deploy\.outputs\.skipped == 'false'/,
-    );
-    expect(WORKFLOW).toMatch(
-      /outputs:\n\s+skipped: \$\{\{ steps\.recent\.outputs\.skip \}\}/,
-    );
-  });
-
-  it("runs the close script and pins the recovery job's actions to SHAs", () => {
-    const jobStart = WORKFLOW.indexOf("  close-resolved-deploy-failure:");
-    expect(jobStart).toBeGreaterThan(-1);
-    const recoveryJob = WORKFLOW.slice(jobStart).split(/\n {2}[a-z-]+:\n/)[0];
-    expect(recoveryJob).toContain("close-resolved-deploy-failure.cjs");
-    const uses = recoveryJob.match(/^\s+(?:- )?uses: .+$/gm) ?? [];
-    expect(uses).toHaveLength(2);
-    for (const line of uses) {
-      expect(line).toMatch(/@[0-9a-f]{40} # v\d+\.\d+\.\d+$/);
+  it("passes the three Netlify secrets by name, never with secrets: inherit", () => {
+    const deployJob = readJob("deploy");
+    expect(deployJob).not.toContain("inherit");
+    for (const name of SECRET_NAMES) {
+      expect(deployJob).toContain(`${name}: \${{ secrets.${name} }}`);
     }
+    expect(WORKFLOW.match(/secrets\.NETLIFY_\w+/g)).toHaveLength(
+      SECRET_NAMES.length,
+    );
+  });
+
+  it("declares a non-cancelling concurrency group the reusable workflow does not reserve", () => {
+    expect(WORKFLOW).toMatch(
+      /^concurrency:\n\s+group: \$\{\{ github\.workflow \}\}\n\s+cancel-in-progress: false\n/m,
+    );
+    expect(WORKFLOW).not.toMatch(
+      /^\s+group:.*(np-production-deploy|np-deploy-failure-issue)/m,
+    );
   });
 });

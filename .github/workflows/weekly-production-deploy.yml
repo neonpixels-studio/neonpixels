@@ -9,40 +9,22 @@ on:
 permissions:
   contents: read
 
-# One deploy trigger at a time; a second run queues rather than cancelling an
-# in-flight hook call.
+# One deploy run at a time; a second run queues rather than cancelling an
+# in-flight one. The group name is this workflow's own: the reusable deploy
+# workflow reserves np-production-deploy-<repo> and np-deploy-failure-issue-<repo>.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
 
 jobs:
-  # Decides whether this week has anything to deploy; the e2e gate and the
-  # deploy both hang off it so a quiet week spends no browser minutes.
-  recent:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      skip: ${{ steps.recent.outputs.skip }}
-    env:
-      EVENT_NAME: ${{ github.event_name }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # Full history so the 7-day commit check is correct.
-          fetch-depth: 0
-
-      - name: Check for commits in the last 7 days
-        id: recent
-        run: node .github/scripts/deploy-trigger.cjs recent
-
   # Browser gate: the production build on Netlify runs test:ci but no browser,
   # so a change that landed on main can break banner or form hydration
   # unnoticed. The deploy job needs this job, so a red e2e blocks the deploy.
+  # It runs every week: whether main is already live is decided inside the
+  # shared deploy workflow, after this gate.
   e2e:
-    needs: recent
-    if: needs.recent.outputs.skip != 'true'
+    # A manual run from another branch must not deploy production.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -81,119 +63,25 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # Shared deploy: decides whether main is newer than the live deploy
+  # (np-should-deploy), calls the build hook, and verifies the deploy
+  # (np-verify-netlify-deploy). It opens a deploy-failure issue on failure and
+  # closes it after a verified deploy, so the calling job grants issues: write.
+  # actions: read is required by the decide step inside the reusable workflow.
+  # Secrets are passed by name, never with `secrets: inherit`.
   deploy:
-    needs: [recent, e2e]
-    # A manual run from another branch must not deploy production.
+    needs: e2e
+    # Also guarded by e2e being skipped off main; kept explicit so a later
+    # `always()` cannot deploy production from another branch.
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    # Covers the hook call plus the verify step's 30 minute poll timeout.
-    timeout-minutes: 45
-    # Lets the recovery job tell a verified deploy from a skipped one.
-    outputs:
-      skipped: ${{ steps.recent.outputs.skip }}
-    env:
+    uses: neonpixels-studio/packages/.github/workflows/production-deploy.yml@c7becbdbbd7cacf8a4118465166b064931d017d6 # 2026-11-23 main
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    with:
+      scripts-version: 0.3.0
+    secrets:
       NETLIFY_BUILD_HOOK_URL: ${{ secrets.NETLIFY_BUILD_HOOK_URL }}
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-      EVENT_NAME: ${{ github.event_name }}
-    steps:
-      - name: Require build hook secret
-        run: |
-          if [ -z "$NETLIFY_BUILD_HOOK_URL" ]; then
-            echo "::error::Repository secret NETLIFY_BUILD_HOOK_URL is not set; cannot trigger a production deploy."
-            exit 1
-          fi
-
-      # Checked before the hook fires so a missing token can't leave a deploy
-      # running that nothing will verify.
-      - name: Require Netlify API secrets
-        run: |
-          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
-            echo "::error::Repository secret NETLIFY_AUTH_TOKEN is not set; cannot verify the production deploy."
-            exit 1
-          fi
-          if [ -z "$NETLIFY_SITE_ID" ]; then
-            echo "::error::Repository secret NETLIFY_SITE_ID is not set; cannot verify the production deploy."
-            exit 1
-          fi
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # Full history so the 7-day commit check is correct.
-          fetch-depth: 0
-
-      - name: Check for commits in the last 7 days
-        id: recent
-        run: node .github/scripts/deploy-trigger.cjs recent
-
-      # Netlify builds whatever main is when the hook fires. If main moved
-      # while e2e ran, the new commit was never browser-tested.
-      - name: Require main unchanged since the e2e gate
-        if: steps.recent.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node .github/scripts/deploy-trigger.cjs head-unchanged
-
-      # The run id and attempt make the title unique (a re-run keeps the run id) so the verify step can find exactly
-      # this deploy; it is also what shows in the Netlify deploy list.
-      - name: Trigger production deploy
-        if: steps.recent.outputs.skip != 'true'
-        run: |
-          encoded_title=$(node .github/scripts/deploy-trigger.cjs title)
-          curl --fail --silent --show-error -X POST -d '{}' "$NETLIFY_BUILD_HOOK_URL?trigger_title=$encoded_title"
-
-      - name: Verify production deploy succeeded
-        if: steps.recent.outputs.skip != 'true'
-        env:
-          EXPECTED_COMMIT_SHA: ${{ github.sha }}
-        run: node .github/scripts/verify-production-deploy.cjs
-
-  # Separate job so `issues: write` stays out of the job that handles the
-  # Netlify secrets; same split as notify-audit-failure in security.yml.
-  notify-deploy-failure:
-    needs: [e2e, deploy]
-    if: failure()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    permissions:
-      contents: read
-      issues: write
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Notify on production deploy failure
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const notifyDeployFailure = require("./.github/scripts/notify-deploy-failure.cjs");
-            await notifyDeployFailure({ github, context, core });
-
-  # Runs only when a deploy was actually triggered and verified; a skipped
-  # week (no commits) proves nothing about production, so it must not close
-  # an open failure issue. Mirrors close-resolved-audit-failure in security.yml.
-  close-resolved-deploy-failure:
-    needs: deploy
-    if: success() && needs.deploy.outputs.skipped == 'false'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    permissions:
-      contents: read
-      issues: write
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Close resolved deploy-failure issue
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const closeResolvedDeployFailure = require("./.github/scripts/close-resolved-deploy-failure.cjs");
-            await closeResolvedDeployFailure({ github, context, core });

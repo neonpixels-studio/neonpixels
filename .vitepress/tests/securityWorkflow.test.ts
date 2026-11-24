@@ -104,6 +104,14 @@ function readStep(jobBlock: string, name: string) {
 }
 
 describe("audit job", () => {
+  it("keeps the local all-dependencies gate", () => {
+    const step = readStep(
+      readJob("audit"),
+      "Audit gate (fail on high or critical advisories)",
+    );
+    expect(step).toMatch(/run:\s*npm run audit\s*$/m);
+  });
+
   // The audit job runs `npm ci`/`npm audit` over the full dependency tree,
   // including install lifecycle scripts, with GITHUB_TOKEN visible to every
   // process in the job. It must stay on the workflow-level `contents: read`
@@ -134,6 +142,40 @@ describe("audit job", () => {
   });
 });
 
+describe("gitleaks job", () => {
+  it("calls the reusable gitleaks workflow with read-only contents", () => {
+    const job = readJob("gitleaks");
+    expect(job).toMatch(
+      /^\s+uses: neonpixels-studio\/packages\/\.github\/workflows\/gitleaks\.yml@[0-9a-f]{40} # \S/m,
+    );
+    expect(findJobPermissions(job)).toMatch(/^\s*contents:\s*read\s*$/m);
+  });
+
+  it("scans only on push and pull_request, not scheduled or manual runs", () => {
+    const ifLine = readJob("gitleaks").match(/^\s*if:\s*(.+)$/m)?.[1] ?? "";
+    expect(ifLine.trim()).toBe(
+      "github.event_name == 'push' || github.event_name == 'pull_request'",
+    );
+  });
+
+  it("has no local gitleaks install or scan steps left", () => {
+    expect(WORKFLOW).not.toContain("GITLEAKS_VERSION");
+    expect(WORKFLOW).not.toContain("./gitleaks");
+  });
+});
+
+describe("dependency-audit job", () => {
+  it("calls the reusable audit for production dependencies with npm", () => {
+    const job = readJob("dependency-audit");
+    expect(job).toMatch(
+      /^\s+uses: neonpixels-studio\/packages\/\.github\/workflows\/dependency-audit\.yml@[0-9a-f]{40} # \S/m,
+    );
+    expect(job).toMatch(/^\s+package-manager: npm\s*$/m);
+    expect(job).not.toMatch(/^\s+include-dev:/m);
+    expect(findJobPermissions(job)).toMatch(/^\s*contents:\s*read\s*$/m);
+  });
+});
+
 describe("notify-audit-failure job", () => {
   let notifyJob = "";
 
@@ -145,8 +187,8 @@ describe("notify-audit-failure job", () => {
     expect(findJob("notify-audit-failure")).not.toBeUndefined();
   });
 
-  it("depends on the audit job", () => {
-    expect(notifyJob).toMatch(/^\s*needs:\s*audit\s*$/m);
+  it("depends on both audit jobs, so either failing opens the issue", () => {
+    expect(notifyJob).toMatch(/^\s*needs:\s*\[audit, dependency-audit\]\s*$/m);
   });
 
   // The audit job also runs on push/pull_request, where a failure already
@@ -214,8 +256,8 @@ describe("close-resolved-audit-failure job", () => {
     expect(findJob("close-resolved-audit-failure")).not.toBeUndefined();
   });
 
-  it("depends on the audit job", () => {
-    expect(closeJob).toMatch(/^\s*needs:\s*audit\s*$/m);
+  it("depends on both audit jobs, so it closes only when both pass", () => {
+    expect(closeJob).toMatch(/^\s*needs:\s*\[audit, dependency-audit\]\s*$/m);
   });
 
   // The audit job also runs on push/pull_request, where there's no

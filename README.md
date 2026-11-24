@@ -37,7 +37,7 @@ The site is a single custom-themed page. The theme lives in `.vitepress/theme`:
 | `npm run lint`            | Check formatting (Prettier) and lint (ESLint)                                  |
 | `npm run lint:fix`        | Auto-fix formatting and lint issues                                            |
 | `npm run e2e`             | Real-browser (Playwright, Chromium) smoke test against the built `dist`        |
-| `npm run audit`           | Audit production dependencies                                                  |
+| `npm run audit`           | Audit all dependencies (dev included) with the local allowlisted gate          |
 | `npm run check:overrides` | Fail if a package.json override forces a consumer onto an incompatible version |
 
 ## Testing
@@ -73,29 +73,58 @@ suite before building, so a failing test blocks the deploy.
 ### Deploys
 
 Production deploys once a week, Mondays 14:00 UTC, through a Netlify build hook
-triggered by the `Weekly production deploy` workflow (skipped when `main` had no
-commits in the last 7 days). Merging to `main` does not deploy. Pull requests get
-Deploy Previews as usual. To ship a hotfix, go to the Actions tab > Weekly
-production deploy > Run workflow (on `main`). The workflow needs the
-`NETLIFY_BUILD_HOOK_URL` repository secret (the URL of a Netlify build hook for
-branch `main`, created under Site configuration > Build & deploy > Continuous
-deployment > Build hooks) and fails loudly if it is missing. Deploys started from
-the Netlify UI on `main` are cancelled by the ignore gate; use the workflow
+triggered by the `Weekly production deploy` workflow. Merging to `main` does not
+deploy. Pull requests get Deploy Previews as usual. To ship a hotfix, go to the
+Actions tab > Weekly production deploy > Run workflow (on `main`). A run does
+nothing when the live deploy is already built from the current `main` commit. Deploys started
+from the Netlify UI on `main` are cancelled by the ignore gate; use the workflow
 instead. GitHub disables scheduled workflows after 60 days without repository
 activity; re-enable it from the Actions tab if that happens.
 
-The workflow then polls the Netlify API (`.github/scripts/verify-production-deploy.cjs`,
-30 minute timeout) until the deploy is `ready`. Because the build command runs the full
-test suite, a red build leaves production stale; any non-success outcome (failed,
-cancelled, timed out) fails the run and opens a `deploy-failure` issue (or comments on the
-open one) via `.github/scripts/notify-deploy-failure.cjs`. This needs two more repository
-secrets: `NETLIFY_AUTH_TOKEN` (a Netlify personal access token: User settings >
-Applications > Personal access tokens) and `NETLIFY_SITE_ID` (Site configuration > Site
-details > Project ID). The deploy is found by a unique per-run trigger title
-(`... run <run id> attempt <attempt>`) rather than the hook response. The hook carries no
-commit SHA, so the verify step also compares the deploy's `commit_ref` to the commit the
-main-moved guard gated (`EXPECTED_COMMIT_SHA`) and fails if they differ. The workflow fails before firing the
-hook if either secret is missing.
+The workflow keeps its own `e2e` browser gate (build plus Playwright), and its
+`deploy` job `needs` it. The deploy itself is the shared reusable workflow
+`production-deploy.yml` from [`neonpixels-studio/packages`](https://github.com/neonpixels-studio/packages),
+which runs the `np-should-deploy` and `np-verify-netlify-deploy` bins from
+[`@neon-pixels/scripts`](https://github.com/neonpixels-studio/packages/tree/main/packages/scripts):
+
+- It skips when the live Netlify deploy is already built from the current `main`
+  commit, rather than looking for commits in the last 7 days.
+- It fires the build hook with a title unique to the run, then polls the Netlify API
+  (30 minute timeout) until that deploy is `ready` and was built from the checked
+  commit. Because the build command runs the full test suite, a red build leaves
+  production stale; any non-success outcome (failed, cancelled, timed out) fails the
+  run and opens a `deploy-failure` issue (or comments on the open one). A later
+  verified deploy closes it.
+- It needs three repository secrets, passed by name: `NETLIFY_BUILD_HOOK_URL` (the URL
+  of a Netlify build hook for branch `main`, created under Site configuration > Build &
+  deploy > Continuous deployment > Build hooks), `NETLIFY_AUTH_TOKEN` (a Netlify
+  personal access token: User settings > Applications > Personal access tokens) and
+  `NETLIFY_SITE_ID` (Site configuration > Site details > Project ID). The run fails
+  before firing the hook if one is missing.
+
+### Shared CI tooling
+
+CI scripts, reusable workflows and synced files come from
+[`neonpixels-studio/packages`](https://github.com/neonpixels-studio/packages):
+
+- `@neon-pixels/scripts` is a dev dependency at an exact version. Every
+  `scripts-version` input in `.github/workflows` must use the same version (a test
+  checks it). The reusable workflows are pinned to one full commit SHA of the packages
+  repo; Dependabot moves that SHA, but `scripts-version` is bumped by hand.
+- Secret scan: the `gitleaks` job in `security.yml` calls the reusable `gitleaks.yml`.
+- Dependency audit: `security.yml` runs the reusable `dependency-audit.yml` for
+  production dependencies, plus the local `npm run audit` gate over all dependencies
+  (almost everything here is a dev dependency). Either failing opens the scheduled
+  audit-failure issue. `npm run check:overrides` is specific to this repo.
+- Lighthouse: the `lighthouse` job in `ci.yml` calls the reusable `lighthouse.yml` with
+  `.lighthouserc.json`. It builds the site itself, one extra build per audited run.
+- CI runs `np-check-action-pinning` (every action pinned to a full SHA with a version
+  comment) and `np-sync-templates --stack vitepress --check`.
+- `npx np-sync-templates --stack vitepress` rewrites `.nvmrc`, `.gitleaks.toml`,
+  `.github/dependabot.yml`, the husky hooks and `package.json` `engines` from the
+  shared templates. Put repo-specific lines inside the `np-sync:begin` / `np-sync:end`
+  sections (gitleaks `extra-rules` and `allowlist`, hook `repo-specific`); everything
+  else is overwritten.
 
 ### Contact form ([Netlify Forms](https://docs.netlify.com/manage/forms/setup/))
 
