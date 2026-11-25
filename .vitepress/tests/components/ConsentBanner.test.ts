@@ -1,33 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount } from "@vue/test-utils";
 import ConsentBanner from "@components/ConsentBanner.vue";
+import { CONSENT_LIFETIME_MS, consentStorageKey } from "@neon-pixels/consent";
+import { stubPrivacySignal } from "@neon-pixels/consent/testing";
 import {
-  CONSENT_LIFETIME_MS,
-  CONSENT_STORAGE_KEY,
-  setStoredConsentChoice,
-  type ConsentChoice,
+  CONSENT_APP,
   MANAGE_CHOICE_LABEL,
 } from "@theme/analytics/analyticsConsent";
+import { GA_MEASUREMENT_ID } from "@theme/analytics/loadGoogleAnalytics";
 import { PRIVACY_POLICY_URL } from "@theme/routes";
 
-// The banner delegates the actual GA4 bootstrap/kill-switch to
-// loadGoogleAnalytics.ts (covered on its own in loadGoogleAnalytics.test.ts)
-// — mocked here so these tests assert only "did the banner decide to load or
-// disable analytics", never a real script tag landing in the test DOM.
+type StoredChoice = "granted" | "denied";
+
+// Only the gtag.js loader is replaced, so these tests assert "did the banner
+// decide to load analytics" without a real script tag landing in the test
+// DOM. The consent state, kill switch, and cookie clearing are the real
+// package code.
 const loadGoogleAnalyticsMock = vi.fn();
-const disableGoogleAnalyticsMock = vi.fn();
-const enableGoogleAnalyticsMock = vi.fn();
-const clearGoogleAnalyticsCookiesMock = vi.fn();
-vi.mock("@theme/analytics/loadGoogleAnalytics", () => ({
-  GA_MEASUREMENT_ID: "G-TEST123",
+vi.mock("@neon-pixels/consent", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@neon-pixels/consent")>()),
   loadGoogleAnalytics: (...args: unknown[]) => loadGoogleAnalyticsMock(...args),
-  disableGoogleAnalytics: (...args: unknown[]) =>
-    disableGoogleAnalyticsMock(...args),
-  enableGoogleAnalytics: (...args: unknown[]) =>
-    enableGoogleAnalyticsMock(...args),
-  clearGoogleAnalyticsCookies: (...args: unknown[]) =>
-    clearGoogleAnalyticsCookiesMock(...args),
 }));
+
+const STORAGE_KEY = consentStorageKey(CONSENT_APP);
+const DISABLE_FLAG = `ga-disable-${GA_MEASUREMENT_ID}`;
 
 const BANNER_SELECTOR = '[role="region"]';
 // Imported (not hand-typed) so every assertion below that matches on this
@@ -36,43 +32,42 @@ const BANNER_SELECTOR = '[role="region"]';
 // independently-drifting copy of the string.
 const MANAGE_CHOICE_TEXT = MANAGE_CHOICE_LABEL;
 
-function setDoNotTrack(value: string | null) {
-  Object.defineProperty(navigator, "doNotTrack", {
-    value,
-    configurable: true,
-  });
+function stubSignals(signals: Parameters<typeof stubPrivacySignal>[0] = {}) {
+  vi.stubGlobal("navigator", stubPrivacySignal(signals));
 }
 
-function setGlobalPrivacyControl(value: boolean | undefined) {
-  Object.defineProperty(navigator, "globalPrivacyControl", {
-    value,
-    configurable: true,
-  });
-}
-
-function storeChoice(choice: ConsentChoice, now = Date.now()) {
-  setStoredConsentChoice(localStorage, choice, now);
+function storeChoice(choice: StoredChoice, now = Date.now()) {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ choice, expiresAt: now + CONSENT_LIFETIME_MS }),
+  );
 }
 
 function readStoredChoice() {
-  const rawValue = localStorage.getItem(CONSENT_STORAGE_KEY);
+  const rawValue = localStorage.getItem(STORAGE_KEY);
   return rawValue === null ? null : JSON.parse(rawValue).choice;
+}
+
+function windowFlags() {
+  return window as unknown as Record<string, unknown>;
 }
 
 describe("ConsentBanner", () => {
   beforeEach(() => {
     localStorage.clear();
-    setDoNotTrack(null);
-    setGlobalPrivacyControl(undefined);
+    stubSignals();
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     localStorage.clear();
+    document.cookie = "_ga=; max-age=0; path=/";
+    delete windowFlags()[DISABLE_FLAG];
   });
 
   it("does not initialize analytics or show the banner when Do Not Track is set", async () => {
-    setDoNotTrack("1");
+    stubSignals({ doNotTrack: "1" });
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
@@ -81,7 +76,7 @@ describe("ConsentBanner", () => {
   });
 
   it("does not initialize analytics or show the banner when Global Privacy Control is set", async () => {
-    setGlobalPrivacyControl(true);
+    stubSignals({ globalPrivacyControl: true });
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
@@ -111,17 +106,20 @@ describe("ConsentBanner", () => {
   });
 
   it("initializes analytics immediately, with no banner, when consent was already accepted", async () => {
-    storeChoice("accepted");
+    storeChoice("granted");
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     expect(loadGoogleAnalyticsMock).toHaveBeenCalledTimes(1);
-    expect(loadGoogleAnalyticsMock).toHaveBeenCalledWith("G-TEST123");
+    expect(loadGoogleAnalyticsMock).toHaveBeenCalledWith(GA_MEASUREMENT_ID, {
+      document,
+      window,
+    });
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
     wrapper.unmount();
   });
 
   it("prompts again, without loading analytics, when the stored acceptance has expired", async () => {
-    storeChoice("accepted", Date.now() - CONSENT_LIFETIME_MS - 1);
+    storeChoice("granted", Date.now() - CONSENT_LIFETIME_MS - 1);
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(true);
@@ -130,7 +128,7 @@ describe("ConsentBanner", () => {
   });
 
   it("stays hidden, with no banner shown again, when consent was already declined", async () => {
-    storeChoice("declined");
+    storeChoice("denied");
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     expect(loadGoogleAnalyticsMock).not.toHaveBeenCalled();
@@ -145,7 +143,7 @@ describe("ConsentBanner", () => {
     expect(acceptButton.text()).toBe("Accept");
     await acceptButton.trigger("click");
     expect(loadGoogleAnalyticsMock).toHaveBeenCalledTimes(1);
-    expect(readStoredChoice()).toBe("accepted");
+    expect(readStoredChoice()).toBe("granted");
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
     wrapper.unmount();
   });
@@ -157,15 +155,13 @@ describe("ConsentBanner", () => {
     expect(declineButton.text()).toBe("Decline");
     await declineButton.trigger("click");
     expect(loadGoogleAnalyticsMock).not.toHaveBeenCalled();
-    // Nothing was ever loaded this session, so there is nothing to disable.
-    expect(disableGoogleAnalyticsMock).not.toHaveBeenCalled();
-    expect(readStoredChoice()).toBe("declined");
+    expect(readStoredChoice()).toBe("denied");
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
     wrapper.unmount();
   });
 
   it("offers a manage-choice control instead of the banner once a choice is already stored", async () => {
-    storeChoice("accepted");
+    storeChoice("granted");
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     const manageButton = wrapper
@@ -176,8 +172,8 @@ describe("ConsentBanner", () => {
   });
 
   it("offers no manage-choice control when Do Not Track overrides a stale stored acceptance", async () => {
-    setDoNotTrack("1");
-    storeChoice("accepted");
+    stubSignals({ doNotTrack: "1" });
+    storeChoice("granted");
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     expect(loadGoogleAnalyticsMock).not.toHaveBeenCalled();
@@ -190,7 +186,7 @@ describe("ConsentBanner", () => {
   });
 
   it("reopens the accept/decline banner when the manage-choice control is clicked", async () => {
-    storeChoice("declined");
+    storeChoice("denied");
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     const manageButton = wrapper
@@ -205,6 +201,7 @@ describe("ConsentBanner", () => {
   });
 
   it("disables analytics (rather than requiring a reload) when consent is revoked after being active this session", async () => {
+    document.cookie = "_ga=GA1.1.1; path=/";
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     await wrapper.findAll("button")[0].trigger("click"); // Accept
@@ -219,21 +216,18 @@ describe("ConsentBanner", () => {
       .find((button) => button.text() === "Decline");
     await declineButton?.trigger("click");
 
-    expect(disableGoogleAnalyticsMock).toHaveBeenCalledTimes(1);
-    expect(disableGoogleAnalyticsMock).toHaveBeenCalledWith("G-TEST123");
+    expect(windowFlags()[DISABLE_FLAG]).toBe(true);
     // Revoking must also purge GA4's own identifier cookies, not just stop
-    // future hits — otherwise a later re-accept would resume the same client
-    // id instead of starting fresh.
-    expect(clearGoogleAnalyticsCookiesMock).toHaveBeenCalledTimes(1);
-    expect(readStoredChoice()).toBe("declined");
+    // future hits.
+    expect(document.cookie).not.toContain("_ga=GA1");
+    expect(readStoredChoice()).toBe("denied");
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
     wrapper.unmount();
   });
 
-  it("clears any leftover kill switch when re-accepting after a decline in the same session", async () => {
-    // Regression coverage for the round-3 review finding: Accept -> Decline
-    // -> Accept again must actually call enableGoogleAnalytics before
-    // loadGoogleAnalytics, or the kill switch from the Decline stays set.
+  it("loads analytics again when re-accepting after a decline in the same session", async () => {
+    // The package's loader is idempotent and clears the kill switch itself;
+    // the banner just has to call it again on every grant.
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     await wrapper.findAll("button")[0].trigger("click"); // Accept
@@ -256,12 +250,47 @@ describe("ConsentBanner", () => {
       .find((button) => button.text() === "Accept")
       ?.trigger("click");
 
-    // Called on every Accept (harmless when nothing was ever disabled), not
-    // only a re-accept — so two Accepts in this flow means two calls.
-    expect(enableGoogleAnalyticsMock).toHaveBeenCalledTimes(2);
-    expect(enableGoogleAnalyticsMock).toHaveBeenCalledWith("G-TEST123");
     expect(loadGoogleAnalyticsMock).toHaveBeenCalledTimes(2);
-    expect(readStoredChoice()).toBe("accepted");
+    expect(readStoredChoice()).toBe("granted");
+    wrapper.unmount();
+  });
+
+  it("names only the configured service in the banner text", async () => {
+    const wrapper = mount(ConsentBanner);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(BANNER_SELECTOR).text()).toContain(
+      "This site uses Google Analytics to see which pages get read.",
+    );
+    wrapper.unmount();
+  });
+
+  it("still honors a choice stored under the legacy key", async () => {
+    localStorage.setItem("np-analytics-consent", "accepted");
+    const wrapper = mount(ConsentBanner);
+    await wrapper.vm.$nextTick();
+    expect(loadGoogleAnalyticsMock).toHaveBeenCalledTimes(1);
+    expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
+    expect(readStoredChoice()).toBe("granted");
+    wrapper.unmount();
+  });
+
+  it("denies, and clears the GA cookies of, a visitor who granted earlier and now sends a privacy signal", async () => {
+    stubSignals({ globalPrivacyControl: true });
+    storeChoice("granted");
+    document.cookie = "_ga=GA1.1.1; path=/";
+    const wrapper = mount(ConsentBanner);
+    await wrapper.vm.$nextTick();
+    expect(document.cookie).not.toContain("_ga=GA1");
+    expect(windowFlags()[DISABLE_FLAG]).toBe(true);
+    expect(localStorage.getItem(STORAGE_KEY)).toContain('"denied"');
+    wrapper.unmount();
+  });
+
+  it("records no choice for a visitor with a privacy signal who never answered", async () => {
+    stubSignals({ doNotTrack: "1" });
+    const wrapper = mount(ConsentBanner);
+    await wrapper.vm.$nextTick();
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     wrapper.unmount();
   });
 
@@ -279,7 +308,7 @@ describe("ConsentBanner", () => {
   });
 
   it("moves focus to the Accept button when the manage-choice control reopens the banner", async () => {
-    storeChoice("declined");
+    storeChoice("denied");
     const wrapper = mount(ConsentBanner, { attachTo: document.body });
     await wrapper.vm.$nextTick();
     const manageButton = wrapper

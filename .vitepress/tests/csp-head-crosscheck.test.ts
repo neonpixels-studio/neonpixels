@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import config from "../config";
-import { GTAG_SCRIPT_URL } from "../theme/analytics/loadGoogleAnalytics";
+import { GTAG_SCRIPT_URL } from "@neon-pixels/consent";
 import { stripComments } from "./utils/outlineGuard";
 import type { HeadConfig } from "vitepress";
 
@@ -563,7 +563,7 @@ describe("CSP and config head origin cross-check", () => {
       readFileSync(CONSENT_BANNER_PATH, "utf8"),
     );
     expect(consentBannerSource).toMatch(
-      /\bfrom\s+["'][^"']*analytics\/loadGoogleAnalytics["']/,
+      /\bfrom\s+["']@neon-pixels\/consent["']/,
     );
     expect(consentBannerSource).toMatch(/\bloadGoogleAnalytics\(/);
   });
