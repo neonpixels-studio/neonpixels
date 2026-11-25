@@ -294,6 +294,28 @@ describe("ConsentBanner", () => {
     wrapper.unmount();
   });
 
+  it("still closes the banner and loads analytics for this page when storage is blocked", async () => {
+    const blocked = () => {
+      throw new DOMException("blocked", "SecurityError");
+    };
+    vi.stubGlobal("localStorage", {
+      length: 0,
+      key: () => null,
+      getItem: blocked,
+      setItem: blocked,
+      removeItem: blocked,
+      clear: blocked,
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const wrapper = mount(ConsentBanner);
+    await wrapper.vm.$nextTick();
+    await wrapper.findAll("button")[0].trigger("click"); // Accept
+    expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
+    expect(loadGoogleAnalyticsMock).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+    wrapper.unmount();
+  });
+
   it("moves focus to the manage-choice control after a decision hides the banner", async () => {
     const wrapper = mount(ConsentBanner, { attachTo: document.body });
     await wrapper.vm.$nextTick();

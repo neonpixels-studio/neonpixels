@@ -25,8 +25,8 @@ export const MANAGE_CHOICE_LABEL = "Analytics choice";
 // throws a SecurityError in Safari with "Block all cookies" and some
 // locked-down webviews. The package swallows errors from the storage methods
 // but cannot guard the property read, so probe it here and fall back to an
-// in-memory no-op that always reads back null: analytics stays off and the
-// banner re-prompts every visit instead of crashing.
+// in-memory store for this page load: the choice does not persist, so the
+// banner re-prompts on the next visit instead of crashing.
 export function getConsentStorage(): ConsentStorage {
   try {
     const probeKey = "__np_analytics_consent_probe__";
@@ -38,8 +38,21 @@ export function getConsentStorage(): ConsentStorage {
       "Analytics consent storage is unavailable; falling back to an in-memory choice for this page load.",
       error,
     );
-    return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+    return createInMemoryStorage();
   }
+}
+
+function createInMemoryStorage(): ConsentStorage {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+    removeItem: (key) => {
+      values.delete(key);
+    },
+  };
 }
 
 // Client-only: reads `navigator` and `window`, so call it from onMounted.
@@ -54,9 +67,28 @@ export function createSiteConsent(storage: ConsentStorage): Consent {
   });
 }
 
-// True when an earlier visit left any choice (current or legacy key) behind.
-export function hasStoredChoice(storage: ConsentStorage): boolean {
+const GRANTED_VALUES = new Set(["granted", "accepted"]);
+
+function parseChoice(rawValue: string | null): string | undefined {
+  if (rawValue === null) {
+    return undefined;
+  }
+  if (GRANTED_VALUES.has(rawValue)) {
+    return rawValue;
+  }
+  try {
+    return JSON.parse(rawValue)?.choice;
+  } catch {
+    return undefined;
+  }
+}
+
+// True when an earlier visit stored a grant under the current or legacy key,
+// expired or not. Read raw because the package reports no choice while a
+// privacy signal is present, yet must still be told to deny() so it clears
+// the cookies that grant left behind.
+export function hasStoredGrant(storage: ConsentStorage): boolean {
   return [consentStorageKey(CONSENT_APP), LEGACY_CONSENT_STORAGE_KEY].some(
-    (key) => storage.getItem(key) !== null,
+    (key) => GRANTED_VALUES.has(parseChoice(storage.getItem(key)) ?? ""),
   );
 }

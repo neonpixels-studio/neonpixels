@@ -4,6 +4,7 @@ import {
   loadGoogleAnalytics,
   type Consent,
   type ConsentService,
+  type ConsentStorage,
 } from "@neon-pixels/consent";
 import { WORDMARK_GRADIENT } from "../brand";
 import { GA_MEASUREMENT_ID } from "../analytics/loadGoogleAnalytics";
@@ -11,7 +12,7 @@ import {
   MANAGE_CHOICE_LABEL,
   createSiteConsent,
   getConsentStorage,
-  hasStoredChoice,
+  hasStoredGrant,
 } from "../analytics/analyticsConsent";
 import { PRIVACY_POLICY_URL } from "../routes";
 
@@ -63,6 +64,16 @@ function syncControls() {
     consent.status === "granted" || consent.status === "denied";
 }
 
+// An earlier grant must not survive a browser privacy signal: deny()
+// switches analytics off and clears the GA cookies. A visitor with no grant is
+// left alone so no choice is invented for them.
+function revokeEarlierGrant(storage: ConsentStorage) {
+  if (!hasStoredGrant(storage)) {
+    return;
+  }
+  consent.deny();
+}
+
 onMounted(() => {
   const storage = getConsentStorage();
   consent = createSiteConsent(storage);
@@ -71,12 +82,7 @@ onMounted(() => {
     .join(" and ");
 
   if (consent.status === "signal") {
-    // An earlier grant must not survive a browser privacy signal: deny()
-    // switches analytics off and clears the GA cookies. A visitor who never
-    // chose anything is left alone so no choice is invented for them.
-    if (hasStoredChoice(storage)) {
-      consent.deny();
-    }
+    revokeEarlierGrant(storage);
     return;
   }
   if (consent.status === "granted") {

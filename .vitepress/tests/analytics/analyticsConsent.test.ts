@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { CONSENT_LIFETIME_MS, consentStorageKey } from "@neon-pixels/consent";
 import {
   createMemoryStorage,
@@ -9,7 +9,7 @@ import {
   LEGACY_CONSENT_STORAGE_KEY,
   createSiteConsent,
   getConsentStorage,
-  hasStoredChoice,
+  hasStoredGrant,
 } from "@theme/analytics/analyticsConsent";
 import { GA_MEASUREMENT_ID } from "@theme/analytics/loadGoogleAnalytics";
 
@@ -35,19 +35,32 @@ afterEach(() => {
 });
 
 describe("site consent settings", () => {
+  beforeEach(() => {
+    vi.stubGlobal("navigator", stubPrivacySignal());
+  });
+
   it("keeps the storage key returning visitors already have", () => {
     expect(consentStorageKey(CONSENT_APP)).toBe(STORAGE_KEY);
     expect(LEGACY_CONSENT_STORAGE_KEY).toBe("np-analytics-consent");
   });
 
+  it("lets a second consent object see a choice made through the first", () => {
+    const storage = createMemoryStorage({
+      [STORAGE_KEY]: storedRecord("granted"),
+    });
+    const bannerConsent = createSiteConsent(storage);
+    const ctaConsent = createSiteConsent(storage);
+    expect(ctaConsent.status).toBe("granted");
+    bannerConsent.deny();
+    expect(ctaConsent.status).toBe("denied");
+  });
+
   it("names only Google Analytics", () => {
-    vi.stubGlobal("navigator", stubPrivacySignal());
     const consent = createSiteConsent(createMemoryStorage());
     expect(consent.services).toEqual(["analytics"]);
   });
 
   it("prompts a first-time visitor and stores a grant under the site key", () => {
-    vi.stubGlobal("navigator", stubPrivacySignal());
     const storage = createMemoryStorage();
     const consent = createSiteConsent(storage);
     expect(consent.shouldPrompt).toBe(true);
@@ -64,7 +77,6 @@ describe("site consent settings", () => {
   ])(
     "honors a bare %s choice stored under the legacy key and moves it to the site key",
     (legacyValue, expectedStatus) => {
-      vi.stubGlobal("navigator", stubPrivacySignal());
       const storage = createMemoryStorage({
         [LEGACY_CONSENT_STORAGE_KEY]: legacyValue,
       });
@@ -77,7 +89,6 @@ describe("site consent settings", () => {
   );
 
   it("reads a record in the earlier accepted/declined shape under the site key", () => {
-    vi.stubGlobal("navigator", stubPrivacySignal());
     const consent = createSiteConsent(
       createMemoryStorage({ [STORAGE_KEY]: storedRecord("accepted") }),
     );
@@ -118,17 +129,27 @@ describe("site consent settings", () => {
   });
 });
 
-describe("hasStoredChoice", () => {
+describe("hasStoredGrant", () => {
   it("is false for a visitor who never answered", () => {
-    expect(hasStoredChoice(createMemoryStorage())).toBe(false);
+    expect(hasStoredGrant(createMemoryStorage())).toBe(false);
   });
 
-  it.each([STORAGE_KEY, LEGACY_CONSENT_STORAGE_KEY])(
-    "is true when a value exists under %s",
-    (key) => {
-      expect(hasStoredChoice(createMemoryStorage({ [key]: "x" }))).toBe(true);
-    },
-  );
+  it.each([
+    [STORAGE_KEY, storedRecord("granted")],
+    [STORAGE_KEY, storedRecord("accepted")],
+    [STORAGE_KEY, JSON.stringify({ choice: "granted", expiresAt: 1 })],
+    [LEGACY_CONSENT_STORAGE_KEY, "accepted"],
+  ])("is true for a grant stored under %s", (key, value) => {
+    expect(hasStoredGrant(createMemoryStorage({ [key]: value }))).toBe(true);
+  });
+
+  it.each([
+    [STORAGE_KEY, storedRecord("denied")],
+    [STORAGE_KEY, "not json"],
+    [LEGACY_CONSENT_STORAGE_KEY, "declined"],
+  ])("is false for %s holding %s", (key, value) => {
+    expect(hasStoredGrant(createMemoryStorage({ [key]: value }))).toBe(false);
+  });
 });
 
 describe("getConsentStorage", () => {
@@ -163,8 +184,10 @@ describe("getConsentStorage", () => {
       const storage = getConsentStorage();
       expect(warn).toHaveBeenCalledTimes(1);
       expect(storage).not.toBe(blockedStorage);
-      expect(() => storage.setItem(STORAGE_KEY, "granted")).not.toThrow();
       expect(storage.getItem(STORAGE_KEY)).toBeNull();
+      storage.setItem(STORAGE_KEY, "granted");
+      expect(storage.getItem(STORAGE_KEY)).toBe("granted");
+      expect(blockedStorage.length).toBe(0);
     } finally {
       vi.unstubAllGlobals();
       warn.mockRestore();
