@@ -303,14 +303,30 @@ describe("ConsentBanner", () => {
     second.unmount();
   });
 
-  it("closes the banner even when persisting the choice fails", async () => {
+  it("closes the banner, loads analytics for this page, and offers the manage control even when persisting the choice fails", async () => {
+    const realStorage = window.localStorage;
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => realStorage.getItem(key),
+      removeItem: (key: string) => realStorage.removeItem(key),
+      setItem: (key: string, value: string) => {
+        if (key === STORAGE_KEY) {
+          throw new DOMException("quota", "QuotaExceededError");
+        }
+        realStorage.setItem(key, value);
+      },
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("quota", "QuotaExceededError");
-    });
-    await wrapper.findAll("button")[1].trigger("click"); // Decline
+    await wrapper.findAll("button")[0].trigger("click"); // Accept
+    expect(readStoredChoice()).toBeNull();
     expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
+    expect(loadGoogleAnalyticsMock).toHaveBeenCalledTimes(1);
+    expect(
+      wrapper
+        .findAll("button")
+        .find((button) => button.text() === MANAGE_CHOICE_TEXT),
+    ).toBeDefined();
     wrapper.unmount();
   });
 

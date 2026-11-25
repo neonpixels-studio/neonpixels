@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { CONSENT_LIFETIME_MS, consentStorageKey } from "@neon-pixels/consent";
+import {
+  CONSENT_LIFETIME_MS,
+  consentStorageKey,
+  loadGoogleAnalytics,
+} from "@neon-pixels/consent";
 import {
   createMemoryStorage,
   stubPrivacySignal,
@@ -163,6 +167,29 @@ describe("hasStoredGrant", () => {
   });
 });
 
+describe("re-accepting after a decline", () => {
+  it("clears the kill switch the decline set once the loader runs again", () => {
+    vi.stubGlobal("navigator", stubPrivacySignal());
+    const consent = createSiteConsent(createMemoryStorage());
+    const scripts: unknown[] = [];
+    const fakeDocument = {
+      createElement: () => ({ async: false, src: "" }),
+      head: { appendChild: (node: unknown) => scripts.push(node) },
+    };
+    const browser = { document: fakeDocument, window: {} };
+    const flag = `ga-disable-${GA_MEASUREMENT_ID}`;
+
+    consent.grant();
+    loadGoogleAnalytics(GA_MEASUREMENT_ID, browser);
+    consent.deny();
+    consent.grant();
+    loadGoogleAnalytics(GA_MEASUREMENT_ID, browser);
+
+    expect((browser.window as Record<string, unknown>)[flag]).toBe(false);
+    expect(scripts).toHaveLength(1);
+  });
+});
+
 describe("getConsentStorage", () => {
   const PROBE_KEY = "np-analytics-consent-probe-test";
 
@@ -185,7 +212,7 @@ describe("getConsentStorage", () => {
       length: 0,
       key: () => null,
       getItem: blocked,
-      setItem: blocked,
+      setItem: vi.fn(blocked),
       removeItem: blocked,
       clear: blocked,
     };
@@ -194,11 +221,18 @@ describe("getConsentStorage", () => {
     try {
       const storage = getConsentStorage();
       expect(warn).toHaveBeenCalledTimes(1);
+      // The banner and every CTA must share one fallback, and the warning
+      // fires once per page rather than once per component.
+      expect(getConsentStorage()).toBe(storage);
+      expect(warn).toHaveBeenCalledTimes(1);
       expect(storage).not.toBe(blockedStorage);
       expect(storage.getItem(STORAGE_KEY)).toBeNull();
       storage.setItem(STORAGE_KEY, "granted");
       expect(storage.getItem(STORAGE_KEY)).toBe("granted");
-      expect(blockedStorage.length).toBe(0);
+      expect(blockedStorage.setItem).not.toHaveBeenCalledWith(
+        STORAGE_KEY,
+        expect.anything(),
+      );
     } finally {
       vi.unstubAllGlobals();
       warn.mockRestore();

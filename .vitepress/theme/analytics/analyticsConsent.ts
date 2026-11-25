@@ -34,12 +34,24 @@ export function getConsentStorage(): ConsentStorage {
     window.localStorage.removeItem(probeKey);
     return window.localStorage;
   } catch (error) {
-    console.warn(
-      "Analytics consent storage is unavailable; falling back to an in-memory choice for this page load.",
-      error,
-    );
-    return createInMemoryStorage();
+    return getFallbackStorage(error);
   }
+}
+
+// One shared store per page, so the banner and every CTA agree on the choice
+// made during this page load.
+let fallbackStorage: ConsentStorage | null = null;
+
+function getFallbackStorage(error: unknown): ConsentStorage {
+  if (fallbackStorage !== null) {
+    return fallbackStorage;
+  }
+  console.warn(
+    "Analytics consent storage is unavailable; falling back to an in-memory choice for this page load.",
+    error,
+  );
+  fallbackStorage = createInMemoryStorage();
+  return fallbackStorage;
 }
 
 function createInMemoryStorage(): ConsentStorage {

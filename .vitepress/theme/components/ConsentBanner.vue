@@ -105,6 +105,12 @@ async function focusAfterRender(targetRef: Ref<HTMLButtonElement | null>) {
 
 function accept() {
   consent.grant();
+  // grant() does nothing while a privacy signal is present. Gate on that
+  // rather than on the stored grant, so a failed write still loads analytics
+  // for this page, as a blocked store does.
+  if (consent.status !== "signal") {
+    loadAnalytics();
+  }
   afterChoice();
 }
 
@@ -115,16 +121,12 @@ function decline() {
 
 function afterChoice() {
   syncControls();
-  // Close the banner even if storage refused the write, so a click always
-  // has a visible effect; the choice then just does not survive a reload.
+  // Close the banner and offer the manage control even if storage refused
+  // the write, so a click always has a visible effect; the choice then just
+  // does not survive a reload.
   isVisible.value = false;
+  canManageChoice.value = consent.status !== "signal";
   void focusAfterRender(manageButtonRef);
-
-  // grant() does nothing while a privacy signal is present; only load after
-  // a grant that was actually recorded.
-  if (consent.status === "granted") {
-    loadAnalytics();
-  }
 }
 
 function reopenBanner() {
