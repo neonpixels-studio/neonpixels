@@ -7,3 +7,9 @@ dist
 .lighthouseci
 test-results
 playwright-report
+
+# Local env (dotenvx). The encrypted .env* files ARE committed; the private
+# keys and any local-only plaintext overrides are NOT.
+.env.keys
+.env.local
+.env.*.local
