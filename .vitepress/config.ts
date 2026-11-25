@@ -94,7 +94,7 @@ export default defineConfig({
   description: DESCRIPTION,
   lang: "en-US",
   // Repo docs, scratch files and the original design export are not site routes.
-  srcExclude: ["README.md", "_claude-*.md", "export/**"],
+  srcExclude: ["README.md", "_claude-*.md", "_scratch.md", "export/**"],
   sitemap: {
     hostname: SITE_URL,
   },
