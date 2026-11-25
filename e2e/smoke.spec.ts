@@ -80,7 +80,7 @@ test.describe("consent banner", () => {
     await expect.poll(() => gtagRequests.length).toBe(1);
     await page.waitForLoadState("networkidle");
     expect(gtagRequests).toHaveLength(1);
-    await expect.poll(() => readStoredConsent(page)).toBe("accepted");
+    await expect.poll(() => readStoredConsent(page)).toBe("granted");
 
     await page.reload();
     await expect(consentBanner(page)).toBeHidden();
@@ -104,7 +104,7 @@ test.describe("consent banner", () => {
     await page.goto("/");
     await consentBanner(page).getByRole("button", { name: "Decline" }).click();
     await expect(consentBanner(page)).toBeHidden();
-    await expect.poll(() => readStoredConsent(page)).toBe("declined");
+    await expect.poll(() => readStoredConsent(page)).toBe("denied");
 
     await page.reload();
     await expect(

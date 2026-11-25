@@ -2,10 +2,10 @@
 import { computed, onMounted } from "vue";
 import type { Project } from "../data/projects";
 import { hexToRgba } from "../utils/color";
+import type { Consent } from "@neon-pixels/consent";
 import {
+  createSiteConsent,
   getConsentStorage,
-  shouldLoadAnalytics,
-  type ConsentStorage,
 } from "../analytics/analyticsConsent";
 import { trackGoogleAnalyticsEvent } from "../analytics/loadGoogleAnalytics";
 
@@ -82,13 +82,13 @@ const headingGlowStyle = computed(() => ({
 }));
 
 // Resolved once on mount (same pattern as ConsentBanner.vue's own
-// `consentStorage`), not read fresh inside trackOutboundClick — getConsentStorage()
+// `consent`), not read fresh inside trackOutboundClick — getConsentStorage()
 // probes localStorage with a set/remove round-trip, and this CTA can be
 // clicked far more often than the banner's Accept/Decline buttons ever are.
-let consentStorage: ConsentStorage;
+let consent: Consent;
 
 onMounted(() => {
-  consentStorage = getConsentStorage();
+  consent = createSiteConsent(getConsentStorage());
 });
 
 // Gated the same way page tracking already is (ConsentBanner.vue): only ever
@@ -98,7 +98,7 @@ onMounted(() => {
 // directly to `@click` (left-click, and Ctrl/Cmd+click, which still fires
 // `click`); handleCtaAuxClick below covers the one case this doesn't.
 function trackOutboundClick() {
-  if (!shouldLoadAnalytics(navigator, consentStorage)) {
+  if (consent.status !== "granted") {
     return;
   }
   trackGoogleAnalyticsEvent(OUTBOUND_CLICK_EVENT, {

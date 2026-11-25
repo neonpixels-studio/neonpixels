@@ -1,26 +1,26 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, type Ref } from "vue";
-import { WORDMARK_GRADIENT } from "../brand";
 import {
-  CONSENT_CHOICES,
-  MANAGE_CHOICE_LABEL,
-  getConsentStorage,
-  getStoredConsentChoice,
-  setStoredConsentChoice,
-  shouldLoadAnalytics,
-  shouldPromptForConsent,
-  trackingSignalPresent,
-  type ConsentChoice,
-  type ConsentStorage,
-} from "../analytics/analyticsConsent";
-import {
-  GA_MEASUREMENT_ID,
-  clearGoogleAnalyticsCookies,
-  disableGoogleAnalytics,
-  enableGoogleAnalytics,
   loadGoogleAnalytics,
-} from "../analytics/loadGoogleAnalytics";
+  type Consent,
+  type ConsentService,
+  type ConsentStorage,
+} from "@neon-pixels/consent";
+import { WORDMARK_GRADIENT } from "../brand";
+import { GA_MEASUREMENT_ID } from "../analytics/loadGoogleAnalytics";
+import {
+  LEGACY_CONSENT_STORAGE_KEY,
+  MANAGE_CHOICE_LABEL,
+  createSiteConsent,
+  getConsentStorage,
+  hasStoredGrant,
+} from "../analytics/analyticsConsent";
 import { PRIVACY_POLICY_URL } from "../routes";
+
+const SERVICE_LABELS: Record<ConsentService, string> = {
+  analytics: "Google Analytics",
+  sessionReplay: "session replay",
+};
 
 // Rendered once from AppLayout, next to the skip link, so every route shares
 // one banner instance instead of each view wiring its own. Starts hidden and
@@ -41,33 +41,56 @@ const canManageChoice = ref(false);
 const acceptButtonRef = ref<HTMLButtonElement | null>(null);
 const manageButtonRef = ref<HTMLButtonElement | null>(null);
 
-// Assigned inside onMounted, never at setup() top level: getConsentStorage()
-// touches `window.localStorage`, and VitePress's SSG build runs this
-// component's setup() on the server, where no `window` exists at all. Safe to
-// read from recordChoice()/reopenBanner() below without an existence check —
-// both are only reachable via a click on a rendered button, and nothing here
+// Assigned inside onMounted, never at setup() top level: createSiteConsent()
+// reads `navigator` and `window.localStorage`, and VitePress's SSG build runs
+// this component's setup() on the server, where neither exists. Safe to read
+// from recordChoice()/reopenBanner() below without an existence check: both
+// are only reachable via a click on a rendered button, and nothing here
 // renders until after onMounted has run.
-let consentStorage: ConsentStorage;
+let consent: Consent;
 
-// Whether gtag.js has actually loaded this session, so Decline can tell
-// "revoke an already-active choice" (needs disableGoogleAnalytics — a loaded
-// script can't be un-run) apart from "decline for the first time" (nothing
-// loaded yet).
-let analyticsIsActive = false;
+// What the banner text names: only the services the consent object was
+// configured with.
+const serviceNames = ref("");
 
-onMounted(() => {
-  consentStorage = getConsentStorage();
-  if (shouldLoadAnalytics(navigator, consentStorage)) {
-    loadGoogleAnalytics(GA_MEASUREMENT_ID);
-    analyticsIsActive = true;
-    canManageChoice.value = true;
+function loadAnalytics() {
+  loadGoogleAnalytics(GA_MEASUREMENT_ID, { document, window });
+}
+
+// Re-reads the package's state, which always reflects storage and the
+// privacy signals as they are right now.
+function syncControls() {
+  isVisible.value = consent.shouldPrompt;
+  canManageChoice.value =
+    consent.status === "granted" || consent.status === "denied";
+}
+
+// An earlier grant must not survive a browser privacy signal: deny()
+// switches analytics off and clears the GA cookies. A visitor with no grant is
+// left alone so no choice is invented for them.
+function revokeEarlierGrant(storage: ConsentStorage) {
+  if (!hasStoredGrant(storage)) {
     return;
   }
-  isVisible.value = shouldPromptForConsent(navigator, consentStorage);
-  canManageChoice.value =
-    !isVisible.value &&
-    !trackingSignalPresent(navigator) &&
-    getStoredConsentChoice(consentStorage) !== null;
+  consent.deny();
+  storage.removeItem(LEGACY_CONSENT_STORAGE_KEY);
+}
+
+onMounted(() => {
+  const storage = getConsentStorage();
+  consent = createSiteConsent(storage);
+  serviceNames.value = consent.services
+    .map((service) => SERVICE_LABELS[service])
+    .join(" and ");
+
+  if (consent.status === "signal") {
+    revokeEarlierGrant(storage);
+    return;
+  }
+  if (consent.status === "granted") {
+    loadAnalytics();
+  }
+  syncControls();
 });
 
 // The Accept/Decline pair and the manage-choice control take turns occupying
@@ -80,43 +103,29 @@ async function focusAfterRender(targetRef: Ref<HTMLButtonElement | null>) {
   targetRef.value?.focus();
 }
 
-// Revokes a choice that already loaded gtag.js this session: the kill-switch
-// (a loaded script can't be un-run in-page) plus clearing GA4's own identifier
-// cookies, so a later re-accept starts a fresh client id instead of resuming
-// the one from before the visitor withdrew consent.
-function revokeActiveAnalytics() {
-  if (!analyticsIsActive) {
-    return;
+function accept() {
+  consent.grant();
+  // grant() does nothing while a privacy signal is present. Gate on that
+  // rather than on the stored grant, so a failed write still loads analytics
+  // for this page, as a blocked store does.
+  if (consent.status !== "signal") {
+    loadAnalytics();
   }
-  disableGoogleAnalytics(GA_MEASUREMENT_ID);
-  clearGoogleAnalyticsCookies();
-  analyticsIsActive = false;
+  afterChoice();
 }
 
-function recordChoice(choice: ConsentChoice) {
-  setStoredConsentChoice(consentStorage, choice);
+function decline() {
+  consent.deny();
+  afterChoice();
+}
+
+function afterChoice() {
+  // Close the banner and offer the manage control even if storage refused
+  // the write, so a click always has a visible effect; the choice then just
+  // does not survive a reload.
   isVisible.value = false;
-  canManageChoice.value = !trackingSignalPresent(navigator);
+  canManageChoice.value = consent.status !== "signal";
   void focusAfterRender(manageButtonRef);
-
-  if (choice === CONSENT_CHOICES.declined) {
-    revokeActiveAnalytics();
-    return;
-  }
-
-  // Defense in depth: Accept is only ever reachable through this banner, and
-  // the banner is never shown while a DNT/GPC signal is present — but this
-  // must never honor an Accept click if that ever stops being true.
-  if (trackingSignalPresent(navigator)) {
-    return;
-  }
-  // Clears any kill-switch flag a prior Decline left set this session —
-  // loadGoogleAnalytics's load-once guard means a second call would
-  // otherwise no-op while that flag was still in effect (see
-  // enableGoogleAnalytics's own comment).
-  enableGoogleAnalytics(GA_MEASUREMENT_ID);
-  loadGoogleAnalytics(GA_MEASUREMENT_ID);
-  analyticsIsActive = true;
 }
 
 function reopenBanner() {
@@ -135,8 +144,8 @@ function reopenBanner() {
     class="bg-panel border-border text-fg fixed inset-x-0 bottom-0 z-40 flex flex-wrap items-center justify-between gap-4 border-t px-5 py-4 font-mono sm:px-8"
   >
     <p class="text-fg-muted m-0 max-w-[560px] text-[13px] leading-[1.6]">
-      This site uses Google Analytics to see which pages get read. Nothing loads
-      until you say yes, and your choice only lives in this browser.
+      This site uses {{ serviceNames }} to see which pages get read. Nothing
+      loads until you say yes, and your choice only lives in this browser.
       <a
         :href="PRIVACY_POLICY_URL"
         class="text-fg-subtle hover:text-fg underline transition-colors"
@@ -150,14 +159,14 @@ function reopenBanner() {
         type="button"
         class="text-bg animate-sweep rounded-none px-4 py-2 text-[13px] font-bold"
         :style="{ backgroundImage: WORDMARK_GRADIENT }"
-        @click="recordChoice(CONSENT_CHOICES.accepted)"
+        @click="accept"
       >
         Accept
       </button>
       <button
         type="button"
         class="text-fg rounded-none border border-white/[0.16] bg-white/[0.02] px-4 py-2 text-[13px] font-medium"
-        @click="recordChoice(CONSENT_CHOICES.declined)"
+        @click="decline"
       >
         Decline
       </button>

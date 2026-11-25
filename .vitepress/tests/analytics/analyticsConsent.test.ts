@@ -1,342 +1,212 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import {
-  CONSENT_CHOICES,
   CONSENT_LIFETIME_MS,
-  CONSENT_STORAGE_KEY,
+  consentStorageKey,
+  loadGoogleAnalytics,
+} from "@neon-pixels/consent";
+import {
+  createMemoryStorage,
+  stubPrivacySignal,
+} from "@neon-pixels/consent/testing";
+import {
+  CONSENT_APP,
   LEGACY_CONSENT_STORAGE_KEY,
+  createSiteConsent,
   getConsentStorage,
-  getStoredConsentChoice,
-  setStoredConsentChoice,
-  shouldLoadAnalytics,
-  shouldPromptForConsent,
-  trackingSignalPresent,
-  type ConsentStorage,
-  type TrackingSignalSource,
+  hasStoredGrant,
 } from "@theme/analytics/analyticsConsent";
+import { GA_MEASUREMENT_ID } from "@theme/analytics/loadGoogleAnalytics";
 
-// A plain in-memory Map-backed fake rather than the real localStorage/happy-dom
-// global: keeps these tests independent of DOM setup and free to assert on
-// exactly the two operations this module actually performs.
-function createFakeStorage(initial?: Record<string, string>): ConsentStorage {
-  const backing = new Map(Object.entries(initial ?? {}));
-  return {
-    getItem: (key: string) => backing.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      backing.set(key, value);
-    },
-    removeItem: (key: string) => {
-      backing.delete(key);
-    },
-  };
+// Behavior the package tests itself (expiry, malformed records, cookie
+// clearing, GPC/DNT variants) is not repeated here: these tests cover this
+// site's settings and the storage guard it keeps locally.
+
+const STORAGE_KEY = "neonpixels:analytics-consent";
+const DISABLE_FLAG = `ga-disable-${GA_MEASUREMENT_ID}`;
+
+function windowFlags() {
+  return window as unknown as Record<string, unknown>;
 }
 
-const NOW = 1_800_000_000_000;
-
-function storedRecord(choice: string, expiresAt = NOW + CONSENT_LIFETIME_MS) {
-  return JSON.stringify({ choice, expiresAt });
+function storedRecord(choice: string) {
+  return JSON.stringify({
+    choice,
+    expiresAt: Date.now() + CONSENT_LIFETIME_MS,
+  });
 }
 
-function createNavigatorFixture(
-  overrides: Partial<TrackingSignalSource> = {},
-): TrackingSignalSource {
-  return { doNotTrack: null, globalPrivacyControl: false, ...overrides };
-}
-
-// Relative to the real clock, for tests that go through shouldLoadAnalytics
-// and shouldPromptForConsent, which read Date.now() themselves.
-function unexpiredRecord(choice: string) {
-  return storedRecord(choice, Date.now() + CONSENT_LIFETIME_MS);
-}
-
-describe("trackingSignalPresent", () => {
-  it("is false when neither Do Not Track nor Global Privacy Control is set", () => {
-    expect(trackingSignalPresent(createNavigatorFixture())).toBe(false);
-  });
-
-  it("is true for the standard Do Not Track value '1'", () => {
-    expect(
-      trackingSignalPresent(createNavigatorFixture({ doNotTrack: "1" })),
-    ).toBe(true);
-  });
-
-  it("is true for the legacy Do Not Track value 'yes'", () => {
-    expect(
-      trackingSignalPresent(createNavigatorFixture({ doNotTrack: "yes" })),
-    ).toBe(true);
-  });
-
-  it("is false for Do Not Track explicitly unset ('0' or 'unspecified')", () => {
-    expect(
-      trackingSignalPresent(createNavigatorFixture({ doNotTrack: "0" })),
-    ).toBe(false);
-    expect(
-      trackingSignalPresent(
-        createNavigatorFixture({ doNotTrack: "unspecified" }),
-      ),
-    ).toBe(false);
-  });
-
-  it("is true when Global Privacy Control is set", () => {
-    expect(
-      trackingSignalPresent(
-        createNavigatorFixture({ globalPrivacyControl: true }),
-      ),
-    ).toBe(true);
-  });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  document.cookie = "_ga=; max-age=0; path=/";
+  delete windowFlags()[DISABLE_FLAG];
+  delete (window as { dataLayer?: unknown[] }).dataLayer;
 });
 
-describe("stored consent choice", () => {
-  it("returns null when no choice has ever been stored", () => {
-    expect(getStoredConsentChoice(createFakeStorage(), NOW)).toBeNull();
+describe("site consent settings", () => {
+  beforeEach(() => {
+    vi.stubGlobal("navigator", stubPrivacySignal());
+  });
+
+  it("keeps the storage key returning visitors already have", () => {
+    expect(consentStorageKey(CONSENT_APP)).toBe(STORAGE_KEY);
+    expect(LEGACY_CONSENT_STORAGE_KEY).toBe("np-analytics-consent");
+  });
+
+  it("lets a second consent object see a choice made through the first", () => {
+    const storage = createMemoryStorage({
+      [STORAGE_KEY]: storedRecord("granted"),
+    });
+    const bannerConsent = createSiteConsent(storage);
+    const ctaConsent = createSiteConsent(storage);
+    expect(ctaConsent.status).toBe("granted");
+    bannerConsent.deny();
+    expect(ctaConsent.status).toBe("denied");
+  });
+
+  it("names only Google Analytics", () => {
+    const consent = createSiteConsent(createMemoryStorage());
+    expect(consent.services).toEqual(["analytics"]);
+  });
+
+  it("prompts a first-time visitor and stores a grant under the site key", () => {
+    const storage = createMemoryStorage();
+    const consent = createSiteConsent(storage);
+    expect(consent.shouldPrompt).toBe(true);
+    consent.grant();
+    expect(consent.status).toBe("granted");
+    expect(JSON.parse(storage.entries.get(STORAGE_KEY) ?? "{}").choice).toBe(
+      "granted",
+    );
   });
 
   it.each([
-    ["an unrecognized bare string", "maybe"],
-    ["invalid JSON", "{nope"],
-    ["JSON null", "null"],
-    ["an unknown choice", storedRecord("maybe")],
-    [
-      "a non-numeric expiry",
-      JSON.stringify({ choice: "accepted", expiresAt: "soon" }),
-    ],
-    [
-      "an expiry beyond one lifetime",
-      storedRecord("accepted", NOW + CONSENT_LIFETIME_MS + 1),
-    ],
-    ["an infinite expiry", '{"choice":"accepted","expiresAt":1e400}'],
-    ["a missing expiry", JSON.stringify({ choice: "accepted" })],
-  ])("returns null for %s", (_label, value) => {
-    const storage = createFakeStorage({ [CONSENT_STORAGE_KEY]: value });
-    expect(getStoredConsentChoice(storage, NOW)).toBeNull();
-  });
-
-  it("round-trips an accepted choice (accept)", () => {
-    const storage = createFakeStorage();
-    setStoredConsentChoice(storage, CONSENT_CHOICES.accepted, NOW);
-    expect(getStoredConsentChoice(storage, NOW)).toBe(CONSENT_CHOICES.accepted);
-  });
-
-  it("round-trips a declined choice (decline)", () => {
-    const storage = createFakeStorage();
-    setStoredConsentChoice(storage, CONSENT_CHOICES.declined, NOW);
-    expect(getStoredConsentChoice(storage, NOW)).toBe(CONSENT_CHOICES.declined);
-  });
-
-  it("stores { choice, expiresAt } expiring 180 days out", () => {
-    const storage = createFakeStorage();
-    setStoredConsentChoice(storage, CONSENT_CHOICES.accepted, NOW);
-    expect(JSON.parse(storage.getItem(CONSENT_STORAGE_KEY) ?? "")).toEqual({
-      choice: "accepted",
-      expiresAt: NOW + 180 * 24 * 60 * 60 * 1000,
-    });
-  });
-
-  it("replaces an accepted choice when consent is withdrawn", () => {
-    const storage = createFakeStorage();
-    setStoredConsentChoice(storage, CONSENT_CHOICES.accepted, NOW);
-    setStoredConsentChoice(storage, CONSENT_CHOICES.declined, NOW + 1000);
-    expect(getStoredConsentChoice(storage, NOW + 2000)).toBe(
-      CONSENT_CHOICES.declined,
-    );
-  });
-
-  it("is still valid one millisecond before expiry and gone at expiry", () => {
-    const storage = createFakeStorage();
-    setStoredConsentChoice(storage, CONSENT_CHOICES.accepted, NOW);
-    const expiresAt = NOW + CONSENT_LIFETIME_MS;
-    expect(getStoredConsentChoice(storage, expiresAt - 1)).toBe(
-      CONSENT_CHOICES.accepted,
-    );
-    expect(getStoredConsentChoice(storage, expiresAt)).toBeNull();
-  });
-
-  it("treats an expired choice as no choice", () => {
-    const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: storedRecord(CONSENT_CHOICES.accepted, NOW - 1),
-    });
-    expect(getStoredConsentChoice(storage, NOW)).toBeNull();
-  });
-
-  it("does not load analytics or hide the banner for an expired acceptance", () => {
-    const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: storedRecord(
-        CONSENT_CHOICES.accepted,
-        Date.now() - 1,
-      ),
-    });
-    expect(shouldLoadAnalytics(createNavigatorFixture(), storage)).toBe(false);
-    expect(shouldPromptForConsent(createNavigatorFixture(), storage)).toBe(
-      true,
-    );
-  });
-
-  it.each([CONSENT_CHOICES.accepted, CONSENT_CHOICES.declined])(
-    "migrates a legacy %s value, restarting the 180 days and removing the old key",
-    (choice) => {
-      const storage = createFakeStorage({
-        [LEGACY_CONSENT_STORAGE_KEY]: choice,
+    ["accepted", "granted"],
+    ["declined", "denied"],
+  ])(
+    "honors a bare %s choice stored under the legacy key and moves it to the site key",
+    (legacyValue, expectedStatus) => {
+      const storage = createMemoryStorage({
+        [LEGACY_CONSENT_STORAGE_KEY]: legacyValue,
       });
-      expect(getStoredConsentChoice(storage, NOW)).toBe(choice);
-      expect(storage.getItem(LEGACY_CONSENT_STORAGE_KEY)).toBeNull();
-      expect(JSON.parse(storage.getItem(CONSENT_STORAGE_KEY) ?? "")).toEqual({
-        choice,
-        expiresAt: NOW + CONSENT_LIFETIME_MS,
-      });
+      const consent = createSiteConsent(storage);
+      expect(consent.status).toBe(expectedStatus);
+      expect(consent.shouldPrompt).toBe(false);
+      expect(storage.entries.has(LEGACY_CONSENT_STORAGE_KEY)).toBe(false);
+      expect(storage.entries.has(STORAGE_KEY)).toBe(true);
     },
   );
 
-  it("drops an unrecognized legacy value without recording a choice", () => {
-    const storage = createFakeStorage({
-      [LEGACY_CONSENT_STORAGE_KEY]: "maybe",
-    });
-    expect(getStoredConsentChoice(storage, NOW)).toBeNull();
-    expect(storage.getItem(LEGACY_CONSENT_STORAGE_KEY)).toBeNull();
-    expect(storage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
-  });
-
-  it("keeps the legacy key and still honors the choice when the migration write fails", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const backing = new Map([[LEGACY_CONSENT_STORAGE_KEY, "declined"]]);
-    const storage: ConsentStorage = {
-      getItem: (key) => backing.get(key) ?? null,
-      setItem: () => {
-        throw new Error("quota exceeded");
-      },
-      removeItem: (key) => {
-        backing.delete(key);
-      },
-    };
-    expect(getStoredConsentChoice(storage, NOW)).toBe(CONSENT_CHOICES.declined);
-    expect(backing.get(LEGACY_CONSENT_STORAGE_KEY)).toBe("declined");
-    expect(warn).toHaveBeenCalledTimes(1);
-    warn.mockRestore();
-  });
-
-  it("does not revive a legacy value when the current key is expired", () => {
-    const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: storedRecord(CONSENT_CHOICES.declined, NOW - 1),
-      [LEGACY_CONSENT_STORAGE_KEY]: CONSENT_CHOICES.accepted,
-    });
-    expect(getStoredConsentChoice(storage, NOW)).toBeNull();
-  });
-
-  it("prefers the current key over a legacy value", () => {
-    const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: storedRecord(CONSENT_CHOICES.declined),
-      [LEGACY_CONSENT_STORAGE_KEY]: CONSENT_CHOICES.accepted,
-    });
-    expect(getStoredConsentChoice(storage, NOW)).toBe(CONSENT_CHOICES.declined);
-  });
-});
-
-describe("shouldLoadAnalytics", () => {
-  it("is false when Do Not Track is set, even with a stored acceptance", () => {
-    const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.accepted),
-    });
-    const navigatorFixture = createNavigatorFixture({ doNotTrack: "1" });
-    expect(shouldLoadAnalytics(navigatorFixture, storage)).toBe(false);
-  });
-
-  it("is false when Global Privacy Control is set, even with a stored acceptance", () => {
-    const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.accepted),
-    });
-    const navigatorFixture = createNavigatorFixture({
-      globalPrivacyControl: true,
-    });
-    expect(shouldLoadAnalytics(navigatorFixture, storage)).toBe(false);
-  });
-
-  it("is false when neither signal is set but no choice has been stored", () => {
-    expect(
-      shouldLoadAnalytics(createNavigatorFixture(), createFakeStorage()),
-    ).toBe(false);
-  });
-
-  it("is false when neither signal is set and the stored choice is declined", () => {
-    const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.declined),
-    });
-    expect(shouldLoadAnalytics(createNavigatorFixture(), storage)).toBe(false);
-  });
-
-  it("is true only when neither signal is set and consent was accepted", () => {
-    const storage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.accepted),
-    });
-    expect(shouldLoadAnalytics(createNavigatorFixture(), storage)).toBe(true);
-  });
-});
-
-describe("shouldPromptForConsent", () => {
-  it("is false when Do Not Track is set — the signal already answered the question", () => {
-    const navigatorFixture = createNavigatorFixture({ doNotTrack: "1" });
-    expect(shouldPromptForConsent(navigatorFixture, createFakeStorage())).toBe(
-      false,
+  it("reads a record in the earlier accepted/declined shape under the site key", () => {
+    const consent = createSiteConsent(
+      createMemoryStorage({ [STORAGE_KEY]: storedRecord("accepted") }),
     );
+    expect(consent.status).toBe("granted");
   });
 
-  it("is false when Global Privacy Control is set", () => {
-    const navigatorFixture = createNavigatorFixture({
-      globalPrivacyControl: true,
-    });
-    expect(shouldPromptForConsent(navigatorFixture, createFakeStorage())).toBe(
-      false,
+  it.each([
+    ["Global Privacy Control", { globalPrivacyControl: true }],
+    ["Do Not Track", { doNotTrack: "1" }],
+  ])(
+    "never prompts or reports a grant for a visitor sending %s",
+    (_name, signal) => {
+      vi.stubGlobal("navigator", stubPrivacySignal(signal));
+      const consent = createSiteConsent(
+        createMemoryStorage({ [STORAGE_KEY]: storedRecord("granted") }),
+      );
+      expect(consent.status).toBe("signal");
+      expect(consent.shouldPrompt).toBe(false);
+    },
+  );
+
+  it("clears the Google Analytics cookies when deny() follows an earlier grant under a privacy signal", () => {
+    vi.stubGlobal(
+      "navigator",
+      stubPrivacySignal({ globalPrivacyControl: true }),
     );
-  });
-
-  it("is true when no signal is set and no choice has been stored yet", () => {
-    expect(
-      shouldPromptForConsent(createNavigatorFixture(), createFakeStorage()),
-    ).toBe(true);
-  });
-
-  it("is false once a choice has already been stored, accepted or declined", () => {
-    const acceptedStorage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.accepted),
-    });
-    const declinedStorage = createFakeStorage({
-      [CONSENT_STORAGE_KEY]: unexpiredRecord(CONSENT_CHOICES.declined),
-    });
-    expect(
-      shouldPromptForConsent(createNavigatorFixture(), acceptedStorage),
-    ).toBe(false);
-    expect(
-      shouldPromptForConsent(createNavigatorFixture(), declinedStorage),
-    ).toBe(false);
+    document.cookie = "_ga=GA1.1.1; path=/";
+    const consent = createSiteConsent(
+      createMemoryStorage({ [STORAGE_KEY]: storedRecord("granted") }),
+    );
+    consent.deny();
+    expect(document.cookie).not.toContain("_ga=GA1");
+    expect(windowFlags()[DISABLE_FLAG]).toBe(true);
   });
 });
 
-describe("setStoredConsentChoice", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+describe("hasStoredGrant", () => {
+  it("is false for a visitor who never answered", () => {
+    expect(hasStoredGrant(createMemoryStorage())).toBe(false);
   });
 
-  it("does not throw when the underlying storage.setItem throws (e.g. quota exceeded)", () => {
-    const throwingStorage: ConsentStorage = {
-      getItem: () => null,
-      setItem: () => {
-        throw new Error("quota exceeded");
-      },
-      removeItem: () => {},
-    };
-    expect(() =>
-      setStoredConsentChoice(throwingStorage, CONSENT_CHOICES.accepted),
-    ).not.toThrow();
+  it.each([
+    [STORAGE_KEY, storedRecord("granted")],
+    [STORAGE_KEY, storedRecord("accepted")],
+    [STORAGE_KEY, JSON.stringify({ choice: "granted", expiresAt: 1 })],
+    [LEGACY_CONSENT_STORAGE_KEY, "accepted"],
+  ])("is true for a grant stored under %s", (key, value) => {
+    expect(hasStoredGrant(createMemoryStorage({ [key]: value }))).toBe(true);
   });
 
-  it("warns (rather than failing silently) when persistence fails", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const throwingStorage: ConsentStorage = {
-      getItem: () => null,
-      setItem: () => {
-        throw new Error("quota exceeded");
-      },
-      removeItem: () => {},
+  it("lets the current key win over a stale legacy grant", () => {
+    expect(
+      hasStoredGrant(
+        createMemoryStorage({
+          [STORAGE_KEY]: storedRecord("denied"),
+          [LEGACY_CONSENT_STORAGE_KEY]: "accepted",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    [STORAGE_KEY, storedRecord("denied")],
+    [STORAGE_KEY, "not json"],
+    [LEGACY_CONSENT_STORAGE_KEY, "declined"],
+  ])("is false for %s holding %s", (key, value) => {
+    expect(hasStoredGrant(createMemoryStorage({ [key]: value }))).toBe(false);
+  });
+});
+
+describe("re-accepting after a decline", () => {
+  it("clears the kill switch the decline set once the loader runs again", () => {
+    vi.stubGlobal("navigator", stubPrivacySignal());
+    const consent = createSiteConsent(createMemoryStorage());
+    const scripts: unknown[] = [];
+    const fakeDocument = {
+      createElement: () => ({ async: false, src: "" }),
+      head: { appendChild: (node: unknown) => scripts.push(node) },
     };
-    setStoredConsentChoice(throwingStorage, CONSENT_CHOICES.accepted);
-    expect(warn).toHaveBeenCalledTimes(1);
+    const loadOnRealWindow = () =>
+      loadGoogleAnalytics(GA_MEASUREMENT_ID, {
+        document: fakeDocument,
+        window,
+      });
+
+    consent.grant();
+    loadOnRealWindow();
+    consent.deny();
+    expect(windowFlags()[DISABLE_FLAG]).toBe(true);
+    consent.grant();
+    loadOnRealWindow();
+
+    expect(windowFlags()[DISABLE_FLAG]).toBe(false);
+    expect(scripts).toHaveLength(1);
+  });
+});
+
+describe("hasStoredGrant against the package's own records", () => {
+  it("sees a grant the package wrote", () => {
+    vi.stubGlobal("navigator", stubPrivacySignal());
+    const storage = createMemoryStorage();
+    createSiteConsent(storage).grant();
+    expect(hasStoredGrant(storage)).toBe(true);
+  });
+
+  it("does not see a denial the package wrote", () => {
+    vi.stubGlobal("navigator", stubPrivacySignal());
+    const storage = createMemoryStorage();
+    createSiteConsent(storage).deny();
+    expect(hasStoredGrant(storage)).toBe(false);
   });
 });
 
@@ -349,52 +219,40 @@ describe("getConsentStorage", () => {
 
   it("returns the real localStorage when it's usable", () => {
     const storage = getConsentStorage();
-    // Identity, not just behavior: a fallback that happens to read/write
-    // correctly would still pass a purely behavioral assertion here, so also
-    // pin that the happy path really is the live global, not a look-alike.
     expect(storage).toBe(window.localStorage);
     storage.setItem(PROBE_KEY, "1");
     expect(localStorage.getItem(PROBE_KEY)).toBe("1");
   });
 
   it("falls back to an in-memory no-op storage when localStorage throws (e.g. Safari 'Block all cookies')", () => {
-    // Shadowing individual methods on the real localStorage instance
-    // (`window.localStorage.setItem = ...`) doesn't reliably take in
-    // happy-dom's Storage implementation, so replace the whole global
-    // binding instead — `vi.stubGlobal` is what this codebase already uses
-    // for exactly this kind of global replacement (see
-    // csp/notifyPruneFailure.test.ts's `vi.stubGlobal("fetch", ...)`).
+    const blocked = () => {
+      throw new DOMException("blocked", "SecurityError");
+    };
     const blockedStorage: Storage = {
       length: 0,
       key: () => null,
-      getItem: () => {
-        throw new DOMException("blocked", "SecurityError");
-      },
-      setItem: () => {
-        throw new DOMException("blocked", "SecurityError");
-      },
-      removeItem: () => {
-        throw new DOMException("blocked", "SecurityError");
-      },
-      clear: () => {
-        throw new DOMException("blocked", "SecurityError");
-      },
+      getItem: blocked,
+      setItem: vi.fn(blocked),
+      removeItem: blocked,
+      clear: blocked,
     };
     vi.stubGlobal("localStorage", blockedStorage);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const storage = getConsentStorage();
       expect(warn).toHaveBeenCalledTimes(1);
-      // Both real localStorage and a working fallback would report null for
-      // an untouched key, so that alone can't prove the fallback fired.
-      // Pin identity (not the blocked Storage instance) and non-persistence
-      // (a write that would actually reach the blocked storage and throw)
-      // instead.
+      // The banner and every CTA must share one fallback, and the warning
+      // fires once per page rather than once per component.
+      expect(getConsentStorage()).toBe(storage);
+      expect(warn).toHaveBeenCalledTimes(1);
       expect(storage).not.toBe(blockedStorage);
-      expect(() =>
-        storage.setItem(CONSENT_STORAGE_KEY, CONSENT_CHOICES.accepted),
-      ).not.toThrow();
-      expect(storage.getItem(CONSENT_STORAGE_KEY)).toBeNull();
+      expect(storage.getItem(STORAGE_KEY)).toBeNull();
+      storage.setItem(STORAGE_KEY, "granted");
+      expect(storage.getItem(STORAGE_KEY)).toBe("granted");
+      expect(blockedStorage.setItem).not.toHaveBeenCalledWith(
+        STORAGE_KEY,
+        expect.anything(),
+      );
     } finally {
       vi.unstubAllGlobals();
       warn.mockRestore();

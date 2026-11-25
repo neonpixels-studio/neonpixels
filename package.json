@@ -28,7 +28,7 @@
     "@lhci/cli": "^0.16.1",
     "@neon-pixels/eslint-config": "^0.3.0",
     "@neon-pixels/fallow-config": "^0.3.0",
-    "@neon-pixels/playwright-preset": "^0.3.0",
+    "@neon-pixels/playwright-preset": "^0.4.0",
     "@neon-pixels/prettier-config": "^0.3.0",
     "@neon-pixels/scripts": "0.3.0",
     "@neon-pixels/tsconfig": "^0.3.0",
@@ -77,6 +77,7 @@
     }
   },
   "dependencies": {
+    "@neon-pixels/consent": "^0.4.0",
     "@netlify/blobs": "^11.1.9"
   },
   "engines": {

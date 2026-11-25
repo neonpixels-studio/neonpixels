@@ -7,7 +7,7 @@ import { PROJECTS, type Project } from "@theme/data/projects";
 
 // The CTA click handler delegates the actual GA4 event push to
 // loadGoogleAnalytics.ts (covered on its own in loadGoogleAnalytics.test.ts)
-// and consults analyticsConsent.ts the same way ConsentBanner.vue does —
+// and consults the consent status the same way ConsentBanner.vue does —
 // mocked here so these tests assert only "did the CTA decide to track,
 // gated on consent", never a real dataLayer push or real
 // localStorage/navigator state.
@@ -18,13 +18,17 @@ vi.mock("@theme/analytics/loadGoogleAnalytics", () => ({
 }));
 
 // A stable sentinel (not a fresh `{}` per call) so tests can assert the
-// handler forwards this exact storage object to shouldLoadAnalytics, rather
-// than merely calling the mock at all.
+// component hands this exact storage object to createSiteConsent.
 const consentStorageSentinel = {};
-const shouldLoadAnalyticsMock = vi.fn();
+const consentStatusMock = vi.fn();
+const createSiteConsentMock = vi.fn((_storage: unknown) => ({
+  get status() {
+    return consentStatusMock();
+  },
+}));
 vi.mock("@theme/analytics/analyticsConsent", () => ({
   getConsentStorage: () => consentStorageSentinel,
-  shouldLoadAnalytics: (...args: unknown[]) => shouldLoadAnalyticsMock(...args),
+  createSiteConsent: (storage: unknown) => createSiteConsentMock(storage),
 }));
 
 // Build fixtures off a real project so the shape stays honest, but pin the
@@ -44,7 +48,7 @@ const outlineProject: Project = {
 
 describe("ProjectSummary", () => {
   beforeEach(() => {
-    shouldLoadAnalyticsMock.mockReturnValue(false);
+    consentStatusMock.mockReturnValue("unset");
   });
 
   afterEach(() => {
@@ -179,15 +183,13 @@ describe("ProjectSummary", () => {
   });
 
   it("fires an outbound_click GA4 event with the project name and destination when consent is granted", async () => {
-    shouldLoadAnalyticsMock.mockReturnValue(true);
+    consentStatusMock.mockReturnValue("granted");
     const wrapper = mount(ProjectSummary, {
       props: { project: filledProject },
     });
     await wrapper.find("a").trigger("click");
-    expect(shouldLoadAnalyticsMock).toHaveBeenCalledWith(
-      navigator,
-      consentStorageSentinel,
-    );
+    expect(createSiteConsentMock).toHaveBeenCalledWith(consentStorageSentinel);
+    expect(consentStatusMock).toHaveBeenCalled();
     expect(trackGoogleAnalyticsEventMock).toHaveBeenCalledTimes(1);
     expect(trackGoogleAnalyticsEventMock).toHaveBeenCalledWith(
       "outbound_click",
@@ -200,7 +202,7 @@ describe("ProjectSummary", () => {
   });
 
   it("fires no GA4 event when consent has not been granted", async () => {
-    shouldLoadAnalyticsMock.mockReturnValue(false);
+    consentStatusMock.mockReturnValue("unset");
     const wrapper = mount(ProjectSummary, {
       props: { project: filledProject },
     });
@@ -208,16 +210,14 @@ describe("ProjectSummary", () => {
     // Proves the click actually consulted (and was blocked by) the consent
     // gate, not merely that no event fired for some unrelated reason (e.g. a
     // missing `@click` binding).
-    expect(shouldLoadAnalyticsMock).toHaveBeenCalledWith(
-      navigator,
-      consentStorageSentinel,
-    );
+    expect(createSiteConsentMock).toHaveBeenCalledWith(consentStorageSentinel);
+    expect(consentStatusMock).toHaveBeenCalled();
     expect(trackGoogleAnalyticsEventMock).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
   it("also tracks a middle-click, which opens a new tab via auxclick rather than click", async () => {
-    shouldLoadAnalyticsMock.mockReturnValue(true);
+    consentStatusMock.mockReturnValue("granted");
     const wrapper = mount(ProjectSummary, {
       props: { project: filledProject },
     });
@@ -234,7 +234,7 @@ describe("ProjectSummary", () => {
   });
 
   it("ignores a right-click auxclick (context menu), which reports a different button", async () => {
-    shouldLoadAnalyticsMock.mockReturnValue(true);
+    consentStatusMock.mockReturnValue("granted");
     const wrapper = mount(ProjectSummary, {
       props: { project: filledProject },
     });
@@ -244,7 +244,7 @@ describe("ProjectSummary", () => {
   });
 
   it("does not prevent the CTA's own navigation when tracking the click", async () => {
-    shouldLoadAnalyticsMock.mockReturnValue(true);
+    consentStatusMock.mockReturnValue("granted");
     const wrapper = mount(ProjectSummary, {
       props: { project: filledProject },
     });
