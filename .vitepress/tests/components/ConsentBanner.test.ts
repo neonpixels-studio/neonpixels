@@ -60,6 +60,7 @@ describe("ConsentBanner", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     localStorage.clear();
     document.cookie = "_ga=; max-age=0; path=/";
@@ -283,6 +284,33 @@ describe("ConsentBanner", () => {
     expect(document.cookie).not.toContain("_ga=GA1");
     expect(windowFlags()[DISABLE_FLAG]).toBe(true);
     expect(localStorage.getItem(STORAGE_KEY)).toContain('"denied"');
+    wrapper.unmount();
+  });
+
+  it("removes a legacy grant and stops re-denying on later page loads", async () => {
+    stubSignals({ globalPrivacyControl: true });
+    localStorage.setItem("np-analytics-consent", "accepted");
+    const first = mount(ConsentBanner);
+    await first.vm.$nextTick();
+    first.unmount();
+    const afterFirst = localStorage.getItem(STORAGE_KEY);
+    expect(localStorage.getItem("np-analytics-consent")).toBeNull();
+    expect(afterFirst).toContain('"denied"');
+
+    const second = mount(ConsentBanner);
+    await second.vm.$nextTick();
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(afterFirst);
+    second.unmount();
+  });
+
+  it("closes the banner even when persisting the choice fails", async () => {
+    const wrapper = mount(ConsentBanner);
+    await wrapper.vm.$nextTick();
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+    await wrapper.findAll("button")[1].trigger("click"); // Decline
+    expect(wrapper.find(BANNER_SELECTOR).exists()).toBe(false);
     wrapper.unmount();
   });
 

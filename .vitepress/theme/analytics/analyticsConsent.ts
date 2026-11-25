@@ -69,10 +69,7 @@ export function createSiteConsent(storage: ConsentStorage): Consent {
 
 const GRANTED_VALUES = new Set(["granted", "accepted"]);
 
-function parseChoice(rawValue: string | null): string | undefined {
-  if (rawValue === null) {
-    return undefined;
-  }
+function parseChoice(rawValue: string): unknown {
   if (GRANTED_VALUES.has(rawValue)) {
     return rawValue;
   }
@@ -83,12 +80,23 @@ function parseChoice(rawValue: string | null): string | undefined {
   }
 }
 
-// True when an earlier visit stored a grant under the current or legacy key,
-// expired or not. Read raw because the package reports no choice while a
-// privacy signal is present, yet must still be told to deny() so it clears
-// the cookies that grant left behind.
+function isGrantValue(rawValue: string | null): boolean {
+  if (rawValue === null) {
+    return false;
+  }
+  const choice = parseChoice(rawValue);
+  return typeof choice === "string" && GRANTED_VALUES.has(choice);
+}
+
+// True when an earlier visit stored a grant, expired or not. The current key
+// is authoritative; the legacy key counts only while the current one is
+// absent, as in the package. Read raw because the package reports no choice
+// while a privacy signal is present, yet must still be told to deny() so it
+// clears the cookies that grant left behind.
 export function hasStoredGrant(storage: ConsentStorage): boolean {
-  return [consentStorageKey(CONSENT_APP), LEGACY_CONSENT_STORAGE_KEY].some(
-    (key) => GRANTED_VALUES.has(parseChoice(storage.getItem(key)) ?? ""),
-  );
+  const current = storage.getItem(consentStorageKey(CONSENT_APP));
+  if (current !== null) {
+    return isGrantValue(current);
+  }
+  return isGrantValue(storage.getItem(LEGACY_CONSENT_STORAGE_KEY));
 }

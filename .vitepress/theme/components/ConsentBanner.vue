@@ -9,6 +9,7 @@ import {
 import { WORDMARK_GRADIENT } from "../brand";
 import { GA_MEASUREMENT_ID } from "../analytics/loadGoogleAnalytics";
 import {
+  LEGACY_CONSENT_STORAGE_KEY,
   MANAGE_CHOICE_LABEL,
   createSiteConsent,
   getConsentStorage,
@@ -72,6 +73,7 @@ function revokeEarlierGrant(storage: ConsentStorage) {
     return;
   }
   consent.deny();
+  storage.removeItem(LEGACY_CONSENT_STORAGE_KEY);
 }
 
 onMounted(() => {
@@ -113,6 +115,9 @@ function decline() {
 
 function afterChoice() {
   syncControls();
+  // Close the banner even if storage refused the write, so a click always
+  // has a visible effect; the choice then just does not survive a reload.
+  isVisible.value = false;
   void focusAfterRender(manageButtonRef);
 
   // grant() does nothing while a privacy signal is present; only load after

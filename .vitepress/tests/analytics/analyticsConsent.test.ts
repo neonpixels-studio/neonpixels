@@ -143,6 +143,17 @@ describe("hasStoredGrant", () => {
     expect(hasStoredGrant(createMemoryStorage({ [key]: value }))).toBe(true);
   });
 
+  it("lets the current key win over a stale legacy grant", () => {
+    expect(
+      hasStoredGrant(
+        createMemoryStorage({
+          [STORAGE_KEY]: storedRecord("denied"),
+          [LEGACY_CONSENT_STORAGE_KEY]: "accepted",
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it.each([
     [STORAGE_KEY, storedRecord("denied")],
     [STORAGE_KEY, "not json"],
