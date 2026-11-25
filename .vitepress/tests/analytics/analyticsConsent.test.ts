@@ -22,6 +22,11 @@ import { GA_MEASUREMENT_ID } from "@theme/analytics/loadGoogleAnalytics";
 // site's settings and the storage guard it keeps locally.
 
 const STORAGE_KEY = "neonpixels:analytics-consent";
+const DISABLE_FLAG = `ga-disable-${GA_MEASUREMENT_ID}`;
+
+function windowFlags() {
+  return window as unknown as Record<string, unknown>;
+}
 
 function storedRecord(choice: string) {
   return JSON.stringify({
@@ -33,9 +38,8 @@ function storedRecord(choice: string) {
 afterEach(() => {
   vi.unstubAllGlobals();
   document.cookie = "_ga=; max-age=0; path=/";
-  delete (window as unknown as Record<string, unknown>)[
-    `ga-disable-${GA_MEASUREMENT_ID}`
-  ];
+  delete windowFlags()[DISABLE_FLAG];
+  delete (window as { dataLayer?: unknown[] }).dataLayer;
 });
 
 describe("site consent settings", () => {
@@ -125,11 +129,7 @@ describe("site consent settings", () => {
     );
     consent.deny();
     expect(document.cookie).not.toContain("_ga=GA1");
-    expect(
-      (window as unknown as Record<string, unknown>)[
-        `ga-disable-${GA_MEASUREMENT_ID}`
-      ],
-    ).toBe(true);
+    expect(windowFlags()[DISABLE_FLAG]).toBe(true);
   });
 });
 
@@ -176,17 +176,37 @@ describe("re-accepting after a decline", () => {
       createElement: () => ({ async: false, src: "" }),
       head: { appendChild: (node: unknown) => scripts.push(node) },
     };
-    const browser = { document: fakeDocument, window: {} };
-    const flag = `ga-disable-${GA_MEASUREMENT_ID}`;
+    const loadOnRealWindow = () =>
+      loadGoogleAnalytics(GA_MEASUREMENT_ID, {
+        document: fakeDocument,
+        window,
+      });
 
     consent.grant();
-    loadGoogleAnalytics(GA_MEASUREMENT_ID, browser);
+    loadOnRealWindow();
     consent.deny();
+    expect(windowFlags()[DISABLE_FLAG]).toBe(true);
     consent.grant();
-    loadGoogleAnalytics(GA_MEASUREMENT_ID, browser);
+    loadOnRealWindow();
 
-    expect((browser.window as Record<string, unknown>)[flag]).toBe(false);
+    expect(windowFlags()[DISABLE_FLAG]).toBe(false);
     expect(scripts).toHaveLength(1);
+  });
+});
+
+describe("hasStoredGrant against the package's own records", () => {
+  it("sees a grant the package wrote", () => {
+    vi.stubGlobal("navigator", stubPrivacySignal());
+    const storage = createMemoryStorage();
+    createSiteConsent(storage).grant();
+    expect(hasStoredGrant(storage)).toBe(true);
+  });
+
+  it("does not see a denial the package wrote", () => {
+    vi.stubGlobal("navigator", stubPrivacySignal());
+    const storage = createMemoryStorage();
+    createSiteConsent(storage).deny();
+    expect(hasStoredGrant(storage)).toBe(false);
   });
 });
 

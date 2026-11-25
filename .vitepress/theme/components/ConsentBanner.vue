@@ -120,7 +120,6 @@ function decline() {
 }
 
 function afterChoice() {
-  syncControls();
   // Close the banner and offer the manage control even if storage refused
   // the write, so a click always has a visible effect; the choice then just
   // does not survive a reload.

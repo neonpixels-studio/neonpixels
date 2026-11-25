@@ -5,6 +5,7 @@ import { CONSENT_LIFETIME_MS, consentStorageKey } from "@neon-pixels/consent";
 import { stubPrivacySignal } from "@neon-pixels/consent/testing";
 import {
   CONSENT_APP,
+  LEGACY_CONSENT_STORAGE_KEY,
   MANAGE_CHOICE_LABEL,
 } from "@theme/analytics/analyticsConsent";
 import { GA_MEASUREMENT_ID } from "@theme/analytics/loadGoogleAnalytics";
@@ -266,7 +267,7 @@ describe("ConsentBanner", () => {
   });
 
   it("still honors a choice stored under the legacy key", async () => {
-    localStorage.setItem("np-analytics-consent", "accepted");
+    localStorage.setItem(LEGACY_CONSENT_STORAGE_KEY, "accepted");
     const wrapper = mount(ConsentBanner);
     await wrapper.vm.$nextTick();
     expect(loadGoogleAnalyticsMock).toHaveBeenCalledTimes(1);
@@ -289,12 +290,12 @@ describe("ConsentBanner", () => {
 
   it("removes a legacy grant and stops re-denying on later page loads", async () => {
     stubSignals({ globalPrivacyControl: true });
-    localStorage.setItem("np-analytics-consent", "accepted");
+    localStorage.setItem(LEGACY_CONSENT_STORAGE_KEY, "accepted");
     const first = mount(ConsentBanner);
     await first.vm.$nextTick();
     first.unmount();
     const afterFirst = localStorage.getItem(STORAGE_KEY);
-    expect(localStorage.getItem("np-analytics-consent")).toBeNull();
+    expect(localStorage.getItem(LEGACY_CONSENT_STORAGE_KEY)).toBeNull();
     expect(afterFirst).toContain('"denied"');
 
     const second = mount(ConsentBanner);
