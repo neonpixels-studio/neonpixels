@@ -37,7 +37,7 @@ jobs:
     # anything new. The schedule above exists for npm advisories, which
     # only the audit jobs check, so skip gitleaks on those triggers.
     if: github.event_name == 'push' || github.event_name == 'pull_request'
-    uses: neonpixels-studio/packages/.github/workflows/gitleaks.yml@c7becbdbbd7cacf8a4118465166b064931d017d6 # 2026-11-23 main
+    uses: neonpixels-studio/packages/.github/workflows/gitleaks.yml@46c6ad81803f8b753940ca121214a3e8c7897401 # 2026-11-25 main
     permissions:
       contents: read
 
@@ -46,7 +46,7 @@ jobs:
   # production dependency, so the all-dependencies gate in `audit` below is the
   # one that covers the build tooling.
   dependency-audit:
-    uses: neonpixels-studio/packages/.github/workflows/dependency-audit.yml@c7becbdbbd7cacf8a4118465166b064931d017d6 # 2026-11-23 main
+    uses: neonpixels-studio/packages/.github/workflows/dependency-audit.yml@46c6ad81803f8b753940ca121214a3e8c7897401 # 2026-11-25 main
     permissions:
       contents: read
     with:
