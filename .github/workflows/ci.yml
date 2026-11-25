@@ -198,7 +198,7 @@ jobs:
       ${{ !cancelled() && needs.ci.result == 'success' &&
       (needs.changes.result == 'failure' || needs.changes.result == 'cancelled' ||
       (needs.changes.result == 'success' && needs.changes.outputs.frontend == 'true')) }}
-    uses: neonpixels-studio/packages/.github/workflows/lighthouse.yml@c7becbdbbd7cacf8a4118465166b064931d017d6 # 2026-11-23 main
+    uses: neonpixels-studio/packages/.github/workflows/lighthouse.yml@46c6ad81803f8b753940ca121214a3e8c7897401 # 2026-11-25 main
     permissions:
       contents: read
       issues: write
