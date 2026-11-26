@@ -3,7 +3,7 @@ import { mount, type VueWrapper } from "@vue/test-utils";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 import { BRAND_ACCENTS } from "@theme/brand";
 import { STATES_TOTAL, STATES_VISITED, STATE_VISITS } from "@theme/data/states";
-import { buildGeneratedCss, tripCellClass } from "@theme/generatedStyles";
+import { buildGeneratedRules, tripCellClass } from "@theme/generatedStyles";
 
 // The FarFlung trip-log heatmap must render one cell per state (STATES_TOTAL)
 // with exactly the visited count lit (STATES_VISITED), so the picture matches
@@ -29,10 +29,7 @@ function tripCellBackground(cell: { element: Element }) {
   if (!state) {
     return "";
   }
-  const rule = buildGeneratedCss()
-    .split("\n")
-    .find((line) => line.startsWith(`.${tripCellClass(state)}{`));
-  return /--trip-cell-bg:([^;}]*)/.exec(rule ?? "")?.[1] ?? "";
+  return buildGeneratedRules()[tripCellClass(state)]["--trip-cell-bg"] ?? "";
 }
 
 function isLitCell(cell: { element: Element }) {

@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { relativeLuminance } from "@theme/utils/color";
-import { buildGeneratedCss } from "@theme/generatedStyles";
+import {
+  buildGeneratedRules,
+  formatDeclarations,
+} from "@theme/generatedStyles";
 
 // --- Background resolution -------------------------------------------------
 //
@@ -100,17 +103,15 @@ const NON_COLOR_TEXT_VALUE =
   /^-?[\d.]+(?:px|rem|em|%|vw|vh|vmin|vmax|ch|ex)?$|^(?:calc|clamp|min|max)\(/i;
 const OPAQUE_TEXT_HEX = /^#[0-9a-fA-F]{6}$/;
 
-// The declarations of every generated class (one rule per line, see
-// buildGeneratedCss), keyed by class name. A generated class is unlayered, so it
-// beats a Tailwind utility the way an inline style would: its declarations are
-// read in the same pass as the inline `style` attribute.
-const GENERATED_RULE = /^\.([\w-]+)\{(.*)\}$/;
+// The declarations of every generated class (see buildGeneratedRules), keyed by
+// class name. A generated class is unlayered, so it beats a Tailwind utility the
+// way an inline style would: its declarations are read in the same pass as the
+// inline `style` attribute.
 const GENERATED_DECLARATIONS = new Map<string, string>(
-  buildGeneratedCss()
-    .split("\n")
-    .map((line) => GENERATED_RULE.exec(line))
-    .filter((match): match is RegExpExecArray => match !== null)
-    .map(([, className, declarations]) => [className, declarations]),
+  Object.entries(buildGeneratedRules()).map(([className, declarations]) => [
+    className,
+    formatDeclarations(declarations),
+  ]),
 );
 
 function generatedDeclarationsFor(classes: string): string {

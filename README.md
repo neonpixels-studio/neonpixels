@@ -53,8 +53,9 @@ the built site (run `npm run build` first; first-time setup is
 `npx playwright install chromium`). It serves `.vitepress/dist` with the response
 headers (including the enforced CSP) read from the build's generated `_headers` file, fails on any
 Content-Security-Policy violation, and covers the consent banner, contact form hydration, and
-error reporting. Google Tag, Sentry and the Netlify Forms POST are intercepted, so nothing
-leaves the machine.
+error reporting. Google Tag, Sentry ingest and the Netlify Forms POST are intercepted, so
+nothing leaves the machine unless a page triggers a CSP violation: the browser would then
+send its report to Sentry (and the run fails).
 The server listens on port 4321; set `E2E_PORT` to change it.
 
 ## Tooling config
@@ -237,7 +238,7 @@ hashes come from the real build output, so they cannot drift.
 - **Headers:** `netlify.toml` keeps only `Cross-Origin-Opener-Policy` and
   `Cross-Origin-Resource-Policy`. Every other security header is written to `_headers`
   by the build, so each header is set in exactly one place. The `noindex` header for
-  deploy previews and branch deploys is added to `_headers` before the policy block.
+  deploy previews and branch deploys is appended to the generated `/*` policy block.
 - **Reports:** violations go to this site's Sentry project through its security
   endpoint (`SENTRY_SECURITY_REPORT_URL` in
   [`.vitepress/csp/sitePolicy.ts`](.vitepress/csp/sitePolicy.ts)), tagged

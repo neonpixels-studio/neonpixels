@@ -11,8 +11,8 @@ import { hexToRgba } from "./utils/color";
 // inline style. The values stay computed from BRAND_ACCENTS, PROJECTS and
 // hexToRgba, so a palette change recolors every consumer in lockstep.
 
-type Declarations = Record<string, string>;
-type StyleRules = Record<string, Declarations>;
+export type Declarations = Record<string, string>;
+export type StyleRules = Record<string, Declarations>;
 
 const PROJECT_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 
@@ -159,23 +159,31 @@ function projectRules(project: Project): StyleRules {
   };
 }
 
-function formatRule(className: string, declarations: Declarations) {
-  const body = Object.entries(declarations)
+// `prop:value;prop:value`, the body of a rule (or of a style attribute).
+export function formatDeclarations(declarations: Declarations) {
+  return Object.entries(declarations)
     .map(([property, value]) => `${property}:${value}`)
     .join(";");
-  return `.${className}{${body}}`;
 }
 
-// One rule per line, no nesting and no braces inside a value: the test helper
-// that resolves backgrounds for the contrast checks reads this format.
-export function buildGeneratedCss(projects: Project[] = PROJECTS) {
-  const rules: StyleRules = {
+export function buildGeneratedRules(
+  projects: Project[] = PROJECTS,
+): StyleRules {
+  return {
     ...brandRules(),
     ...tripCellRules(),
     ...basinDotRules(),
     ...Object.assign({}, ...projects.map(projectRules)),
   };
-  return Object.entries(rules)
-    .map(([className, declarations]) => formatRule(className, declarations))
+}
+
+// One rule per line, no nesting and no braces inside a value, so the output stays
+// trivially greppable and hashes the same on every build.
+export function buildGeneratedCss(projects: Project[] = PROJECTS) {
+  return Object.entries(buildGeneratedRules(projects))
+    .map(
+      ([className, declarations]) =>
+        `.${className}{${formatDeclarations(declarations)}}`,
+    )
     .join("\n");
 }

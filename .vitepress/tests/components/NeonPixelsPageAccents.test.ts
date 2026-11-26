@@ -6,7 +6,7 @@ import path from "node:path";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 import { BRAND_ACCENTS } from "@theme/brand";
 import { hexToRgba } from "@theme/utils/color";
-import { buildGeneratedCss } from "@theme/generatedStyles";
+import { buildGeneratedCss, buildGeneratedRules } from "@theme/generatedStyles";
 
 // Guards the single-source-of-truth binding: the page's accent colors must
 // reach the markup through BRAND_ACCENTS / hexToRgba / Tailwind tokens, never
@@ -98,6 +98,23 @@ describe("NeonPixelsPage accent bindings", () => {
     derivedGlows.forEach((glow) => {
       expect(css).toContain(glow);
     });
+  });
+
+  it("only uses generated class names that have a rule", () => {
+    const wrapper = mount(NeonPixelsPage);
+    const generatedClassNames = new Set(Object.keys(buildGeneratedRules()));
+    const GENERATED_CLASS_PREFIX =
+      /^(project-|basin-dot-|trip-cell-|glow-|hero-|nav-dot-|wordmark-)/;
+    const usedClasses = [
+      ...wrapper.html().matchAll(/class="([^"]*)"/g),
+    ].flatMap(([, classList]) => classList.split(/\s+/));
+    const missingRules = usedClasses.filter(
+      (className) =>
+        GENERATED_CLASS_PREFIX.test(className) &&
+        !generatedClassNames.has(className),
+    );
+    expect(missingRules).toEqual([]);
+    wrapper.unmount();
   });
 
   it("wires every generated glow class into the markup and never a style attribute", () => {

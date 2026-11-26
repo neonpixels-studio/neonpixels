@@ -9,6 +9,7 @@ import {
   appendToPolicyBlock,
   writeSiteHeaders,
 } from "../../csp/writeSiteHeaders";
+import { readGlobalHeaders } from "../../../e2e/support/enforcedCsp";
 import {
   SENTRY_SECURITY_REPORT_URL,
   securityReportEndpoint,
@@ -95,6 +96,15 @@ describe("writeSiteHeaders", () => {
     expect(headersFile.trimEnd().endsWith(`  ${NOINDEX_LINE}`)).toBe(true);
   });
 
+  it("writes the extra line as its own header with its own value", async () => {
+    const { headersFile } = await build({ extraHeaderLines: [NOINDEX_LINE] });
+    const entries = readGlobalHeaders(headersFile);
+    expect(entries["X-Robots-Tag"]).toBe("noindex");
+    expect(entries["Reporting-Endpoints"]).toMatch(
+      /^csp-endpoint="https:\/\/.+"$/,
+    );
+  });
+
   it("sets no header twice", async () => {
     const { headersFile } = await build({ extraHeaderLines: [NOINDEX_LINE] });
     const names = headersFile
@@ -122,6 +132,33 @@ describe("writeSiteHeaders", () => {
   });
 });
 
+describe("writeSiteHeaders extra header lines", () => {
+  it.each([
+    ["an embedded newline", "X-A: b\n/other\n  X-C: d"],
+    ["no name", ": value"],
+    ["an empty value", "X-Robots-Tag: "],
+  ])("refuses a line with %s before writing anything", async (_label, line) => {
+    await expect(build({ extraHeaderLines: [line] })).rejects.toThrow(
+      /malformed header line/,
+    );
+    expect(await readFile(join(outDir, "_headers"), "utf8")).toBe(
+      HAND_WRITTEN_HEADERS,
+    );
+  });
+
+  it("refuses a line that repeats a header the policy block already sets", async () => {
+    await expect(
+      build({ extraHeaderLines: ["x-frame-options: SAMEORIGIN"] }),
+    ).rejects.toThrow(/x-frame-options twice/);
+  });
+
+  it("refuses the same extra header twice", async () => {
+    await expect(
+      build({ extraHeaderLines: ["X-A: 1", "X-A: 2"] }),
+    ).rejects.toThrow(/x-a twice/);
+  });
+});
+
 describe("securityReportEndpoint", () => {
   it("appends the Sentry environment to the one endpoint constant", () => {
     expect(securityReportEndpoint("preview")).toBe(
@@ -141,6 +178,25 @@ describe("appendToPolicyBlock", () => {
   it("does nothing without lines", async () => {
     await appendToPolicyBlock(outDir, []);
     await expect(readFile(join(outDir, "_headers"), "utf8")).rejects.toThrow();
+  });
+
+  it("starts the new line on its own line when the file lacks a final newline", async () => {
+    await writeFile(join(outDir, "_headers"), "/*\n  X-A: 1");
+    await appendToPolicyBlock(outDir, [NOINDEX_LINE]);
+    expect(await readFile(join(outDir, "_headers"), "utf8")).toBe(
+      `/*\n  X-A: 1\n  ${NOINDEX_LINE}\n`,
+    );
+  });
+
+  it("skips comment lines when finding the last block", async () => {
+    await writeFile(
+      join(outDir, "_headers"),
+      "/*\n  X-A: 1\n# trailing note\n",
+    );
+    await appendToPolicyBlock(outDir, [NOINDEX_LINE]);
+    expect(await readFile(join(outDir, "_headers"), "utf8")).toContain(
+      `  ${NOINDEX_LINE}\n`,
+    );
   });
 
   it("refuses to extend a block that is not the /* block", async () => {

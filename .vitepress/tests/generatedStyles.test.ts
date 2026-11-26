@@ -5,27 +5,34 @@ import { PROJECTS } from "../theme/data/projects";
 import {
   basinDotClass,
   buildGeneratedCss,
+  buildGeneratedRules,
+  formatDeclarations,
   projectStyleClass,
   tripCellClass,
 } from "../theme/generatedStyles";
 import { hexToRgba } from "../theme/utils/color";
 
 const css = buildGeneratedCss();
+const rules = buildGeneratedRules();
 
 function declarationsOf(className: string) {
-  const rule = css
-    .split("\n")
-    .find((line) => line.startsWith(`.${className}{`));
-  if (!rule) {
+  const declarations = rules[className];
+  if (!declarations) {
     throw new Error(`no generated rule for .${className}`);
   }
-  return rule.slice(rule.indexOf("{") + 1, rule.lastIndexOf("}"));
+  return formatDeclarations(declarations);
 }
 
 describe("buildGeneratedCss", () => {
   it("emits one single-line rule per class with no nesting", () => {
     for (const line of css.split("\n")) {
       expect(line).toMatch(/^\.[\w-]+\{[^{}]*\}$/);
+    }
+  });
+
+  it("writes every rule it generates", () => {
+    for (const className of Object.keys(rules)) {
+      expect(css).toContain(`.${className}{${declarationsOf(className)}}`);
     }
   });
 

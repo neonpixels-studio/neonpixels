@@ -496,7 +496,7 @@ describe("CSP header extraction", () => {
 
   it("throws when the CSP value is empty", () => {
     expect(() => extractCspHeader(`/*\n  Content-Security-Policy: `)).toThrow(
-      /Missing Content-Security-Policy/,
+      /not a valid header line/,
     );
   });
 });

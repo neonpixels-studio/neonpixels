@@ -769,6 +769,18 @@ describe("netlify.toml security headers", () => {
   );
 });
 
+describe("hand-written public/_headers", () => {
+  // The build appends the policy block to this file and the package refuses to
+  // write a header the file already sets; this fails earlier, at test time.
+  it.each(BUILD_OWNED_HEADER_NAMES)(
+    "does not set %s for every path",
+    (name) => {
+      const handWritten = readFileSync(HAND_WRITTEN_HEADERS_PATH, "utf8");
+      expect(readGlobalHeaders(handWritten)).not.toHaveProperty(name);
+    },
+  );
+});
+
 describe("generated security headers", () => {
   it.each(Object.entries(GENERATED_STATIC_HEADERS))(
     "serves %s with the expected value",

@@ -40,6 +40,25 @@ describe("readGlobalHeaders", () => {
   });
 });
 
+describe("readGlobalHeaders strictness", () => {
+  it("throws when a header is set twice for /*, because Netlify would serve both", () => {
+    const headersFile = "/*\n  X-A: 1\n\n/*\n  x-a: 2";
+    expect(() => readGlobalHeaders(headersFile)).toThrow(/set twice/);
+  });
+
+  it("allows the same header on different paths", () => {
+    const headersFile = "/a/*\n  X-A: 1\n\n/*\n  X-A: 2";
+    expect(readGlobalHeaders(headersFile)).toEqual({ "X-A": "2" });
+  });
+
+  it("throws on an indented line that is not a header instead of reading it as a path", () => {
+    const headersFile = "/*\n  X-A:\n  X-B: 2";
+    expect(() => readGlobalHeaders(headersFile)).toThrow(
+      /not a valid header line/,
+    );
+  });
+});
+
 describe("readEnforcedCsp", () => {
   it("returns the enforcing header value", () => {
     const headersFile = "/*\n  Content-Security-Policy: default-src 'self'";
