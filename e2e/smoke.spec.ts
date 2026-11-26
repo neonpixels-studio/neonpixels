@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { loadEnforcedCsp } from "./support/enforcedCsp.ts";
+import {
+  loadEnforcedCsp,
+  loadGeneratedHeaders,
+} from "./support/enforcedCsp.ts";
 import { trackCspViolations } from "./support/cspViolations.ts";
 import { trackPageErrors } from "./support/pageErrors.ts";
 import { SENTRY_INGEST_ORIGIN } from "../.vitepress/sentry-dsn.ts";
@@ -80,6 +83,15 @@ test("serves the production CSP header", async ({ page }) => {
   const response = await page.goto("/");
   const csp = response?.headers()["content-security-policy"] ?? "";
   expect(csp).toBe(loadEnforcedCsp());
+  expect(csp).not.toContain("unsafe-inline");
+});
+
+test("serves every header the build generated", async ({ page }) => {
+  const response = await page.goto("/");
+  const served = response?.headers() ?? {};
+  for (const [name, value] of Object.entries(loadGeneratedHeaders())) {
+    expect(served[name.toLowerCase()], name).toBe(value);
+  }
 });
 
 test.describe("consent banner", () => {

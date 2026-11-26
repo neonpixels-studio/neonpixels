@@ -14,6 +14,10 @@ import { join } from "node:path";
 import { createStaticServer } from "../../../e2e/support/staticServer";
 
 const TEST_CSP = "default-src 'self'";
+const TEST_HEADERS = {
+  "Content-Security-Policy": TEST_CSP,
+  "X-Content-Type-Options": "nosniff",
+};
 let workspace: string;
 let server: Server;
 let baseUrl: string;
@@ -26,7 +30,7 @@ beforeAll(async () => {
   writeFileSync(join(distDir, "privacy.html"), "<p>privacy</p>");
   writeFileSync(join(distDir, "404.html"), "<p>not found page</p>");
   writeFileSync(join(workspace, "secret.txt"), "secret");
-  server = createStaticServer(distDir, TEST_CSP);
+  server = createStaticServer(distDir, TEST_HEADERS);
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -52,7 +56,7 @@ function rawGetStatus(path: string) {
 }
 
 async function getFromServer(distDir: string, path: string) {
-  const isolatedServer = createStaticServer(distDir, TEST_CSP);
+  const isolatedServer = createStaticServer(distDir, TEST_HEADERS);
   await new Promise<void>((done) =>
     isolatedServer.listen(0, "127.0.0.1", done),
   );
@@ -70,6 +74,16 @@ describe("createStaticServer", () => {
     const response = await fetch(`${baseUrl}/`);
     expect(await response.text()).toBe("<p>home</p>");
     expect(response.headers.get("content-security-policy")).toBe(TEST_CSP);
+  });
+
+  it("sends every generated header, not just the CSP", async () => {
+    const response = await fetch(`${baseUrl}/`);
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("keeps the content type of the file over a generated header", async () => {
+    const response = await fetch(`${baseUrl}/`);
+    expect(response.headers.get("content-type")).toContain("text/html");
   });
 
   it("rewrites /privacy to privacy.html like netlify.toml", async () => {

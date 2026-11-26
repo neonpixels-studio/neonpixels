@@ -28,6 +28,8 @@ import { build } from "vitepress";
 
 import config from "../config";
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
+import { SENTRY_SECURITY_REPORT_URL } from "../csp/sitePolicy";
+import { readGlobalHeaders } from "../../e2e/support/enforcedCsp";
 import { runAxeOnHtml } from "./utils/axe";
 import { scanBuildOutputForSourceMaps } from "../scan-source-maps";
 import { UPLOAD_VARIABLES } from "../sentry-build";
@@ -51,7 +53,6 @@ const INDEX_HTML_FILE = "index.html";
 const REUSE_BUILD_DIR_ENV = SMOKE_BUILD_REUSE_DIR_ENV;
 const HTML_EXTENSION = ".html";
 const HEADERS_FILE = "_headers";
-const NETLIFY_CONFIG_FILE = "netlify.toml";
 const ASSETS_DIR = "assets";
 // VitePress/Rollup stamp a base64url content hash segment (>= 8 chars, dot
 // delimited) into every emitted asset filename, e.g. app.C3xK9-aQ.js or
@@ -61,13 +62,9 @@ const ASSETS_DIR = "assets";
 const CONTENT_HASH_FILENAME = /\.[A-Za-z0-9_-]{8,}\./;
 const NOT_FOUND_HTML_FILE = "404.html";
 const PRIVACY_HTML_FILE = "privacy.html";
-const REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only";
-const REPORT_ONLY_HEADER_LINE = new RegExp(
-  `^\\s*${REPORT_ONLY_HEADER_NAME}:\\s*(.+)$`,
-  "m",
-);
+const CSP_HEADER_NAME = "Content-Security-Policy";
+const CSP_HEADER_LINE = new RegExp(`^\\s*${CSP_HEADER_NAME}:\\s*(.+)$`, "m");
 const SHA256_SCRIPT_SOURCE = /'sha256-[A-Za-z0-9+/]+=*'/;
-const ENFORCING_SCRIPT_SRC = "script-src 'self' 'unsafe-inline'";
 // The last artifact vitepress writes; it flushes after build() resolves, so we
 // wait on it before cleanup to avoid an unhandled ENOENT racing the dir removal.
 const SITEMAP_FILE = "sitemap.xml";
@@ -267,7 +264,7 @@ async function buildInto(outDir: string) {
 
 // Independent oracle: the exact textContent of every executable inline script the
 // build emitted (scripts with a src or an application/ld+json type are excluded),
-// so it is the set the Report-Only script-src hashes must cover. Quote-aware and
+// so it is the set the enforced script-src hashes must cover. Quote-aware and
 // whitespace-tolerant on the end tag so it is not strictly weaker than the code
 // under test — a script the production extractor mishandles must still surface
 // here rather than being skipped identically by both.
@@ -297,9 +294,44 @@ function readAllBuiltHtml(outDir: string) {
     .map((name) => readFileSync(resolve(outDir, name as string), "utf8"));
 }
 
-function reportOnlyHeaderValue(headersFile: string) {
-  const match = headersFile.match(REPORT_ONLY_HEADER_LINE);
+function enforcedCspValue(headersFile: string) {
+  const match = headersFile.match(CSP_HEADER_LINE);
   return match ? match[1].trim() : null;
+}
+
+function directiveSources(policy: string, directiveName: string) {
+  const directive = policy
+    .split(";")
+    .map((candidate) => candidate.trim())
+    .find((candidate) => candidate.startsWith(`${directiveName} `));
+  return directive ? directive.split(/\s+/).slice(1) : null;
+}
+
+// Independent oracle for the style hashes: the exact textContent of every inline
+// <style> element in the built pages.
+function inlineStyleBodies(html: string) {
+  return [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)].map(
+    (match) => match[1],
+  );
+}
+
+// What no hash can cover: an inline style attribute, an event handler, or a
+// javascript: URL. <script> and <style> bodies are removed first so their text
+// cannot look like markup, and quoted attribute values are blanked so a value
+// that merely contains the word `style=` is not a finding.
+const UNHASHABLE_ATTRIBUTE = /\s(?:style|on[a-z]+)\s*=/i;
+const JAVASCRIPT_URL = /=\s*["']?\s*javascript:/i;
+
+function hasUnhashableAttribute(tag: string) {
+  const withoutValues = tag.replace(/"[^"]*"|'[^']*'/g, '""');
+  return UNHASHABLE_ATTRIBUTE.test(withoutValues) || JAVASCRIPT_URL.test(tag);
+}
+
+function unhashableMarkup(html: string) {
+  const markup = html
+    .replace(/<script\b[\s\S]*?<\/script\s*>/gi, "<script></script>")
+    .replace(/<style\b[\s\S]*?<\/style\s*>/gi, "<style></style>");
+  return (markup.match(/<[a-z][^>]*>/gi) ?? []).filter(hasUnhashableAttribute);
 }
 
 function extractHead(html: string) {
@@ -941,27 +973,27 @@ describe("build-dir cleanup guard", () => {
   });
 });
 
-describe("generated CSP Report-Only header", () => {
-  it("emits a Content-Security-Policy-Report-Only header scoped to /*", () => {
-    expect(generatedHeaders).toMatch(
-      new RegExp(`^/\\*\\n\\s+${REPORT_ONLY_HEADER_NAME}:`, "m"),
-    );
-    expect(reportOnlyHeaderValue(generatedHeaders)).not.toBeNull();
+describe("generated enforced CSP header", () => {
+  it("emits a Content-Security-Policy header scoped to /*, not report-only", () => {
+    expect(readGlobalHeaders(generatedHeaders)[CSP_HEADER_NAME]).toBeTruthy();
+    expect(enforcedCspValue(generatedHeaders)).not.toBeNull();
+    expect(generatedHeaders).not.toContain("Report-Only");
   });
 
-  it("carries a script-src of hashes with no 'unsafe-inline'", () => {
-    const value = reportOnlyHeaderValue(generatedHeaders)!;
-    const scriptSrc = value
-      .split(";")
-      .map((directive) => directive.trim())
-      .find((directive) => directive.startsWith("script-src"));
-    expect(scriptSrc, "no script-src in Report-Only header").toBeTruthy();
-    expect(scriptSrc).toMatch(SHA256_SCRIPT_SOURCE);
-    expect(scriptSrc).not.toContain("'unsafe-inline'");
+  it("carries hashes and no 'unsafe-inline' in script-src and style-src", () => {
+    const policy = enforcedCspValue(generatedHeaders)!;
+    for (const directive of ["script-src", "style-src"]) {
+      const sources = directiveSources(policy, directive);
+      expect(sources, `no ${directive} in the policy`).not.toBeNull();
+      expect(sources!.some((source) => SHA256_SCRIPT_SOURCE.test(source))).toBe(
+        true,
+      );
+      expect(sources).not.toContain("'unsafe-inline'");
+    }
   });
 
   it("hashes every executable inline script across all built pages", () => {
-    const value = reportOnlyHeaderValue(generatedHeaders)!;
+    const value = enforcedCspValue(generatedHeaders)!;
     const bodies = readAllBuiltHtml(buildOutDir).flatMap(
       executableInlineScriptBodies,
     );
@@ -972,12 +1004,31 @@ describe("generated CSP Report-Only header", () => {
     }
   });
 
-  it("leaves the enforcing CSP in netlify.toml unchanged (still 'unsafe-inline')", () => {
-    const netlifyConfig = readFileSync(
-      resolve(PROJECT_ROOT, NETLIFY_CONFIG_FILE),
-      "utf8",
+  it("hashes every inline style element across all built pages", () => {
+    const value = enforcedCspValue(generatedHeaders)!;
+    const bodies = readAllBuiltHtml(buildOutDir).flatMap(inlineStyleBodies);
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      const digest = createHash("sha256").update(body, "utf8").digest("base64");
+      expect(value).toContain(`'sha256-${digest}'`);
+    }
+  });
+
+  it("leaves no style attribute, event handler or javascript: URL in any built page", () => {
+    for (const html of readAllBuiltHtml(buildOutDir)) {
+      expect(unhashableMarkup(html)).toEqual([]);
+    }
+  });
+
+  it("reports violations to the Sentry security endpoint", () => {
+    const policy = enforcedCspValue(generatedHeaders)!;
+    const endpoint = directiveSources(policy, "report-uri")?.[0] ?? "";
+    expect(
+      endpoint.startsWith(`${SENTRY_SECURITY_REPORT_URL}&sentry_environment=`),
+    ).toBe(true);
+    expect(generatedHeaders).toMatch(
+      /^ {2}Reporting-Endpoints: csp-endpoint="/m,
     );
-    expect(netlifyConfig).toContain(ENFORCING_SCRIPT_SRC);
   });
 });
 

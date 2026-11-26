@@ -34,4 +34,9 @@ paths = [
 # Add reviewed fingerprints or regexes for this repository here, for example
 # `commits = [...]` or `regexes = [...]`. Do not repeat the `paths` key.
 # np-sync:begin allowlist
+# The Sentry public key. A DSN key only lets a client send events, and it is
+# committed on purpose (.vitepress/sentry-dsn.ts, .vitepress/csp/sitePolicy.ts).
+regexes = [
+  '''^586e40f6a5b5943d2ca556d0a54ba087$''',
+]
 # np-sync:end allowlist

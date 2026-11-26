@@ -4,7 +4,7 @@ import { extname, join, resolve } from "node:path";
 // CI runs lint, typecheck, tests and build, but nothing budgets real page
 // performance despite the font-preload/self-hosted-font/immutable-cache work
 // sunk into keeping the hero fast (see ../fonts/writeFontPreloadLink and
-// ../csp/writeReportOnlyHeaders). This script closes that gap by measuring
+// ../csp/writeSiteHeaders). This script closes that gap by measuring
 // the real build output — never hand-summed numbers that could drift from
 // what actually ships — against two bounded budgets:
 //

@@ -6,6 +6,7 @@ import path from "node:path";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 import { BRAND_ACCENTS } from "@theme/brand";
 import { hexToRgba } from "@theme/utils/color";
+import { buildGeneratedCss } from "@theme/generatedStyles";
 
 // Guards the single-source-of-truth binding: the page's accent colors must
 // reach the markup through BRAND_ACCENTS / hexToRgba / Tailwind tokens, never
@@ -79,11 +80,11 @@ describe("NeonPixelsPage accent bindings", () => {
     wrapper.unmount();
   });
 
-  it("renders every derived accent glow from hexToRgba, not a literal", () => {
-    const html = mount(NeonPixelsPage).html();
+  it("generates every derived accent glow from hexToRgba, not a literal", () => {
     // Each card/aurora glow is the accent at a fixed alpha; asserting the exact
-    // hexToRgba output is present catches a dropped `:style` binding that the
-    // negative source scan (absence-only) cannot.
+    // hexToRgba output is present in the generated stylesheet catches a dropped
+    // rule that the negative source scan (absence-only) cannot.
+    const css = buildGeneratedCss();
     const derivedGlows = [
       hexToRgba(BRAND_ACCENTS.lime, 0.16),
       hexToRgba(BRAND_ACCENTS.pink, 0.15),
@@ -95,7 +96,28 @@ describe("NeonPixelsPage accent bindings", () => {
       hexToRgba(BRAND_ACCENTS.pink, 0.12),
     ];
     derivedGlows.forEach((glow) => {
-      expect(html).toContain(glow);
+      expect(css).toContain(glow);
     });
+  });
+
+  it("wires every generated glow class into the markup and never a style attribute", () => {
+    const wrapper = mount(NeonPixelsPage);
+    const html = wrapper.html();
+    [
+      "hero-aurora-lime",
+      "hero-aurora-pink",
+      "hero-aurora-cyan",
+      "hero-rule-glow",
+      "glow-grimicorn",
+      "glow-farflung",
+      "glow-basin",
+      "glow-markpost-arrow",
+      "glow-markpost-out",
+      "wordmark-gradient",
+    ].forEach((className) => {
+      expect(html).toContain(className);
+    });
+    expect(html).not.toContain("style=");
+    wrapper.unmount();
   });
 });

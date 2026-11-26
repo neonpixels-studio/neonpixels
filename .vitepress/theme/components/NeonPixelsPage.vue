@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { BRAND_ACCENTS, WORDMARK_GRADIENT, withAlpha } from "../brand";
+import { BRAND_ACCENTS } from "../brand";
 import { MAIN_CONTENT_ID } from "../a11y";
-// Two accent-alpha helpers, two output formats: `withAlpha` appends a 2-digit
-// hex alpha to an accent (an 8-digit hex) for solid swatch fills (heatmap/feed
-// dots); `hexToRgba` yields an `rgba(r, g, b, a)` string for the
-// box-shadow/gradient glows below, matching how ProjectSection/ProjectSummary
-// already derive their glows.
-import { hexToRgba } from "../utils/color";
 import { PROJECTS } from "../data/projects";
+import {
+  basinDotClass,
+  projectStyleClass,
+  tripCellClass,
+  type TripCellState,
+} from "../generatedStyles";
 import { STATES_TOTAL, STATES_VISITED, STATE_VISITS } from "../data/states";
 import ProjectSection from "./ProjectSection.vue";
 import ContactForm from "./ContactForm.vue";
@@ -18,25 +18,14 @@ import SiteNav from "./SiteNav.vue";
 // constant is enough — no reactivity to track.
 const paddedProjectCount = String(PROJECTS.length).padStart(2, "0");
 
-// Trip-log heatmap for the FarFlung card: each cell is one of four brightness
-// states so the grid reads as visited / partly / faint / empty. The lit states
-// are the cyan accent at descending alpha; the alpha suffixes (88/55 hex) fade
-// it toward the empty tint.
-const TRIP_CELL_COLORS = {
-  on: BRAND_ACCENTS.cyan,
-  mid: withAlpha(BRAND_ACCENTS.cyan, "88"),
-  low: withAlpha(BRAND_ACCENTS.cyan, "55"),
-  off: "#0e2831",
-};
-
 // Visited states cycle through the three lit brightnesses for the heatmap's
 // visited / partly / faint texture; unvisited states take the empty tint.
 // Derived from STATE_VISITS so the grid always renders STATES_TOTAL cells with
 // STATES_VISITED lit — the picture can't drift from the caption. Typing the
 // arrays (rather than casting the result) keeps a typo like "lo" a compile
-// error instead of a silent `background: undefined`, and `Exclude<_, "off">`
-// stops the empty tint being listed as a lit brightness.
-type TripCellState = keyof typeof TRIP_CELL_COLORS;
+// error instead of a missing class, and `Exclude<_, "off">` stops the empty
+// tint being listed as a lit brightness. The fills are generated classes (see
+// generatedStyles.ts).
 const LIT_CELL_STATES: Exclude<TripCellState, "off">[] = ["on", "mid", "low"];
 
 const TRIP_CELLS: TripCellState[] = STATE_VISITS.map((visited, cellIndex) => {
@@ -75,38 +64,29 @@ const FARFLUNG_MILES_SHORT = `${Math.floor(FARFLUNG_MILES_TRAVELED / 1000)}k+`;
 const FARFLUNG_MILES_LABEL = `${groupThousands(FARFLUNG_MILES_TRAVELED)}+`;
 const FARFLUNG_MOCKUP_LABEL = `FarFlung trip log: ${FARFLUNG_STATES_VISITED} of ${FARFLUNG_STATES_TOTAL} US states visited, ${FARFLUNG_MILES_LABEL} miles traveled across ${FARFLUNG_COUNTRIES} countries.`;
 
-// Basin aggregates a mixed feed; opacity of the leading dot fades with recency
-// via descending alpha suffixes on the amber accent (88/55/33 hex). Only the
-// freshest item glows — `glow` states that intent on the data rather than
-// inferring it from the dot's color.
+// Basin aggregates a mixed feed; the leading dot fades with recency and only
+// the freshest item glows (basinDotClass, see generatedStyles.ts). Title colors
+// are literal classes so the JIT scanner sees them.
 const BASIN_FEED = [
   {
     title: "Syntax — 900: The One About Agents",
     kind: "podcast",
-    dot: BRAND_ACCENTS.amber,
-    glow: true,
-    titleColor: "#e8e8ea",
+    titleClass: "text-[#e8e8ea]",
   },
   {
     title: "CSS-Tricks — Anchor positioning, finally",
     kind: "rss",
-    dot: withAlpha(BRAND_ACCENTS.amber, "88"),
-    glow: false,
-    titleColor: "#c4c4cd",
+    titleClass: "text-[#c4c4cd]",
   },
   {
     title: "@dan.bsky.social — shipped something at 3am",
     kind: "bluesky",
-    dot: withAlpha(BRAND_ACCENTS.amber, "55"),
-    glow: false,
-    titleColor: "#c4c4cd",
+    titleClass: "text-[#c4c4cd]",
   },
   {
     title: "Fireship — 100 seconds of something new",
     kind: "youtube",
-    dot: withAlpha(BRAND_ACCENTS.amber, "33"),
-    glow: false,
-    titleColor: "#c4c4cd",
+    titleClass: "text-[#c4c4cd]",
   },
 ];
 
@@ -115,57 +95,18 @@ const GRIMICORN_TERMINAL = [
   { text: "[03:16] shipped farflung map tiles" },
   { text: "[03:19] broke staging. on purpose." },
 ];
-
-// Accent-lit chrome that lives outside the project data above: the hero
-// section rule, the drifting hero auroras, and each card's ambient glow. Solid fills come straight from BRAND_ACCENTS; translucent
-// glows go through hexToRgba, so a palette change recolors every one of the
-// four accents in lockstep. Per-component surface tints (dark card
-// backgrounds/borders and muted greys) stay literal by design — brand.ts owns
-// only the four accents and the wordmark gradient.
-const HERO_RULE_GLOW = `0 0 6px ${BRAND_ACCENTS.lime}`;
-
-// Three hero auroras share one radial-wash shape at different accents, so it's
-// composed once from the palette rather than three hand-written gradients.
-function auroraGlow(accent: string, alpha: number) {
-  return `radial-gradient(circle, ${hexToRgba(accent, alpha)}, transparent 62%)`;
-}
-const HERO_AURORAS = {
-  lime: auroraGlow(BRAND_ACCENTS.lime, 0.16),
-  pink: auroraGlow(BRAND_ACCENTS.pink, 0.15),
-  cyan: auroraGlow(BRAND_ACCENTS.cyan, 0.13),
-};
-
-// Bespoke project-visual glows. The three cards share one 60px ambient-glow
-// shape at their accent, so it's composed once (like auroraGlow) rather than
-// re-concatenated per card; markpost's tighter arrow flare and wider out-panel
-// glow are their own shapes and stay literal.
-function cardGlow(accent: string, alpha: number) {
-  return `0 0 60px ${hexToRgba(accent, alpha)}`;
-}
-const GRIMICORN_GLOW = cardGlow(BRAND_ACCENTS.lime, 0.1);
-const FARFLUNG_GLOW = cardGlow(BRAND_ACCENTS.cyan, 0.1);
-const BASIN_GLOW = cardGlow(BRAND_ACCENTS.amber, 0.09);
-const MARKPOST_ARROW_GLOW = `0 0 14px ${hexToRgba(BRAND_ACCENTS.pink, 0.8)}`;
-const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
 </script>
 
 <template>
   <div class="bg-bg text-fg relative font-mono">
     <!-- drifting grid backdrop -->
     <div
-      class="animate-drift ambient-decoration pointer-events-none fixed inset-0 z-0"
-      style="
-        background-image:
-          linear-gradient(#ffffff08 1px, transparent 1px),
-          linear-gradient(90deg, #ffffff08 1px, transparent 1px);
-        background-size: 80px 80px;
-      "
+      class="animate-drift ambient-decoration grid-backdrop pointer-events-none fixed inset-0 z-0"
     />
 
     <!-- header -->
     <header
-      class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b px-10 py-[22px] backdrop-blur-md"
-      style="background: #08080ae6"
+      class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b bg-[#08080ae6] px-10 py-[22px] backdrop-blur-md"
     >
       <a href="#top" class="flex items-center gap-[11px]">
         <svg
@@ -201,11 +142,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
           class="font-display text-[15px] font-black tracking-[-0.01em] text-[#f2f2f4]"
         >
           NEON<span
-            class="animate-sweep bg-clip-text text-transparent"
-            :style="{
-              backgroundImage: WORDMARK_GRADIENT,
-              '--np-sweep-dur': '7s',
-            }"
+            class="animate-sweep wordmark-gradient bg-clip-text text-transparent [--np-sweep-dur:7s]"
             >PIXELS</span
           >
         </span>
@@ -223,48 +160,35 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
         class="relative z-[2] overflow-hidden px-10 pt-28 pb-24"
       >
         <div
-          class="animate-aurora ambient-decoration pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]"
-          :style="{ background: HERO_AURORAS.lime }"
+          class="animate-aurora ambient-decoration hero-aurora-lime pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]"
         />
         <div
-          class="animate-aurora-reverse ambient-decoration pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px]"
-          :style="{ '--np-aurora-dur': '32s', background: HERO_AURORAS.pink }"
+          class="animate-aurora-reverse ambient-decoration hero-aurora-pink pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px] [--np-aurora-dur:32s]"
         />
         <div
-          class="animate-aurora ambient-decoration pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px]"
-          :style="{ '--np-aurora-dur': '38s', background: HERO_AURORAS.cyan }"
+          class="animate-aurora ambient-decoration hero-aurora-cyan pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px] [--np-aurora-dur:38s]"
         />
 
         <div class="relative mx-auto flex max-w-[1180px] flex-col gap-[34px]">
           <div
             class="flex items-center gap-[14px] text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"
           >
-            <span
-              class="bg-lime h-px w-[26px]"
-              :style="{ boxShadow: HERO_RULE_GLOW }"
-            />
+            <span class="bg-lime hero-rule-glow h-px w-[26px]" />
             a very small studio · a lot of side projects
           </div>
 
           <h1
-            class="font-display m-0 font-black tracking-[-0.035em] text-[#f4f4f6]"
-            style="
-              font-size: clamp(56px, 9vw, 132px);
-              line-height: 0.86;
-              text-wrap: balance;
-            "
+            class="font-display m-0 text-[clamp(56px,9vw,132px)] leading-[0.86] font-black tracking-[-0.035em] text-balance text-[#f4f4f6]"
           >
             WE BUILD THE<br />
             <span
-              class="animate-sweep bg-clip-text text-transparent"
-              :style="{ backgroundImage: WORDMARK_GRADIENT }"
+              class="animate-sweep wordmark-gradient bg-clip-text text-transparent"
               >MISSING APPS</span
             >
           </h1>
 
           <p
-            class="m-0 max-w-[640px] text-[15.5px] leading-[1.75] text-[#a8a8b3]"
-            style="text-wrap: pretty"
+            class="m-0 max-w-[640px] text-[15.5px] leading-[1.75] text-pretty text-[#a8a8b3]"
           >
             Neon Pixels is one human and one very caffeinated agent, shipping
             the tools we kept wishing existed. Every project here started as a
@@ -278,20 +202,11 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               :key="project.id"
               :href="`#${project.id}`"
               class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]"
-              :style="{
-                color: project.color,
-                borderColor: project.pillBorder,
-                background: project.pillBg,
-                '--pill-bg-hover': project.pillBgHover,
-                '--accent': project.color,
-              }"
+              :class="projectStyleClass(project.id, 'pill')"
             >
               <span
                 class="pill-dot h-[6px] w-[6px]"
-                :style="{
-                  background: project.color,
-                  boxShadow: `0 0 7px ${project.color}`,
-                }"
+                :class="projectStyleClass(project.id, 'pill-dot')"
               />{{ project.name }}{{ project.tld }}
             </a>
           </div>
@@ -314,8 +229,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               about
             </div>
             <h2
-              class="font-display m-0 font-black tracking-[-0.025em] text-[#f2f2f4]"
-              style="font-size: clamp(30px, 3.6vw, 46px); line-height: 1.02"
+              class="font-display m-0 text-[clamp(30px,3.6vw,46px)] leading-[1.02] font-black tracking-[-0.025em] text-[#f2f2f4]"
             >
               A studio of<br />two, sort of.
             </h2>
@@ -323,8 +237,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
 
           <div class="flex flex-col gap-[26px]">
             <p
-              class="m-0 text-[15.5px] leading-[1.8] text-[#b4b4bf]"
-              style="text-wrap: pretty"
+              class="m-0 text-[15.5px] leading-[1.8] text-pretty text-[#b4b4bf]"
             >
               Neon Pixels is me and Grimicorn — my agent, my co-worker, and the
               reason commits show up at 3am. Everything under this roof solves a
@@ -332,8 +245,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               then kept going because it turns out other people had it too.
             </p>
             <p
-              class="m-0 text-[15.5px] leading-[1.8] text-[#b4b4bf]"
-              style="text-wrap: pretty"
+              class="m-0 text-[15.5px] leading-[1.8] text-pretty text-[#b4b4bf]"
             >
               It's also a playground. Each project doubles as an experiment in
               how far automated, agent-driven development can actually go when
@@ -341,10 +253,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               is on fire. Both are the point.
             </p>
             <div
-              class="border-border bg-border grid gap-px border"
-              style="
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-              "
+              class="border-border bg-border grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-px border"
             >
               <div class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]">
                 <span
@@ -426,8 +335,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
         <template #visual>
           <div
             v-if="project.id === 'grimicorn'"
-            class="border border-[#23301a] bg-[#0a0d06]"
-            :style="{ boxShadow: GRIMICORN_GLOW }"
+            class="glow-grimicorn border border-[#23301a] bg-[#0a0d06]"
             aria-hidden="true"
           >
             <div
@@ -463,8 +371,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
 
           <div
             v-else-if="project.id === 'farflung'"
-            class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]"
-            :style="{ boxShadow: FARFLUNG_GLOW }"
+            class="glow-farflung flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]"
             role="img"
             :aria-label="FARFLUNG_MOCKUP_LABEL"
           >
@@ -491,14 +398,9 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
                 v-for="(state, cellIndex) in TRIP_CELLS"
                 :key="cellIndex"
                 data-testid="trip-log-cell"
-                class="trip-cell"
+                class="trip-cell aspect-square"
+                :class="tripCellClass(state)"
                 :data-visited="state !== 'off'"
-                :style="{
-                  aspectRatio: '1',
-                  '--trip-cell-bg': TRIP_CELL_COLORS[state],
-                  boxShadow:
-                    state === 'on' ? `0 0 8px ${BRAND_ACCENTS.cyan}` : 'none',
-                }"
               />
             </div>
             <div class="text-farflung-label flex gap-5 text-[11px]">
@@ -510,29 +412,21 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
 
           <div
             v-else-if="project.id === 'basin'"
-            class="flex flex-col gap-px border border-[#2e2410] bg-[#2e2410]"
-            :style="{ boxShadow: BASIN_GLOW }"
+            class="glow-basin flex flex-col gap-px border border-[#2e2410] bg-[#2e2410]"
             aria-hidden="true"
           >
             <div
-              v-for="item in BASIN_FEED"
+              v-for="(item, feedIndex) in BASIN_FEED"
               :key="item.title"
               class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"
             >
               <span
                 class="h-2 w-2 flex-none"
-                :style="{
-                  background: item.dot,
-                  boxShadow: item.glow
-                    ? `0 0 8px ${BRAND_ACCENTS.amber}`
-                    : 'none',
-                }"
+                :class="basinDotClass(feedIndex)"
               />
-              <span
-                class="flex-1 text-[13px]"
-                :style="{ color: item.titleColor }"
-                >{{ item.title }}</span
-              >
+              <span class="flex-1 text-[13px]" :class="item.titleClass">{{
+                item.title
+              }}</span>
               <span class="text-fg-dim text-[11px]">{{ item.kind }}</span>
             </div>
             <div
@@ -565,14 +459,12 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
               >
             </div>
             <div
-              class="text-pink animate-flicker flex items-center justify-center text-[22px]"
-              :style="{ textShadow: MARKPOST_ARROW_GLOW }"
+              class="text-pink animate-flicker glow-markpost-arrow flex items-center justify-center text-[22px]"
             >
               →
             </div>
             <div
-              class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"
-              :style="{ boxShadow: MARKPOST_OUT_GLOW }"
+              class="glow-markpost-out flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"
             >
               <span
                 class="text-markpost-label text-[10.5px] tracking-[0.16em] uppercase"
@@ -642,7 +534,7 @@ const MARKPOST_OUT_GLOW = `0 0 50px ${hexToRgba(BRAND_ACCENTS.pink, 0.12)}`;
             target="_blank"
             rel="noopener noreferrer"
             class="footer-link text-fg-dim"
-            :style="{ '--accent': project.color }"
+            :class="projectStyleClass(project.id, 'accent')"
             >{{ project.name }}{{ project.tld }}</a
           >
         </div>

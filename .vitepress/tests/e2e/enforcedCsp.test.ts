@@ -1,32 +1,76 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   loadEnforcedCsp,
+  loadGeneratedHeaders,
   readEnforcedCsp,
+  readGlobalHeaders,
 } from "../../../e2e/support/enforcedCsp";
+import { generateFixtureHeaders } from "../utils/generatedHeaders";
 
-describe("readEnforcedCsp", () => {
-  it("returns the enforcing header value, not the commented prose", () => {
-    const toml = [
-      '    # Content-Security-Policy = "commented"',
-      "    Content-Security-Policy = \"default-src 'self'\"",
+describe("readGlobalHeaders", () => {
+  it("reads every header of the /* block", () => {
+    const headersFile = [
+      "/*",
+      "  X-Content-Type-Options: nosniff",
+      "  Content-Security-Policy: default-src 'self'; report-uri https://a.test/x?k=v",
     ].join("\n");
-    expect(readEnforcedCsp(toml)).toBe("default-src 'self'");
+    expect(readGlobalHeaders(headersFile)).toEqual({
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy":
+        "default-src 'self'; report-uri https://a.test/x?k=v",
+    });
   });
 
-  it("rejects a policy containing escapes instead of serving it mangled", () => {
-    expect(() =>
-      readEnforcedCsp('Content-Security-Policy = "a \\" b"'),
-    ).toThrow();
+  it("merges more than one /* block and skips other paths and comments", () => {
+    const headersFile = [
+      "# cache rules",
+      "/assets/*",
+      "  Cache-Control: public, immutable",
+      "",
+      "/*",
+      "  A: 1",
+      "",
+      "/*",
+      "  B: 2",
+    ].join("\n");
+    expect(readGlobalHeaders(headersFile)).toEqual({ A: "1", B: "2" });
+  });
+});
+
+describe("readEnforcedCsp", () => {
+  it("returns the enforcing header value", () => {
+    const headersFile = "/*\n  Content-Security-Policy: default-src 'self'";
+    expect(readEnforcedCsp(headersFile)).toBe("default-src 'self'");
   });
 
   it("ignores a Report-Only header", () => {
-    const toml = "Content-Security-Policy-Report-Only = \"default-src 'none'\"";
-    expect(() => readEnforcedCsp(toml)).toThrow(/no enforcing/);
+    const headersFile =
+      "/*\n  Content-Security-Policy-Report-Only: default-src 'none'";
+    expect(() => readEnforcedCsp(headersFile)).toThrow(/no enforcing/);
   });
 
-  it("reads the real production policy from netlify.toml", () => {
-    const csp = loadEnforcedCsp();
-    expect(csp).toContain("default-src 'self'");
-    expect(csp).toContain("https://www.googletagmanager.com");
+  it("ignores a policy declared for another path", () => {
+    const headersFile =
+      "/other/*\n  Content-Security-Policy: default-src 'self'";
+    expect(() => readEnforcedCsp(headersFile)).toThrow(/no enforcing/);
+  });
+});
+
+describe("generated headers on disk", () => {
+  it("reads the policy and the other headers the build wrote", async () => {
+    const distDir = mkdtempSync(join(tmpdir(), "np-enforced-csp-"));
+    try {
+      writeFileSync(join(distDir, "_headers"), await generateFixtureHeaders());
+      expect(loadEnforcedCsp(distDir)).toContain("default-src 'self'");
+      expect(loadEnforcedCsp(distDir)).toContain(
+        "https://www.googletagmanager.com",
+      );
+      expect(loadGeneratedHeaders(distDir)["X-Frame-Options"]).toBe("DENY");
+    } finally {
+      rmSync(distDir, { recursive: true, force: true });
+    }
   });
 });

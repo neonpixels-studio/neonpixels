@@ -1,7 +1,7 @@
 // Netlify can't scope a [[headers]] block in netlify.toml to a deploy
 // context (see .vitepress/tests/netlify.test.ts), so the noindex header has
 // to go into the build-time `_headers` file instead — this module only
-// decides WHICH line to add; see .vitepress/csp/writeReportOnlyHeaders for
+// decides WHICH line to add; see .vitepress/csp/writeSiteHeaders for
 // where it's written and why it rides in that file's one `/*` block rather
 // than a second block.
 const NOINDEX_HEADER_LINE = "X-Robots-Tag: noindex";

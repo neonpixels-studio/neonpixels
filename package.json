@@ -33,6 +33,7 @@
     "@neon-pixels/playwright-preset": "^0.4.0",
     "@neon-pixels/prettier-config": "^0.3.0",
     "@neon-pixels/scripts": "0.3.0",
+    "@neon-pixels/security": "^0.5.0",
     "@neon-pixels/tsconfig": "^0.3.0",
     "@neon-pixels/vitest-preset": "^0.3.0",
     "@playwright/test": "^1.65.1",
@@ -82,7 +83,6 @@
   "dependencies": {
     "@neon-pixels/consent": "^0.4.0",
     "@neon-pixels/sentry": "^0.4.0",
-    "@netlify/blobs": "^11.1.9",
     "@sentry/vue": "^11.18.0"
   },
   "engines": {

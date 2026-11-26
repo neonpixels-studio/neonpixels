@@ -140,6 +140,26 @@ html {
   animation: np-drift 24s linear infinite;
 }
 
+/* The drifting hero grid and the 404 glow are static decoration. They are
+   rules here rather than style attributes because the page's Content-Security-
+   Policy has no 'unsafe-inline' for styles (per-value classes derived from
+   data live in generatedStyles.ts). */
+.grid-backdrop {
+  background-image:
+    linear-gradient(#ffffff08 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+  background-size: 80px 80px;
+}
+
+.not-found-glow {
+  background: radial-gradient(
+    circle,
+    rgba(34, 224, 255, 0.18),
+    rgba(255, 46, 166, 0.09) 45%,
+    transparent 70%
+  );
+}
+
 .animate-sweep {
   background-size: 200% 100%;
   animation: np-sweep var(--np-sweep-dur, 6s) linear infinite;
@@ -185,15 +205,13 @@ html {
   }
 }
 
-/* FarFlung trip-log cells set their fill through this custom property
-   instead of `background` directly, purely so the forced-colors override
-   below can win the cascade: an inline `style="background: …"` attribute
-   always beats an external stylesheet rule regardless of selector
-   specificity, which would otherwise make that override unreachable. This
-   base rule is what makes the custom property visible at all outside
-   forced-colors mode — it must stay in lockstep with the override inside
-   the @media block below, so both live in this one file rather than
-   splitting across the component and here. */
+/* FarFlung trip-log cells set their fill through this custom property (the
+   generated `trip-cell-<state>` classes, see generatedStyles.ts) instead of
+   `background` directly, so the forced-colors override below wins on selector
+   specificity no matter where the generated <style> element lands relative to
+   this stylesheet. This base rule is what makes the custom property visible at
+   all outside forced-colors mode — it must stay in lockstep with the override
+   inside the @media block below, so both live in this one file. */
 .trip-cell {
   background: var(--trip-cell-bg);
 }
@@ -237,10 +255,9 @@ html {
      leaving the linked "PIXELS" a different color than the "NEON" it sits
      beside. `-webkit-text-fill-color` wins in engines that support it;
      `color` is the fallback for engines that don't (and is what the
-     clipped text used to set to `transparent`). The gradient itself is set
-     inline per element (a fixed style-attribute value beats this
-     stylesheet rule regardless of selector specificity), so there's
-     nothing to null here — the opaque fill covers it either way. */
+     clipped text used to set to `transparent`). The gradient itself is the
+     generated `wordmark-gradient` class, so there's nothing to null here —
+     the opaque fill covers it either way. */
   .bg-clip-text {
     -webkit-text-fill-color: currentColor;
     color: inherit;
@@ -281,7 +298,7 @@ html {
 /* Keyboard focus ring for every interactive control (WCAG 2.4.7), in one place
    so it also covers the wordmark links and 404 CTAs. `:where()` holds the
    selector at (0,1,0) specificity so a component rule can still override it.
-   Each control reuses its own inline --accent (pills, footer links, CTAs),
+   Each control reuses its own --accent (pills, footer links, CTAs),
    falling back to lime; the offset lifts the ring onto the dark page so it
    stays visible even against a matching fill or border. */
 :where(

@@ -4,6 +4,7 @@ import { createSSRApp, h } from "vue";
 import { renderToString } from "@vue/server-renderer";
 import ProjectSummary from "@components/ProjectSummary.vue";
 import { PROJECTS, type Project } from "@theme/data/projects";
+import { buildGeneratedCss, projectStyleClass } from "@theme/generatedStyles";
 
 // The CTA click handler delegates the actual GA4 event push to
 // loadGoogleAnalytics.ts (covered on its own in loadGoogleAnalytics.test.ts)
@@ -116,27 +117,35 @@ describe("ProjectSummary", () => {
     wrapper.unmount();
   });
 
-  it("exposes the project color to the outline hover via --accent", () => {
+  it("exposes the project color to the outline hover via a generated --accent class", () => {
     const wrapper = mount(ProjectSummary, {
       props: { project: outlineProject },
     });
-    // --accent is the only thing driving .cta-outline:hover's background.
-    const style = wrapper.find("a").attributes("style") ?? "";
-    expect(style).toContain(`--accent: ${outlineProject.color}`);
+    // --accent is the only thing driving .cta-outline:hover's background, and it
+    // reaches the link through a class because a style attribute is not allowed
+    // by the page's Content-Security-Policy.
+    const cta = wrapper.find("a");
+    expect(cta.classes()).toContain(
+      projectStyleClass(outlineProject.id, "accent"),
+    );
+    expect(cta.attributes("style")).toBeUndefined();
+    expect(buildGeneratedCss([outlineProject])).toContain(
+      `.${projectStyleClass(outlineProject.id, "accent")}{--accent:${outlineProject.color}}`,
+    );
     wrapper.unmount();
   });
 
-  it("keeps the heading clamp and paragraph text-wrap in the rendered markup", async () => {
+  it("keeps the heading clamp and paragraph text-wrap as classes, with no style attribute", async () => {
     // happy-dom's CSSOM drops clamp()/text-wrap, so the client snapshots can't
-    // catch their removal. Server-render the raw markup, which preserves the
-    // authored inline style verbatim, and assert on that instead.
+    // catch their removal. Server-render the raw markup and assert on that.
     const html = await renderToString(
       createSSRApp({
         render: () => h(ProjectSummary, { project: filledProject }),
       }),
     );
-    expect(html).toContain("font-size:clamp(38px, 5vw, 66px)");
-    expect(html).toContain("text-wrap:pretty");
+    expect(html).toContain("text-[clamp(38px,5vw,66px)]");
+    expect(html).toContain("text-pretty");
+    expect(html).not.toContain("style=");
   });
 
   it("derives the fill hover glow from the project color, not a fixed lime", () => {
@@ -148,8 +157,12 @@ describe("ProjectSummary", () => {
     const wrapper = mount(ProjectSummary, { props: { project: tealFill } });
     // --accent-glow feeds .cta-fill:hover; it must track the project color so a
     // non-lime fill project doesn't snap to lime on hover.
-    const style = wrapper.find("a").attributes("style") ?? "";
-    expect(style).toContain("--accent-glow: rgba(18, 52, 86, 0.6)");
+    expect(wrapper.find("a").classes()).toContain(
+      projectStyleClass(tealFill.id, "cta-fill"),
+    );
+    expect(buildGeneratedCss([tealFill])).toContain(
+      "--accent-glow:rgba(18, 52, 86, 0.6)",
+    );
     wrapper.unmount();
   });
 
@@ -159,8 +172,12 @@ describe("ProjectSummary", () => {
     });
     // The global :focus-visible ring reads --accent; the fill CTA must expose it
     // so its focus ring tracks the project color instead of the lime fallback.
-    const style = wrapper.find("a").attributes("style") ?? "";
-    expect(style).toContain(`--accent: ${filledProject.color}`);
+    expect(wrapper.find("a").classes()).toContain(
+      projectStyleClass(filledProject.id, "cta-fill"),
+    );
+    expect(buildGeneratedCss([filledProject])).toContain(
+      `--accent:${filledProject.color};`,
+    );
     wrapper.unmount();
   });
 

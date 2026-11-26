@@ -6,7 +6,7 @@ import { join } from "node:path";
 // wordmark, the 404 view, and every other .font-display heading on the
 // single-page site, see theme/index.ts) and injects a <link rel="preload">
 // for it into every emitted HTML document's <head>. Runs from VitePress's
-// buildEnd hook — the same pattern as ../csp/writeReportOnlyHeaders — so the
+// buildEnd hook — the same pattern as ../csp/writeSiteHeaders — so the
 // href always matches the real, content-hashed filename Vite emitted for this
 // build rather than a hand-hardcoded hash that would drift on the next
 // @fontsource bump.
@@ -145,11 +145,11 @@ function injectPreloadLink(html: string, linkTag: string, filePath: string) {
 // document (e.g. missing </head>) throws before touching disk rather than
 // leaving outDir a mix of injected and un-injected HTML. This only covers
 // injection failures — a mid-write disk error (ENOSPC, EACCES) can still
-// leave some documents written and others not, same as writeReportOnlyHeaders
+// leave some documents written and others not, same as writeSiteHeaders
 // has no atomicity guarantee across its own write. Sequential also keeps this
-// bounded to one open file at a time — the CSP writer's HTML read in
-// ../csp/writeReportOnlyHeaders can afford Promise.all because it never
-// writes back, but this script both reads and writes every document.
+// bounded to one open file at a time — this script both reads and writes
+// every document, unlike the CSP writer (../csp/writeSiteHeaders), which
+// only reads the HTML.
 async function readAndInjectAll(
   htmlFiles: Awaited<ReturnType<typeof readHtmlFiles>>,
   linkTag: string,
@@ -157,7 +157,7 @@ async function readAndInjectAll(
   const injected: Array<{ filePath: string; html: string }> = [];
   for (const entry of htmlFiles) {
     // `parentPath` (Node 20.12+/21.4+) is guaranteed: .nvmrc pins Node 24,
-    // same as ../csp/writeReportOnlyHeaders.
+    // same as ../csp/writeSiteHeaders.
     const filePath = join(entry.parentPath, entry.name);
     const html = await readFile(filePath, "utf8");
     injected.push({

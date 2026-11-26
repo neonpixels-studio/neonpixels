@@ -1,7 +1,6 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { CSP_HEADER_NAME } from "./enforcedCsp.ts";
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -14,6 +13,8 @@ const CONTENT_TYPES: Record<string, string> = {
   ".webmanifest": "application/manifest+json",
 };
 const DEFAULT_CONTENT_TYPE = "application/octet-stream";
+type ResponseHeaders = Record<string, string>;
+
 // Mirrors the `/privacy` -> `/privacy.html` 200 rewrite in netlify.toml.
 const REWRITES: Record<string, string> = { "/privacy": "/privacy.html" };
 // A missing file or a directory path is a plain 404; any other read failure
@@ -47,14 +48,11 @@ function resolveFilePath(distDir: string, urlPath: string) {
 function send(
   response: ServerResponse,
   status: number,
-  csp: string,
+  headers: ResponseHeaders,
   contentType: string,
   body: Buffer | string,
 ) {
-  response.writeHead(status, {
-    "Content-Type": contentType,
-    [CSP_HEADER_NAME]: csp,
-  });
+  response.writeHead(status, { ...headers, "Content-Type": contentType });
   response.end(body);
 }
 
@@ -64,53 +62,56 @@ function errorCode(error: unknown) {
 
 async function sendNotFound(
   response: ServerResponse,
-  csp: string,
+  headers: ResponseHeaders,
   distDir: string,
 ) {
   try {
     const body = await readFile(join(distDir, NOT_FOUND_PAGE));
-    send(response, 404, csp, CONTENT_TYPES[".html"], body);
+    send(response, 404, headers, CONTENT_TYPES[".html"], body);
   } catch (error) {
     // No built 404.html (e.g. a bare test fixture): fall back to plain text.
     if (NOT_FOUND_ERROR_CODES.has(errorCode(error))) {
-      send(response, 404, csp, "text/plain", "Not found");
+      send(response, 404, headers, "text/plain", "Not found");
       return;
     }
     console.error("e2e static server failed to read the 404 page", error);
-    send(response, 500, csp, "text/plain", "Server error");
+    send(response, 500, headers, "text/plain", "Server error");
   }
 }
 
 async function sendFailure(
   response: ServerResponse,
-  csp: string,
+  headers: ResponseHeaders,
   distDir: string,
   error: unknown,
 ) {
   if (NOT_FOUND_ERROR_CODES.has(errorCode(error))) {
-    await sendNotFound(response, csp, distDir);
+    await sendNotFound(response, headers, distDir);
     return;
   }
   console.error("e2e static server failed to read a file", error);
-  send(response, 500, csp, "text/plain", "Server error");
+  send(response, 500, headers, "text/plain", "Server error");
 }
 
-export function createStaticServer(distDir: string, csp: string): Server {
+export function createStaticServer(
+  distDir: string,
+  headers: ResponseHeaders,
+): Server {
   const root = resolve(distDir);
   return createServer(async (request, response) => {
     const urlPath = decodeUrlPath(request.url);
     const filePath = urlPath === null ? null : resolveFilePath(root, urlPath);
     if (!filePath) {
-      await sendNotFound(response, csp, root);
+      await sendNotFound(response, headers, root);
       return;
     }
     try {
       const body = await readFile(filePath);
       const contentType =
         CONTENT_TYPES[extname(filePath)] ?? DEFAULT_CONTENT_TYPE;
-      send(response, 200, csp, contentType, body);
+      send(response, 200, headers, contentType, body);
     } catch (error) {
-      await sendFailure(response, csp, root, error);
+      await sendFailure(response, headers, root, error);
     }
   });
 }

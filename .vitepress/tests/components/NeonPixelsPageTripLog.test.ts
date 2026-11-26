@@ -3,6 +3,7 @@ import { mount, type VueWrapper } from "@vue/test-utils";
 import NeonPixelsPage from "@components/NeonPixelsPage.vue";
 import { BRAND_ACCENTS } from "@theme/brand";
 import { STATES_TOTAL, STATES_VISITED, STATE_VISITS } from "@theme/data/states";
+import { buildGeneratedCss, tripCellClass } from "@theme/generatedStyles";
 
 // The FarFlung trip-log heatmap must render one cell per state (STATES_TOTAL)
 // with exactly the visited count lit (STATES_VISITED), so the picture matches
@@ -12,12 +13,26 @@ const HEATMAP_SELECTOR = '[data-testid="trip-log-heatmap"]';
 const CELL_SELECTOR = '[data-testid="trip-log-cell"]';
 
 // Every lit brightness (on / mid / low) is the cyan accent, optionally with an
-// alpha suffix; the empty tint carries no cyan. Inspect the `--trip-cell-bg`
-// custom property alone (not the whole style string, which also holds the
-// box-shadow) so a future cyan border or glow on an empty cell can't be
-// miscounted as lit.
+// alpha suffix; the empty tint carries no cyan. Read the `--trip-cell-bg` custom
+// property of the generated class alone (not the whole rule, which also holds the
+// box-shadow) so a future cyan glow on an empty cell can't be miscounted as lit.
+const CELL_STATES = ["on", "mid", "low", "off"] as const;
+
+function tripCellState(cell: { element: Element }) {
+  return CELL_STATES.find((state) =>
+    cell.element.classList.contains(tripCellClass(state)),
+  );
+}
+
 function tripCellBackground(cell: { element: Element }) {
-  return (cell.element as HTMLElement).style.getPropertyValue("--trip-cell-bg");
+  const state = tripCellState(cell);
+  if (!state) {
+    return "";
+  }
+  const rule = buildGeneratedCss()
+    .split("\n")
+    .find((line) => line.startsWith(`.${tripCellClass(state)}{`));
+  return /--trip-cell-bg:([^;}]*)/.exec(rule ?? "")?.[1] ?? "";
 }
 
 function isLitCell(cell: { element: Element }) {
@@ -73,16 +88,15 @@ describe("NeonPixelsPage trip-log heatmap", () => {
     );
   });
 
-  // An inline `background` attribute always wins over any external
-  // stylesheet rule regardless of selector specificity, which would make
-  // style.css's forced-colors override on `.trip-cell` unreachable. Every
-  // cell must route its fill through the `--trip-cell-bg` custom property
-  // instead, never a plain inline `background`.
-  it("sets the cell fill through --trip-cell-bg, never an inline background", () => {
+  // The fill reaches the cell through a generated class that sets the
+  // `--trip-cell-bg` custom property, so style.css's forced-colors override on
+  // `.trip-cell` stays reachable and the cell carries no style attribute (the
+  // page's Content-Security-Policy forbids one).
+  it("fills each cell through a generated class, never a style attribute", () => {
     const cells = wrapper.get(HEATMAP_SELECTOR).findAll(CELL_SELECTOR);
     cells.forEach((cell) => {
-      const element = cell.element as HTMLElement;
-      expect(element.style.background).toBe("");
+      expect(cell.attributes("style")).toBeUndefined();
+      expect(tripCellState(cell)).toBeDefined();
       expect(tripCellBackground(cell)).not.toBe("");
     });
   });
