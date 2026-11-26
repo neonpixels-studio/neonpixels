@@ -563,7 +563,10 @@ describe("CSP and config head origin cross-check", () => {
     expect(
       originGranted(SENTRY_INGEST_ORIGIN, "connect-src", cspDirectives),
     ).toBe(true);
-    expect(cspDirectives.get("connect-src")).toContain(SENTRY_INGEST_ORIGIN);
+    const sentrySources = (cspDirectives.get("connect-src") ?? []).filter(
+      (source) => source.includes("sentry"),
+    );
+    expect(sentrySources).toEqual([SENTRY_INGEST_ORIGIN]);
   });
 
   it("keeps the runtime-injection exception anchored to a real call site", () => {

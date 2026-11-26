@@ -13,7 +13,7 @@ const UPLOAD_ENVIRONMENT = {
 
 type ApplyFunction = (
   _config: unknown,
-  _configEnvironment: { isSsrBuild?: boolean },
+  _configEnvironment: { command?: string; isSsrBuild?: boolean },
 ) => boolean;
 
 describe("shouldUploadSourceMaps", () => {
@@ -54,13 +54,14 @@ describe("buildSentryVitePlugins", () => {
     );
   });
 
-  it("applies every plugin to the client build only, never VitePress's SSR build", () => {
+  it("applies every plugin to the client build only, never VitePress's SSR build or the dev server", () => {
     const plugins = buildSentryVitePlugins(UPLOAD_ENVIRONMENT);
     expect(plugins.length).toBeGreaterThan(0);
     for (const plugin of plugins) {
       const apply = plugin.apply as ApplyFunction;
-      expect(apply({}, { isSsrBuild: false })).toBe(true);
-      expect(apply({}, { isSsrBuild: true })).toBe(false);
+      expect(apply({}, { command: "build", isSsrBuild: false })).toBe(true);
+      expect(apply({}, { command: "build", isSsrBuild: true })).toBe(false);
+      expect(apply({}, { command: "serve", isSsrBuild: false })).toBe(false);
     }
   });
 });

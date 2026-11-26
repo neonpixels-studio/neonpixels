@@ -40,7 +40,7 @@ const COLLECTED_DATA_POINTS = [
 const ERROR_REPORT_DATA_POINTS = [
   "The error message and a stack trace showing which of this site's scripts failed.",
   "The page address where it happened, with any query string and fragment removed, and the browser's name and version.",
-  "A short trail of recent activity leading up to the error: clicks, page navigations, and the addresses of network requests the page made.",
+  "A short trail of recent activity leading up to the error: clicks, page navigations, console messages, and the addresses of network requests the page made.",
 ];
 </script>
 

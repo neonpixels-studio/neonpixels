@@ -102,6 +102,11 @@ describe("initErrorReporting configuration", () => {
     expect(clientOptions().beforeSend).toBe(scrubEvent);
   });
 
+  it("sends no client reports for events the filters drop", () => {
+    startReporting();
+    expect(clientOptions().sendClientReports).toBe(false);
+  });
+
   it("collects no user info and no cookies", () => {
     startReporting();
     expect(clientOptions().dataCollection).toEqual({

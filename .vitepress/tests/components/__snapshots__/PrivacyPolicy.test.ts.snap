@@ -24,7 +24,7 @@ exports[`PrivacyPolicy > renders correctly 1`] = `
       <ul data-v-771b5e01="" class="text-fg-muted m-0 mb-2 flex list-none flex-col gap-2 pl-0 text-[15.5px] leading-[1.7]">
         <li data-v-771b5e01="" class="flex gap-3"><span data-v-771b5e01="" class="text-lime">▸</span><span data-v-771b5e01="">The error message and a stack trace showing which of this site's scripts failed.</span></li>
         <li data-v-771b5e01="" class="flex gap-3"><span data-v-771b5e01="" class="text-lime">▸</span><span data-v-771b5e01="">The page address where it happened, with any query string and fragment removed, and the browser's name and version.</span></li>
-        <li data-v-771b5e01="" class="flex gap-3"><span data-v-771b5e01="" class="text-lime">▸</span><span data-v-771b5e01="">A short trail of recent activity leading up to the error: clicks, page navigations, and the addresses of network requests the page made.</span></li>
+        <li data-v-771b5e01="" class="flex gap-3"><span data-v-771b5e01="" class="text-lime">▸</span><span data-v-771b5e01="">A short trail of recent activity leading up to the error: clicks, page navigations, console messages, and the addresses of network requests the page made.</span></li>
       </ul>
       <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8]"> Nothing is sent when no error happens. Error reporting sets no cookies, sends no user information, and records no sessions or screen replays. Emails, tokens and similar values are scrubbed from a report before it leaves your browser. </p>
     </section>

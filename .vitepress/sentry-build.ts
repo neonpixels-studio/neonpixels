@@ -7,7 +7,7 @@ import { sentryVitePlugin } from "@sentry/vite-plugin";
 // nothing is generated or uploaded.
 
 type BuildEnvironment = Record<string, string | undefined>;
-type ConfigEnvironment = { isSsrBuild?: boolean };
+type ConfigEnvironment = { command?: string; isSsrBuild?: boolean };
 
 const UPLOAD_VARIABLES = [
   "SENTRY_AUTH_TOKEN",
@@ -25,9 +25,10 @@ export function shouldUploadSourceMaps(environment: BuildEnvironment) {
 }
 
 // VitePress runs a client and an SSR build through the same plugin list. Only
-// the client bundle reaches browsers, so only its maps are worth uploading.
+// the client bundle reaches browsers, so only its maps are worth uploading, and
+// never in the dev server.
 function isClientBuild(_config: unknown, configEnvironment: ConfigEnvironment) {
-  return !configEnvironment.isSsrBuild;
+  return configEnvironment.command === "build" && !configEnvironment.isSsrBuild;
 }
 
 export function buildSentryVitePlugins(environment: BuildEnvironment) {

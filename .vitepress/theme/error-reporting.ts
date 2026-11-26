@@ -49,6 +49,9 @@ export function initErrorReporting(app: App, options: ErrorReportingOptions) {
     denyUrls: [...DENIED_URLS],
     ignoreErrors: [...IGNORED_ERRORS],
     beforeSend: scrubEvent,
+    // Discarded-event client reports would send a request for an error the
+    // filters dropped, so a visitor with no first-party error sends nothing.
+    sendClientReports: false,
     // v11 defaults collect user info (Sentry infers the visitor's IP from it)
     // and cookies, so both are turned off.
     dataCollection: { userInfo: false, cookies: false },

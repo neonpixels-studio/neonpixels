@@ -14,6 +14,7 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { resolveSentryEnvironment } from "@neon-pixels/sentry";
 
 import config, { buildOrganizationJsonLd } from "../config";
+import { shouldUploadSourceMaps } from "../sentry-build";
 import { PROJECTS } from "@theme/data/projects";
 import type { HeadConfig, SiteConfig } from "vitepress";
 
@@ -606,11 +607,7 @@ describe("Sentry build wiring", () => {
   });
 
   it("generates no source maps unless the upload variables are all set", () => {
-    const uploadConfigured = [
-      "SENTRY_AUTH_TOKEN",
-      "SENTRY_ORG",
-      "SENTRY_PROJECT",
-    ].every((name) => Boolean(process.env[name]));
+    const uploadConfigured = shouldUploadSourceMaps(process.env);
     expect(config.vite?.build?.sourcemap).toBe(
       uploadConfigured ? "hidden" : false,
     );

@@ -277,7 +277,11 @@ test.describe("error reporting", () => {
     const pageErrors = trackPageErrors(page);
     await stubGtag(page);
 
+    // Start only counts once the SDK chunk has loaded, so an empty list proves
+    // a running SDK sent nothing rather than one that never started.
+    const sdkChunk = page.waitForResponse(/error-reporting\.[^/]+\.js$/);
     await page.goto("/");
+    await sdkChunk;
     await page.waitForLoadState("networkidle");
     expect(sentryRequests).toEqual([]);
     expect(cspViolations).toEqual([]);
