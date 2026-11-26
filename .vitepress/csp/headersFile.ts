@@ -6,7 +6,8 @@
 const COMMENT_PREFIX = "#";
 const INDENTED_LINE_PATTERN = /^\s/;
 const HEADER_LINE_PATTERN = /^\s+([\w-]+):[ \t]*(\S.*?)\s*$/;
-const HEADERS_FILE_NAME = "_headers";
+export const HEADERS_FILE_NAME = "_headers";
+export const ALL_PATHS_GLOB = "/*";
 
 export type HeadersFileHeader = { name: string; value: string };
 export type HeadersFileBlock = { path: string; headers: HeadersFileHeader[] };
@@ -35,4 +36,25 @@ export function parseHeadersFile(headersFile: string): HeadersFileBlock[] {
     currentBlock.headers.push({ name: header[1], value: header[2] });
   }
   return blocks;
+}
+
+// The headers of every block written for `/*`; blocks for other paths (cache
+// rules for /assets/*) do not apply to a page response and are skipped. A header
+// set twice for `/*` throws: Netlify would serve both values.
+export function readGlobalHeaders(headersFile: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const seenNames = new Set<string>();
+  const globalHeaders = parseHeadersFile(headersFile)
+    .filter((block) => block.path === ALL_PATHS_GLOB)
+    .flatMap((block) => block.headers);
+  for (const { name, value } of globalHeaders) {
+    if (seenNames.has(name.toLowerCase())) {
+      throw new Error(
+        `${HEADERS_FILE_NAME}: ${name} is set twice for ${ALL_PATHS_GLOB}`,
+      );
+    }
+    seenNames.add(name.toLowerCase());
+    headers[name] = value;
+  }
+  return headers;
 }

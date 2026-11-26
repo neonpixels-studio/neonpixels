@@ -1,18 +1,22 @@
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { writeHeadersFile } from "@neon-pixels/security/netlify";
 
-import { parseHeadersFile, type HeadersFileHeader } from "./headersFile";
+import {
+  ALL_PATHS_GLOB,
+  HEADERS_FILE_NAME,
+  parseHeadersFile,
+  readGlobalHeaders,
+} from "./headersFile";
 import {
   EXTRA_DENIED_FEATURES,
   SITE_DIRECTIVES,
   securityReportEndpoint,
 } from "./sitePolicy";
 
-const HEADERS_FILE_NAME = "_headers";
-const HEADERS_PATH_GLOB = "/*";
 const HEADER_INDENT = "  ";
+const FILE_NOT_FOUND_CODE = "ENOENT";
 // A single header comfortably under the ~8 KB limit CDNs and origins enforce; the
 // build fails loud here rather than letting Netlify truncate or reject at serve.
 const MAX_HEADER_BYTES = 8000;
@@ -40,15 +44,45 @@ export async function writeSiteHeaders(
   { environment, extraHeaderLines }: SiteHeadersOptions,
 ) {
   assertWellFormedHeaderLines(extraHeaderLines);
-  const result = await writeHeadersFile(outDir, {
-    directives: SITE_DIRECTIVES,
-    reportEndpoint: securityReportEndpoint(environment),
-    extraDeniedFeatures: EXTRA_DENIED_FEATURES,
-    append: true,
+  const headersPath = join(outDir, HEADERS_FILE_NAME);
+  const original = await readFileIfPresent(headersPath);
+  try {
+    const result = await writeHeadersFile(outDir, {
+      directives: SITE_DIRECTIVES,
+      reportEndpoint: securityReportEndpoint(environment),
+      extraDeniedFeatures: EXTRA_DENIED_FEATURES,
+      append: true,
+    });
+    await appendToPolicyBlock(outDir, extraHeaderLines);
+    assertHeaderSizes(await readFile(headersPath, "utf8"));
+    return result;
+  } catch (error) {
+    await restoreHeadersFile(headersPath, original);
+    throw error;
+  }
+}
+
+// A failed build must not leave a policy written without the lines that were meant
+// to go with it, or a second run would fail on "already present" instead of on the
+// real cause.
+async function restoreHeadersFile(
+  headersPath: string,
+  original: string | null,
+) {
+  if (original === null) {
+    await rm(headersPath, { force: true });
+    return;
+  }
+  await writeFile(headersPath, original);
+}
+
+async function readFileIfPresent(path: string) {
+  return readFile(path, "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === FILE_NOT_FOUND_CODE) {
+      return null;
+    }
+    throw error;
   });
-  await appendToPolicyBlock(outDir, extraHeaderLines);
-  assertHeaderSizes(await readFile(result.path, "utf8"));
-  return result;
 }
 
 function assertWellFormedHeaderLines(lines: string[]) {
@@ -75,15 +109,11 @@ function assertHeaderSizes(headersFile: string) {
   );
 }
 
-function headerName(line: string) {
-  return line.slice(0, line.indexOf(":")).trim().toLowerCase();
-}
-
 // The package's block is the last one in the file and is written for `/*`, so
 // an indented line appended to the file joins it. This keeps a single `/*`
 // block instead of a second one whose merge behaviour Netlify does not
 // document. Throws if that assumption stops holding, or if a line would set a
-// header the block already sets (two values would both apply).
+// header `/*` already sets (two values would both apply).
 export async function appendToPolicyBlock(outDir: string, lines: string[]) {
   if (lines.length === 0) {
     return;
@@ -91,33 +121,13 @@ export async function appendToPolicyBlock(outDir: string, lines: string[]) {
   const headersPath = join(outDir, HEADERS_FILE_NAME);
   const existing = await readFile(headersPath, "utf8");
   const lastBlock = parseHeadersFile(existing).at(-1);
-  if (lastBlock?.path !== HEADERS_PATH_GLOB) {
+  if (lastBlock?.path !== ALL_PATHS_GLOB) {
     throw new Error(
-      `${HEADERS_FILE_NAME}: expected the last block to be "${HEADERS_PATH_GLOB}" before adding ${lines.join(", ")}, found ${JSON.stringify(lastBlock?.path)}`,
+      `${HEADERS_FILE_NAME}: expected the last block to be "${ALL_PATHS_GLOB}" before adding ${lines.join(", ")}, found ${JSON.stringify(lastBlock?.path)}`,
     );
   }
-  assertNoDuplicateNames(lastBlock.headers, lines);
   const separator = existing.endsWith("\n") ? "" : "\n";
-  await appendFile(
-    headersPath,
-    `${separator}${lines.map((line) => `${HEADER_INDENT}${line}\n`).join("")}`,
-  );
-}
-
-function assertNoDuplicateNames(
-  blockHeaders: HeadersFileHeader[],
-  newLines: string[],
-) {
-  const names = blockHeaders.map((header) => header.name.toLowerCase());
-  const duplicates = newLines
-    .map(headerName)
-    .filter(
-      (name, index, all) => names.includes(name) || all.indexOf(name) !== index,
-    );
-  if (duplicates.length === 0) {
-    return;
-  }
-  throw new Error(
-    `${HEADERS_FILE_NAME}: the "${HEADERS_PATH_GLOB}" block would set ${[...new Set(duplicates)].join(", ")} twice`,
-  );
+  const addition = lines.map((line) => `${HEADER_INDENT}${line}\n`).join("");
+  readGlobalHeaders(`${existing}${separator}${addition}`);
+  await appendFile(headersPath, `${separator}${addition}`);
 }

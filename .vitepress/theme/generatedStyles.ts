@@ -126,34 +126,35 @@ function assertSafeProjectId(projectId: string) {
 function projectRules(project: Project): StyleRules {
   assertSafeProjectId(project.id);
   const { color, section } = project;
-  const rule = (part: ProjectStylePart) => projectStyleClass(project.id, part);
+  const classFor = (part: ProjectStylePart) =>
+    projectStyleClass(project.id, part);
   return {
-    [rule("section")]: { background: section.background },
-    [rule("top-line")]: { background: section.topLine },
-    [rule("aurora")]: {
+    [classFor("section")]: { background: section.background },
+    [classFor("top-line")]: { background: section.topLine },
+    [classFor("aurora")]: {
       "--np-aurora-dur": section.aurora.duration,
       background: auroraGlow(color, section.aurora.alpha),
     },
-    [rule("pill")]: {
+    [classFor("pill")]: {
       color,
       "border-color": project.pillBorder,
       background: project.pillBg,
       "--pill-bg-hover": project.pillBgHover,
       "--accent": color,
     },
-    [rule("pill-dot")]: {
+    [classFor("pill-dot")]: {
       background: color,
       "box-shadow": `0 0 7px ${color}`,
     },
-    [rule("accent")]: { "--accent": color },
+    [classFor("accent")]: { "--accent": color },
     // Every CTA exposes --accent so the global :focus-visible ring tracks the
     // project color; the filled variant layers its glow shadow on top.
-    [rule("cta-fill")]: {
+    [classFor("cta-fill")]: {
       "--accent": color,
       "box-shadow": `0 0 26px ${hexToRgba(color, CTA_FILL_SHADOW_ALPHA)}`,
       "--accent-glow": hexToRgba(color, CTA_FILL_HOVER_ALPHA),
     },
-    [rule("heading-glow")]: {
+    [classFor("heading-glow")]: {
       "text-shadow": `0 0 18px ${hexToRgba(color, HEADING_GLOW_ALPHA)}`,
     },
   };

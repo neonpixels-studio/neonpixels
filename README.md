@@ -245,6 +245,9 @@ hashes come from the real build output, so they cannot drift.
   `sentry_environment=production` on a production build and `preview` on a deploy
   preview or branch deploy. The URL holds the public DSN key; no environment variable
   or secret is involved.
+- **Deploy previews:** Netlify can inject its own preview script into preview pages, which
+  no hash covers; a violation report tagged `sentry_environment=preview` for that script is
+  not a regression in the site.
 - **E2E:** `npm run e2e` serves the built `dist` with the headers from the generated
   `_headers` file, so the browser enforces exactly what production serves, and the smoke
   spec fails on any Content-Security-Policy violation.

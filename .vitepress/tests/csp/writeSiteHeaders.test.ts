@@ -157,13 +157,63 @@ describe("writeSiteHeaders extra header lines", () => {
   it("refuses a line that repeats a header the policy block already sets", async () => {
     await expect(
       build({ extraHeaderLines: ["x-frame-options: SAMEORIGIN"] }),
-    ).rejects.toThrow(/x-frame-options twice/);
+    ).rejects.toThrow(/x-frame-options is set twice for \/\*/i);
+  });
+
+  it("restores the _headers file when the extra lines fail", async () => {
+    await writeFile(
+      join(outDir, "index.html"),
+      PAGE_WITH_INLINE_SCRIPT_AND_STYLE,
+    );
+    await writeFile(join(outDir, "_headers"), HAND_WRITTEN_HEADERS);
+    await writeSiteHeaders(outDir, {
+      environment: "production",
+      extraHeaderLines: ["x-frame-options: SAMEORIGIN"],
+    }).catch(() => undefined);
+    expect(await readFile(join(outDir, "_headers"), "utf8")).toBe(
+      HAND_WRITTEN_HEADERS,
+    );
+  });
+
+  it("refuses an extra line that repeats a header set in an earlier /* block", async () => {
+    await writeFile(
+      join(outDir, "index.html"),
+      PAGE_WITH_INLINE_SCRIPT_AND_STYLE,
+    );
+    await writeFile(join(outDir, "_headers"), "/*\n  X-Hand-Written: 1\n");
+    await expect(
+      writeSiteHeaders(outDir, {
+        environment: "production",
+        extraHeaderLines: ["X-Hand-Written: 2"],
+      }),
+    ).rejects.toThrow(/X-Hand-Written is set twice/);
+  });
+
+  it("fails when a header line outgrows the size limit and leaves the file as it was", async () => {
+    const manyScripts = Array.from(
+      { length: 250 },
+      (_value, index) => `<script>window.script${index} = ${index};</script>`,
+    ).join("");
+    await writeFile(
+      join(outDir, "index.html"),
+      `<html><body>${manyScripts}</body></html>`,
+    );
+    await writeFile(join(outDir, "_headers"), HAND_WRITTEN_HEADERS);
+    await expect(
+      writeSiteHeaders(outDir, {
+        environment: "production",
+        extraHeaderLines: [],
+      }),
+    ).rejects.toThrow(/exceed 8000 bytes/);
+    expect(await readFile(join(outDir, "_headers"), "utf8")).toBe(
+      HAND_WRITTEN_HEADERS,
+    );
   });
 
   it("refuses the same extra header twice", async () => {
     await expect(
       build({ extraHeaderLines: ["X-A: 1", "X-A: 2"] }),
-    ).rejects.toThrow(/x-a twice/);
+    ).rejects.toThrow(/X-A is set twice for \/\*/);
   });
 });
 

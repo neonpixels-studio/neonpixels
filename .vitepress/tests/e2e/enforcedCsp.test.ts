@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  loadEnforcedCsp,
   loadGeneratedHeaders,
   localizeReporting,
   LOCAL_REPORT_PATH,
@@ -80,7 +79,17 @@ describe("localizeReporting", () => {
     );
   });
 
-  it("leaves every other header alone and never mutates its input", () => {
+  it("rewrites every report-uri address, not just the first", () => {
+    const localized = localizeReporting({
+      "Content-Security-Policy":
+        "default-src 'self'; report-uri https://a.test/x https://b.test/y; report-to g",
+    });
+    expect(localized["Content-Security-Policy"]).toBe(
+      `default-src 'self'; report-uri ${LOCAL_REPORT_PATH}; report-to g`,
+    );
+  });
+
+  it("leaves every other header alone and never mutating its input", () => {
     const localized = localizeReporting(generated);
     expect(localized["X-Frame-Options"]).toBe("DENY");
     expect(generated["Reporting-Endpoints"]).toContain("sentry.io");
@@ -120,10 +129,9 @@ describe("generated headers on disk", () => {
     const distDir = mkdtempSync(join(tmpdir(), "np-enforced-csp-"));
     try {
       writeFileSync(join(distDir, "_headers"), await generateFixtureHeaders());
-      expect(loadEnforcedCsp(distDir)).toContain("default-src 'self'");
-      expect(loadEnforcedCsp(distDir)).toContain(
-        "https://www.googletagmanager.com",
-      );
+      const policy = loadGeneratedHeaders(distDir)["Content-Security-Policy"];
+      expect(policy).toContain("default-src 'self'");
+      expect(policy).toContain("https://www.googletagmanager.com");
       expect(loadGeneratedHeaders(distDir)["X-Frame-Options"]).toBe("DENY");
     } finally {
       rmSync(distDir, { recursive: true, force: true });
