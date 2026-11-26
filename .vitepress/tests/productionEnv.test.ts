@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -13,7 +14,6 @@ const BUILD_PRODUCTION_SCRIPT =
 const ASSIGNMENT_PATTERN =
   /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.]*)\s*=(.*)$/;
 const SURROUNDING_QUOTES_PATTERN = /^["']|["']$/g;
-const GITIGNORE_PATH = resolve(process.cwd(), ".gitignore");
 const ENV_KEYS_FILE = ".env.keys";
 
 type Assignment = { name: string; value: string };
@@ -74,10 +74,10 @@ describe(".env.production and .env.example", () => {
 
 describe(".env.keys", () => {
   it("is git-ignored so the private key is never committed", () => {
-    const ignored = readFileSync(GITIGNORE_PATH, "utf8")
-      .split("\n")
-      .map((line) => line.trim());
-    expect(ignored).toContain(ENV_KEYS_FILE);
+    // Throws (non-zero exit) when git would not ignore the file.
+    expect(() =>
+      execFileSync("git", ["check-ignore", "-q", ENV_KEYS_FILE]),
+    ).not.toThrow();
   });
 });
 

@@ -957,15 +957,17 @@ describe("Netlify production build decrypts .env.production", () => {
     expect(productionCommand.match(BUILD_SCRIPT_PATTERN) ?? []).toHaveLength(0);
   });
 
-  it("runs the smoke suite after the build with the reuse flag bound to it", () => {
-    const buildIndex = productionCommand.indexOf("npm run build:production");
-    const reuseThenSuite = new RegExp(
-      `${escapeForRegExp(reuseAssignment)}\\s+${escapeForRegExp(TEST_SCRIPT_INVOCATION)}`,
+  it("builds exactly once", () => {
+    const productionBuilds =
+      productionCommand.match(/npm run build:production(?![\w:-])/g) ?? [];
+    expect(productionBuilds).toHaveLength(1);
+  });
+
+  it("gates the smoke suite on the build with && and binds the reuse flag to it", () => {
+    const buildThenSuite = new RegExp(
+      `npm run build:production\\s*&&\\s*${escapeForRegExp(reuseAssignment)}\\s+${escapeForRegExp(TEST_SCRIPT_INVOCATION)}`,
     );
-    expect(buildIndex).toBeGreaterThanOrEqual(0);
-    expect(productionCommand.search(reuseThenSuite)).toBeGreaterThan(
-      buildIndex,
-    );
+    expect(productionCommand).toMatch(buildThenSuite);
   });
 
   it("keeps build:production out of every table except production", () => {

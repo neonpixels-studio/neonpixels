@@ -85,7 +85,8 @@ values. Deploy Previews, branch deploys, CI, the dependency audit and Lighthouse
 use the plain `npm run build` and never need the key.
 
 - **Add or change a value:** run `npx dotenvx set KEY value -f .env.production`
-  with the private key available locally, commit the re-encrypted file, and add
+  with the private key available locally (keep the value out of shell history,
+  for example `"$(pbpaste)"` as the value, then clear the clipboard), commit the re-encrypted file, and add
   the name and its source to `.env.example` (a test fails if the two files
   disagree on variable names or if any value is stored unencrypted).
 - **Where the private key lives:** in the maintainer's password manager, in a
