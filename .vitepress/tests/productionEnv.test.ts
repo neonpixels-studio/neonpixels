@@ -10,27 +10,30 @@ const ENCRYPTED_PREFIX = "encrypted:";
 const BUILD_PRODUCTION_SCRIPT =
   "dotenvx run --strict -f .env.production -- npm run build";
 
-// Matches `NAME=value` lines, commented or not, so a documented-but-commented
-// example variable still counts as declared.
-const ASSIGNMENT_PATTERN = /^\s*#?\s*([A-Z][A-Z0-9_]*)=(.*)$/;
+const ASSIGNMENT_PATTERN =
+  /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.]*)\s*=(.*)$/;
+const SURROUNDING_QUOTES_PATTERN = /^["']|["']$/g;
+const GITIGNORE_PATH = resolve(process.cwd(), ".gitignore");
+const ENV_KEYS_FILE = ".env.keys";
 
 type Assignment = { name: string; value: string };
 
 // Reads names and raw values only; nothing is decrypted.
-function readAssignments(path: string, includeComments: boolean) {
-  const assignments: Assignment[] = [];
-  for (const line of readFileSync(path, "utf8").split("\n")) {
-    const isComment = line.trimStart().startsWith("#");
-    const match = line.match(ASSIGNMENT_PATTERN);
-    if (match && (includeComments || !isComment)) {
-      assignments.push({ name: match[1], value: match[2].trim() });
-    }
-  }
-  return assignments;
+function readAssignments(path: string): Assignment[] {
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .map((line) => line.match(ASSIGNMENT_PATTERN))
+    .filter((match): match is RegExpMatchArray => match !== null)
+    .map((match) => ({ name: match[1], value: match[2].trim() }));
 }
 
-const productionAssignments = readAssignments(ENV_PRODUCTION_PATH, false);
-const exampleAssignments = readAssignments(ENV_EXAMPLE_PATH, false);
+function isEncrypted(assignment: Assignment) {
+  const unquoted = assignment.value.replace(SURROUNDING_QUOTES_PATTERN, "");
+  return unquoted.startsWith(ENCRYPTED_PREFIX);
+}
+
+const productionAssignments = readAssignments(ENV_PRODUCTION_PATH);
+const exampleAssignments = readAssignments(ENV_EXAMPLE_PATH);
 
 function dataNames(assignments: Assignment[]) {
   return assignments
@@ -57,15 +60,24 @@ describe(".env.production and .env.example", () => {
   it("encrypt every .env.production value except the dotenvx public key", () => {
     const plaintext = productionAssignments
       .filter((assignment) => assignment.name !== PUBLIC_KEY_NAME)
-      .filter((assignment) => !assignment.value.includes(ENCRYPTED_PREFIX))
+      .filter((assignment) => !isEncrypted(assignment))
       .map((assignment) => assignment.name);
     expect(plaintext).toEqual([]);
   });
 
   it("declares the dotenvx public key", () => {
-    expect(productionAssignments.map((entry) => entry.name)).toContain(
-      PUBLIC_KEY_NAME,
-    );
+    expect(
+      productionAssignments.map((assignment) => assignment.name),
+    ).toContain(PUBLIC_KEY_NAME);
+  });
+});
+
+describe(".env.keys", () => {
+  it("is git-ignored so the private key is never committed", () => {
+    const ignored = readFileSync(GITIGNORE_PATH, "utf8")
+      .split("\n")
+      .map((line) => line.trim());
+    expect(ignored).toContain(ENV_KEYS_FILE);
   });
 });
 

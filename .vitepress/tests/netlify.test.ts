@@ -948,6 +948,7 @@ describe("Netlify build compiles the site once", () => {
 });
 
 describe("Netlify production build decrypts .env.production", () => {
+  const reuseAssignment = `${SMOKE_BUILD_REUSE_DIR_ENV}=${readBuildTableValue("publish")}`;
   const productionCommand =
     PRODUCTION_TABLE.match(/^\s*command\s*=\s*"([^"]*)"/m)?.[1] ?? "";
 
@@ -956,18 +957,20 @@ describe("Netlify production build decrypts .env.production", () => {
     expect(productionCommand.match(BUILD_SCRIPT_PATTERN) ?? []).toHaveLength(0);
   });
 
-  it("still runs the test suite after the production build with the reuse flag", () => {
+  it("runs the smoke suite after the build with the reuse flag bound to it", () => {
     const buildIndex = productionCommand.indexOf("npm run build:production");
-    const suiteIndex = productionCommand.indexOf(TEST_SCRIPT_INVOCATION);
-    const reuseIndex = productionCommand.indexOf(SMOKE_BUILD_REUSE_DIR_ENV);
-    expect(suiteIndex).toBeGreaterThan(buildIndex);
-    expect(reuseIndex).toBeGreaterThan(buildIndex);
+    const reuseThenSuite = new RegExp(
+      `${escapeForRegExp(reuseAssignment)}\\s+${escapeForRegExp(TEST_SCRIPT_INVOCATION)}`,
+    );
+    expect(buildIndex).toBeGreaterThanOrEqual(0);
+    expect(productionCommand.search(reuseThenSuite)).toBeGreaterThan(
+      buildIndex,
+    );
   });
 
-  it("keeps deploy previews and branch deploys on the plain build", () => {
-    expect(BUILD_TABLE).not.toContain("build:production");
-    expect(NETLIFY_CONFIG).not.toMatch(
-      /\[context\.(deploy-preview|branch-deploy)/,
+  it("keeps build:production out of every table except production", () => {
+    expect(NETLIFY_CONFIG.replace(PRODUCTION_TABLE, "")).not.toContain(
+      "build:production",
     );
   });
 });
