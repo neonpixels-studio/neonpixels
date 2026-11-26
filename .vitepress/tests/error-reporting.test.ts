@@ -236,4 +236,26 @@ describe("initErrorReporting event capture", () => {
     expect(sent).not.toContain("utm_source=secret");
     expect(sent).not.toContain("section-token");
   });
+
+  it("strips query strings from request breadcrumbs, including a GA client id", async () => {
+    startReporting();
+    addBreadcrumb({
+      category: "fetch",
+      type: "http",
+      data: {
+        url: "https://region1.google-analytics.com/g/collect?cid=123.456&dl=https%3A%2F%2Fneonpixels.dev%2F%3Futm%3Dx",
+        method: "POST",
+      },
+    });
+
+    window.dispatchEvent(
+      rejectionOf(errorFrom(`${ORIGIN}/assets/app.js`, "with fetch crumb")),
+    );
+
+    await vi.waitFor(() => expect(sentEnvelopes).toHaveLength(1));
+    const sent = JSON.stringify(sentEnvelopes);
+    expect(sent).toContain("with fetch crumb");
+    expect(sent).not.toContain("cid=123.456");
+    expect(sent).not.toContain("utm%3Dx");
+  });
 });

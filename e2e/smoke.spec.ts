@@ -259,8 +259,8 @@ test.describe("error reporting", () => {
     );
 
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
-    // The SDK starts when the page is idle, so keep throwing until it is up.
+    // The SDK starts once the page is idle, so wait for it before throwing.
+    await page.waitForFunction(() => "__SENTRY__" in window);
     await expect
       .poll(async () => {
         await page.evaluate((path) => {

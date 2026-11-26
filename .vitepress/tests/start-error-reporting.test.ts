@@ -26,6 +26,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -77,7 +78,6 @@ describe("startErrorReporting", () => {
 
     await vi.runAllTimersAsync();
     await flushDynamicImport();
-    vi.useRealTimers();
     expect(initErrorReporting).toHaveBeenCalledOnce();
   });
 

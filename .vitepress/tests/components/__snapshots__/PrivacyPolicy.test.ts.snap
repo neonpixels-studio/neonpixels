@@ -26,7 +26,7 @@ exports[`PrivacyPolicy > renders correctly 1`] = `
         <li data-v-771b5e01="" class="flex gap-3"><span data-v-771b5e01="" class="text-lime">▸</span><span data-v-771b5e01="">The page address where it happened, with any query string and fragment removed, and the browser's name and version.</span></li>
         <li data-v-771b5e01="" class="flex gap-3"><span data-v-771b5e01="" class="text-lime">▸</span><span data-v-771b5e01="">A short trail of recent activity leading up to the error: clicks, page navigations, console messages, and the addresses of network requests the page made.</span></li>
       </ul>
-      <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8]"> Nothing is sent when no error happens. Error reporting sets no cookies, sends no user information, and records no sessions or screen replays. Emails, tokens and similar values are scrubbed from a report before it leaves your browser. </p>
+      <p data-v-771b5e01="" class="text-fg-muted m-0 text-[15.5px] leading-[1.8]"> Nothing is sent when no error happens. Error reporting sets no cookies, sends no user information, and records no sessions or screen replays. Like any request, a report reaches Sentry's servers with your IP address, but we don't ask Sentry to record it. Emails, tokens and similar values are scrubbed from a report before it leaves your browser. </p>
     </section>
     <section data-v-771b5e01="" class="mb-10">
       <h2 data-v-771b5e01="" class="font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]">Why</h2>

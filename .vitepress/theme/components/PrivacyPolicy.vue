@@ -137,8 +137,10 @@ const ERROR_REPORT_DATA_POINTS = [
         <p :class="BODY_TEXT_CLASS">
           Nothing is sent when no error happens. Error reporting sets no
           cookies, sends no user information, and records no sessions or screen
-          replays. Emails, tokens and similar values are scrubbed from a report
-          before it leaves your browser.
+          replays. Like any request, a report reaches Sentry's servers with your
+          IP address, but we don't ask Sentry to record it. Emails, tokens and
+          similar values are scrubbed from a report before it leaves your
+          browser.
         </p>
       </section>
 
