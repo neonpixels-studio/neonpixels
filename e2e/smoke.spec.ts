@@ -13,6 +13,8 @@ const DOCUMENT_404_CONSOLE_ERROR =
 const GTAG_STUB = "window.__gtagStubLoaded = true;";
 
 const SENTRY_INGEST_PATTERN = `${sentryOriginFromDsn(SENTRY_DSN)}/**`;
+// How long a started SDK gets to send something it should not.
+const SENTRY_SETTLE_MS = 1000;
 const SENTRY_THROW_SCRIPT_PATH = "/e2e-sentry-throw.js";
 const SENTRY_THROW_SCRIPT = "Promise.reject(new Error('e2e sentry check'));";
 
@@ -277,12 +279,17 @@ test.describe("error reporting", () => {
     const pageErrors = trackPageErrors(page);
     await stubGtag(page);
 
-    // Start only counts once the SDK chunk has loaded, so an empty list proves
-    // a running SDK sent nothing rather than one that never started.
-    const sdkChunk = page.waitForResponse(/error-reporting\.[^/]+\.js$/);
     await page.goto("/");
-    await sdkChunk;
-    await page.waitForLoadState("networkidle");
+    // The SDK registers its global once initialized, so an empty list below
+    // proves a running SDK sent nothing rather than one that never started.
+    await page.waitForFunction(() => "__SENTRY__" in window);
+    await page.waitForTimeout(SENTRY_SETTLE_MS);
+    // The SDK flushes sessions and client reports when the page is hidden.
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "hidden" });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await page.waitForTimeout(SENTRY_SETTLE_MS);
     expect(sentryRequests).toEqual([]);
     expect(cspViolations).toEqual([]);
     expect(pageErrors).toEqual([]);

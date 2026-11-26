@@ -198,6 +198,9 @@ export default defineConfig({
     define: {
       "import.meta.env.VITE_SENTRY_ENVIRONMENT":
         JSON.stringify(SENTRY_ENVIRONMENT),
+      // Strips the SDK's debug-only logging (it warns that the app is already
+      // mounted, which is always true here) and shrinks the chunk.
+      __SENTRY_DEBUG__: "false",
     },
     build: {
       sourcemap: UPLOAD_SOURCE_MAPS ? UPLOADED_SOURCE_MAP_MODE : false,

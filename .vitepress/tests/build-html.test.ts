@@ -1,7 +1,15 @@
 // @vitest-environment node
 // The build runs a real server-side render; happy-dom's stubbed network layer
 // otherwise logs ECONNREFUSED noise during it, so this file uses Node.
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+  vi,
+} from "vitest";
 import {
   existsSync,
   mkdtempSync,
@@ -101,6 +109,12 @@ const ABSOLUTE_URL_META: ReadonlyArray<readonly [string, string]> = [
   [OG_ATTRIBUTE, "og:url"],
   [OG_ATTRIBUTE, "og:image"],
   [TWITTER_ATTRIBUTE, "twitter:image"],
+];
+
+const SENTRY_UPLOAD_VARIABLES = [
+  "SENTRY_AUTH_TOKEN",
+  "SENTRY_ORG",
+  "SENTRY_PROJECT",
 ];
 
 let buildOutDir = "";
@@ -243,7 +257,16 @@ function resolveBuildDir() {
 // separate from resolveBuildDir so the external build tool sits behind its own
 // seam and ownership is recorded before this await runs.
 async function buildInto(outDir: string) {
-  await build(PROJECT_ROOT, { outDir });
+  // A throwaway test build must never upload source maps to the real Sentry
+  // project, even when the upload variables are exported in this shell.
+  for (const name of SENTRY_UPLOAD_VARIABLES) {
+    vi.stubEnv(name, "");
+  }
+  try {
+    await build(PROJECT_ROOT, { outDir });
+  } finally {
+    vi.unstubAllEnvs();
+  }
   await waitForBuildToSettle(outDir);
 }
 

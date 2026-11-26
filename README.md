@@ -182,8 +182,9 @@ configured by the shared filter lists and scrubber from `@neon-pixels/sentry`
 - **When it runs:** only in the browser and only in a production build (`vitepress dev`
   and the static render never load it). The SDK is a separate chunk, fetched with a
   dynamic import once the page has loaded and the browser is idle, so it is not in the
-  entry bundle. A failure to load or start it is logged to the console and never breaks
-  the page.
+  entry bundle. Errors thrown before it starts (during hydration or before the browser goes
+  idle) are not reported. A failure to load or start it is logged to the console and never
+  breaks the page.
 - **What it sends:** errors only (component errors and unhandled promise rejections).
   No tracing, no Session Replay, no session tracking, no user info, no cookies, so it
   does not depend on analytics consent. Events pass through `scrubEvent` before they
