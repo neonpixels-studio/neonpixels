@@ -1,7 +1,15 @@
 // @vitest-environment node
 // The build runs a real server-side render; happy-dom's stubbed network layer
 // otherwise logs ECONNREFUSED noise during it, so this file uses Node.
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+  vi,
+} from "vitest";
 import {
   existsSync,
   mkdtempSync,
@@ -21,6 +29,8 @@ import { build } from "vitepress";
 import config from "../config";
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
 import { runAxeOnHtml } from "./utils/axe";
+import { scanBuildOutputForSourceMaps } from "../scan-source-maps";
+import { UPLOAD_VARIABLES } from "../sentry-build";
 
 // Asserts the tags survive `vitepress build` into the emitted HTML, not just the
 // config.head array. config.test.ts already covers the config object; this closes
@@ -242,7 +252,16 @@ function resolveBuildDir() {
 // separate from resolveBuildDir so the external build tool sits behind its own
 // seam and ownership is recorded before this await runs.
 async function buildInto(outDir: string) {
-  await build(PROJECT_ROOT, { outDir });
+  // A throwaway test build must never upload source maps to the real Sentry
+  // project, even when the upload variables are exported in this shell.
+  for (const name of UPLOAD_VARIABLES) {
+    vi.stubEnv(name, "");
+  }
+  try {
+    await build(PROJECT_ROOT, { outDir });
+  } finally {
+    vi.unstubAllEnvs();
+  }
   await waitForBuildToSettle(outDir);
 }
 
@@ -403,6 +422,12 @@ beforeAll(async () => {
 
 afterAll(() => {
   finalizeBuildDir(buildOutDir, ownsBuildDir);
+});
+
+describe("built output source maps", () => {
+  it("leaves no .map file or sourceMappingURL comment in the published output", () => {
+    expect(scanBuildOutputForSourceMaps(buildOutDir)).toEqual([]);
+  });
 });
 
 describe("built index.html head", () => {

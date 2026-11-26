@@ -1,13 +1,28 @@
 import { defineConfig, type Plugin } from "vitepress";
 import tailwindcss from "@tailwindcss/vite";
+import { resolveSentryEnvironment } from "@neon-pixels/sentry";
 
 import { writeReportOnlyHeaders } from "./csp/writeReportOnlyHeaders";
 import { writeFontPreloadLink } from "./fonts/writeFontPreloadLink";
 import { getNoindexHeaderLines } from "./robots/getNoindexHeaderLines";
 import { buildNotFoundHead, buildPageSeoHead } from "./seo/buildPageSeoHead";
+import { assertBuildOutputHasNoSourceMaps } from "./scan-source-maps";
+import {
+  UPLOAD_SKIPPED_MESSAGE,
+  buildSentryVitePlugins,
+  shouldUploadSourceMaps,
+  sourceMapModeFor,
+} from "./sentry-build";
 import { PROJECTS, type Project } from "./theme/data/projects";
 
 const SITE_URL = "https://neonpixels.dev";
+// Netlify's CONTEXT exists only at build time, so the Sentry environment is
+// resolved here and baked into the bundle (see vite.define below).
+const SENTRY_ENVIRONMENT = resolveSentryEnvironment({
+  netlifyContext: process.env.CONTEXT,
+});
+const UPLOAD_SOURCE_MAPS = shouldUploadSourceMaps(process.env);
+
 const DESCRIPTION =
   "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, FarFlung, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
 const OG_IMAGE = `${SITE_URL}/images/social-card.png`;
@@ -174,7 +189,20 @@ export default defineConfig({
     // in package.json to pull in a patched vite/esbuild). The Plugin shapes are
     // compatible at runtime but nominally distinct across the major gap, so
     // cast to VitePress's re-exported (Vite 6) Plugin type at the seam.
-    plugins: [tailwindcss() as unknown as Plugin[]],
+    plugins: [
+      tailwindcss() as unknown as Plugin[],
+      ...(buildSentryVitePlugins(process.env) as unknown as Plugin[]),
+    ],
+    define: {
+      "import.meta.env.VITE_SENTRY_ENVIRONMENT":
+        JSON.stringify(SENTRY_ENVIRONMENT),
+      // Strips the SDK's debug-only logging (it warns that the app is already
+      // mounted, which is always true here) and shrinks the chunk.
+      __SENTRY_DEBUG__: "false",
+    },
+    build: {
+      sourcemap: sourceMapModeFor(process.env),
+    },
   },
   // Preloads the self-hosted Archivo 900 face (the hero/404 wordmark, plus every
   // other .font-display heading) so it doesn't visibly swap in after CSS parse.
@@ -194,6 +222,9 @@ export default defineConfig({
   // since Netlify headers can't be scoped by context in netlify.toml itself;
   // the noindex line rides in the same `/*` block this hook already writes.
   async buildEnd(siteConfig) {
+    if (!UPLOAD_SOURCE_MAPS) {
+      console.log(UPLOAD_SKIPPED_MESSAGE);
+    }
     await writeFontPreloadLink(
       siteConfig.outDir,
       siteConfig.site.base,
@@ -207,5 +238,7 @@ export default defineConfig({
       undefined,
       getNoindexHeaderLines(),
     );
+    // The upload plugin deletes uploaded maps; fail if any survive (see scan-source-maps.ts).
+    assertBuildOutputHasNoSourceMaps(siteConfig.outDir);
   },
 });

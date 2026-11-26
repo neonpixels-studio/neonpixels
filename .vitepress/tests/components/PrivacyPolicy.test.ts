@@ -79,6 +79,27 @@ describe("PrivacyPolicy", () => {
     wrapper.unmount();
   });
 
+  it("discloses Sentry error reporting and what a report contains", () => {
+    const wrapper = shallowMount(PrivacyPolicy);
+    const text = wrapper.text();
+    expect(text).toContain("Error reporting");
+    expect(text).toContain("Sentry");
+    expect(text).toContain("stack trace");
+    expect(text).toContain("sets no cookies");
+    wrapper.unmount();
+  });
+
+  it("links out to Sentry's privacy policy safely in a new tab", () => {
+    const wrapper = shallowMount(PrivacyPolicy);
+    const sentryLink = wrapper.find('a[href="https://sentry.io/privacy/"]');
+    expect(sentryLink.exists()).toBe(true);
+    expect(sentryLink.attributes("target")).toBe("_blank");
+    const relTokens = (sentryLink.attributes("rel") ?? "").split(/\s+/);
+    expect(relTokens).toContain("noopener");
+    expect(relTokens).toContain("noreferrer");
+    wrapper.unmount();
+  });
+
   it("links back to the homepage", () => {
     const wrapper = shallowMount(PrivacyPolicy);
     const homeLinks = wrapper.findAll('a[href="/"]');

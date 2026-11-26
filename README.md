@@ -51,8 +51,9 @@ accessibility ruleset.
 `npm run e2e` runs a [Playwright](https://playwright.dev) smoke test in real Chromium against
 the built site (run `npm run build` first; first-time setup is
 `npx playwright install chromium`). It serves `.vitepress/dist` with the enforcing
-CSP read from `netlify.toml`, and covers the consent banner and contact form hydration.
-Google Tag and the Netlify Forms POST are intercepted, so nothing leaves the machine.
+CSP read from `netlify.toml`, and covers the consent banner, contact form hydration, and
+error reporting. Google Tag, Sentry and the Netlify Forms POST are intercepted, so nothing
+leaves the machine.
 The server listens on port 4321; set `E2E_PORT` to change it.
 
 ## Tooling config
@@ -171,6 +172,46 @@ diagnosable). **No new environment variables or build config are required** — 
 auto-detects the form from the deployed HTML. To receive submissions by email, enable
 notifications once per site: Netlify dashboard → Site configuration → Forms →
 Form notifications.
+
+### Error reporting (Sentry)
+
+Browser errors are reported to [Sentry](https://sentry.io) with `@sentry/vue`,
+configured by the shared filter lists and scrubber from `@neon-pixels/sentry`
+([`.vitepress/theme/error-reporting.ts`](.vitepress/theme/error-reporting.ts)).
+
+- **When it runs:** only in the browser and only in a production build (`vitepress dev`
+  and the static render never load it). The SDK is a separate chunk, fetched with a
+  dynamic import once the page has loaded and the browser is idle, so it is not in the
+  entry bundle. Errors thrown before it starts (during hydration or before the browser goes
+  idle) are not reported. A failure to load or start it is logged to the console and never
+  breaks the page.
+- **What it sends:** errors only (component errors and unhandled promise rejections).
+  No tracing, no Session Replay, no session tracking, no user info, no cookies, so it
+  does not depend on analytics consent. Events pass through `scrubEvent` before they
+  leave the browser, and only errors from scripts on the site's own origin are kept.
+  [`PrivacyPolicy.vue`](.vitepress/theme/components/PrivacyPolicy.vue) tells visitors
+  what is sent.
+- **Environment:** `resolveSentryEnvironment` maps Netlify's `CONTEXT` at build time, so
+  deploy previews report as `preview` and only the production deploy reports as
+  `production`. A bare local build reports as `development`.
+- **DSN:** a public value, committed as `SENTRY_DSN` in
+  [`.vitepress/sentry-dsn.ts`](.vitepress/sentry-dsn.ts). Its ingest origin is the only
+  Sentry host allowed in `connect-src` in `netlify.toml`; `netlify.test.ts` fails if the
+  two drift apart.
+- **E2E:** every Playwright test intercepts requests to the ingest origin, so the suite
+  never sends anything to Sentry.
+
+#### Source maps (optional)
+
+When `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and `SENTRY_PROJECT` are **all** set in the build
+environment, the build generates hidden source maps, uploads them with
+`@sentry/vite-plugin`, and deletes them. When any is missing, the build uploads nothing
+and logs `Sentry source map upload skipped`. Either way the build fails if a `.map` file
+or a `sourceMappingURL` comment is left in `.vitepress/dist`
+([`scan-source-maps.ts`](.vitepress/scan-source-maps.ts)). Supply the three variables
+through the encrypted `.env.production` (see
+[Production build secrets](#production-build-secrets-dotenvx)) or the Netlify
+environment; never put a value in a committed plaintext file.
 
 ### CSP violation collector
 

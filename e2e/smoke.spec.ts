@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { loadEnforcedCsp } from "./support/enforcedCsp.ts";
 import { trackCspViolations } from "./support/cspViolations.ts";
 import { trackPageErrors } from "./support/pageErrors.ts";
+import { SENTRY_INGEST_ORIGIN } from "../.vitepress/sentry-dsn.ts";
 
 const GTAG_URL_PATTERN = "https://www.googletagmanager.com/gtag/js**";
 const CONSENT_STORAGE_KEY = "neonpixels:analytics-consent";
@@ -10,6 +11,25 @@ const CONSENT_STORAGE_KEY = "neonpixels:analytics-consent";
 const DOCUMENT_404_CONSOLE_ERROR =
   "Failed to load resource: the server responded with a status of 404 (Not Found)";
 const GTAG_STUB = "window.__gtagStubLoaded = true;";
+
+const SENTRY_INGEST_PATTERN = `${SENTRY_INGEST_ORIGIN}/**`;
+// How long a started SDK gets to send something it should not.
+const SENTRY_SETTLE_MS = 1000;
+const SENTRY_THROW_SCRIPT_PATH = "/e2e-sentry-throw.js";
+const SENTRY_THROW_SCRIPT = "Promise.reject(new Error('e2e sentry check'));";
+
+// Requests the page sent to Sentry's ingest origin during the current test.
+// Every test intercepts them (see the beforeEach below), so nothing ever
+// reaches the real project.
+let sentryRequests: string[] = [];
+
+test.beforeEach(async ({ page }) => {
+  sentryRequests = [];
+  await page.route(SENTRY_INGEST_PATTERN, async (route) => {
+    sentryRequests.push(route.request().url());
+    await route.fulfill({ status: 200, body: "{}" });
+  });
+});
 
 // Stubs the Google Tag loader so nothing leaves the machine, while still
 // counting requests. The stub is served as a real script, so the page's CSP
@@ -222,6 +242,57 @@ test.describe("contact form server error", () => {
     );
     expect(unexpectedErrors).toHaveLength(1);
     expect(unexpectedErrors[0]).toContain("Contact form submission failed");
+  });
+});
+
+test.describe("error reporting", () => {
+  test("an unhandled rejection from a site script reaches the intercepted ingest origin without a CSP violation", async ({
+    page,
+  }) => {
+    const cspViolations = await trackCspViolations(page);
+    await stubGtag(page);
+    await page.route(`**${SENTRY_THROW_SCRIPT_PATH}`, (route) =>
+      route.fulfill({
+        contentType: "text/javascript",
+        body: SENTRY_THROW_SCRIPT,
+      }),
+    );
+
+    await page.goto("/");
+    // The SDK starts once the page is idle, so wait for it before throwing.
+    await page.waitForFunction(() => "__SENTRY__" in window);
+    await expect
+      .poll(async () => {
+        await page.evaluate((path) => {
+          const script = document.createElement("script");
+          script.src = path;
+          document.body.append(script);
+        }, SENTRY_THROW_SCRIPT_PATH);
+        return sentryRequests.length;
+      })
+      .toBeGreaterThan(0);
+    expect(cspViolations).toEqual([]);
+  });
+
+  test("a normal page load sends nothing to Sentry", async ({ page }) => {
+    const cspViolations = await trackCspViolations(page);
+    const pageErrors = trackPageErrors(page);
+    await stubGtag(page);
+
+    await page.goto("/");
+    // The SDK registers its global once initialized, so an empty list below
+    // proves a running SDK sent nothing rather than one that never started.
+    await page.waitForFunction(() => "__SENTRY__" in window);
+    await page.waitForTimeout(SENTRY_SETTLE_MS);
+    // The SDK flushes sessions and client reports when the page is hidden.
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "hidden" });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await page.waitForTimeout(SENTRY_SETTLE_MS);
+    expect(sentryRequests).toEqual([]);
+    expect(cspViolations).toEqual([]);
+    expect(pageErrors).toEqual([]);
   });
 });
 
