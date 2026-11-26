@@ -94,3 +94,9 @@
 [context.production]
   # Netlify cancels the build when this exits 0 and builds when it exits 1.
   ignore = "if [ -n \"$INCOMING_HOOK_TITLE\" ]; then exit 1; else exit 0; fi"
+  # Same as [build], but the build decrypts .env.production with
+  # DOTENV_PRIVATE_KEY_PRODUCTION (Netlify env, Production context only). Deploy
+  # Previews and branch deploys keep the plain [build] command, so they never
+  # need the key and never see production values. --strict (in build:production)
+  # fails the build when the key is missing instead of building without them.
+  command = "npm run build:production && SMOKE_BUILD_REUSE_DIR=.vitepress/dist npm run test:ci"

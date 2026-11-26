@@ -26,19 +26,20 @@ The site is a single custom-themed page. The theme lives in `.vitepress/theme`:
 
 ## Scripts
 
-| Script                    | What it does                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------ |
-| `npm run dev`             | Start the local dev server                                                     |
-| `npm run build`           | Build the static site to `.vitepress/dist`                                     |
-| `npm run preview`         | Preview the production build locally                                           |
-| `npm test`                | Run the test suite in watch mode                                               |
-| `npm run test:ci`         | Run the test suite once                                                        |
-| `npm run typecheck`       | Type-check with `vue-tsc`                                                      |
-| `npm run lint`            | Check formatting (Prettier) and lint (ESLint)                                  |
-| `npm run lint:fix`        | Auto-fix formatting and lint issues                                            |
-| `npm run e2e`             | Real-browser (Playwright, Chromium) smoke test against the built `dist`        |
-| `npm run audit`           | Audit all dependencies (dev included) with the local allowlisted gate          |
-| `npm run check:overrides` | Fail if a package.json override forces a consumer onto an incompatible version |
+| Script                     | What it does                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------ |
+| `npm run dev`              | Start the local dev server                                                           |
+| `npm run build`            | Build the static site to `.vitepress/dist`                                           |
+| `npm run build:production` | Production build with `.env.production` decrypted by dotenvx (needs the private key) |
+| `npm run preview`          | Preview the production build locally                                                 |
+| `npm test`                 | Run the test suite in watch mode                                                     |
+| `npm run test:ci`          | Run the test suite once                                                              |
+| `npm run typecheck`        | Type-check with `vue-tsc`                                                            |
+| `npm run lint`             | Check formatting (Prettier) and lint (ESLint)                                        |
+| `npm run lint:fix`         | Auto-fix formatting and lint issues                                                  |
+| `npm run e2e`              | Real-browser (Playwright, Chromium) smoke test against the built `dist`              |
+| `npm run audit`            | Audit all dependencies (dev included) with the local allowlisted gate                |
+| `npm run check:overrides`  | Fail if a package.json override forces a consumer onto an incompatible version       |
 
 ## Testing
 
@@ -69,6 +70,33 @@ port.
 Deploys to [Netlify](https://www.netlify.com). See [`netlify.toml`](netlify.toml) for
 the build command, publish directory and security headers. The build runs the test
 suite before building, so a failing test blocks the deploy.
+
+### Production build secrets (dotenvx)
+
+Build secrets (the Sentry source map upload token and friends) live in the
+encrypted [`.env.production`](.env.production), committed to the repo.
+[`.env.example`](.env.example) lists every variable name and where its value
+comes from. Netlify holds exactly one secret, `DOTENV_PRIVATE_KEY_PRODUCTION`
+(Site configuration > Environment variables, **Production context only**); the
+production build command is `npm run build:production`, which runs
+`dotenvx run --strict -f .env.production -- npm run build`. `--strict` makes the
+build fail loudly when the key is missing rather than building without the
+values. Deploy Previews, branch deploys, CI, the dependency audit and Lighthouse
+use the plain `npm run build` and never need the key.
+
+- **Add or change a value:** run `npx dotenvx set KEY value -f .env.production`
+  with the private key available locally (keep the value out of shell history,
+  for example `"$(pbpaste)"` as the value, then clear the clipboard), commit the re-encrypted file, and add
+  the name and its source to `.env.example` (a test fails if the two files
+  disagree on variable names or if any value is stored unencrypted).
+- **Where the private key lives:** in the maintainer's password manager, in a
+  git-ignored local `.env.keys` file when editing values, and in Netlify as
+  `DOTENV_PRIVATE_KEY_PRODUCTION`. It is never committed.
+- **Rotate the key:** run `npx dotenvx rotate -f .env.production` (generates a
+  new key pair and re-encrypts every value), commit the updated
+  `.env.production`, replace `DOTENV_PRIVATE_KEY_PRODUCTION` in Netlify with the
+  new private key, then redeploy. Rotate the underlying secrets too if the old
+  key may have leaked, since the old ciphertext stays in git history.
 
 ### Deploys
 
@@ -424,7 +452,7 @@ creates the label itself.
 
 Managed with [Husky](https://typicode.github.io/husky):
 
-- **pre-commit** — [gitleaks](https://github.com/gitleaks/gitleaks) secret scan
+- **pre-commit** — `dotenvx ext precommit` (blocks a plaintext `.env*` commit) and a [gitleaks](https://github.com/gitleaks/gitleaks) secret scan
 - **pre-push** — lint, typecheck and tests
 - **post-merge** — reinstalls dependencies when the lockfile changes
 

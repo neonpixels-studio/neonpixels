@@ -47,6 +47,22 @@ function readBuildTable() {
 
 const BUILD_TABLE = readBuildTable();
 
+function readProductionTable() {
+  const lines = NETLIFY_CONFIG.split("\n");
+  const start = lines.findIndex(
+    (line) => line.trim() === "[context.production]",
+  );
+  if (start === -1) {
+    throw new Error("netlify.toml has no [context.production] table");
+  }
+  const rest = lines.slice(start + 1);
+  const nextTable = rest.findIndex((line) => /^\s*\[/.test(line));
+  const end = nextTable === -1 ? rest.length : nextTable;
+  return rest.slice(0, end).join("\n");
+}
+
+const PRODUCTION_TABLE = readProductionTable();
+
 // Regex metacharacters have no meaning in a TOML key, so escape any that
 // appear before interpolating into a pattern — otherwise a key containing
 // one (e.g. a dotted key passed in whole) would silently change what the
@@ -897,15 +913,20 @@ describe("Netlify build compiles the site once", () => {
 
   // A [context.*] table's `command` overrides [build].command on Netlify, so a
   // double-build hidden there would run in production while the [build] slice
-  // still looks clean. Assert the deploy command lives only in [build].
-  it.each(["command", "publish"])(
-    "defines %s only in the [build] table",
-    (key) => {
-      const occurrences = countKeyDefinitions(NETLIFY_CONFIG, key);
-      const inBuild = countKeyDefinitions(BUILD_TABLE, key);
-      expect(occurrences).toBe(inBuild);
-    },
-  );
+  // still looks clean. `publish` lives only in [build]; `command` is allowed in
+  // [context.production] too, where the next describe block pins its shape.
+  it("defines publish only in the [build] table", () => {
+    const occurrences = countKeyDefinitions(NETLIFY_CONFIG, "publish");
+    const inBuild = countKeyDefinitions(BUILD_TABLE, "publish");
+    expect(occurrences).toBe(inBuild);
+  });
+
+  it("defines command only in the [build] and [context.production] tables", () => {
+    const occurrences = countKeyDefinitions(NETLIFY_CONFIG, "command");
+    const inBuild = countKeyDefinitions(BUILD_TABLE, "command");
+    const inProduction = countKeyDefinitions(PRODUCTION_TABLE, "command");
+    expect(occurrences).toBe(inBuild + inProduction);
+  });
 
   // A `command`/`publish` override doesn't need its own top-level line to
   // take effect — a valid TOML inline table hides it just as effectively, so
@@ -924,6 +945,36 @@ describe("Netlify build compiles the site once", () => {
       expect(countKeyDefinitions(config, key)).toBe(2);
     },
   );
+});
+
+describe("Netlify production build decrypts .env.production", () => {
+  const reuseAssignment = `${SMOKE_BUILD_REUSE_DIR_ENV}=${readBuildTableValue("publish")}`;
+  const productionCommand =
+    PRODUCTION_TABLE.match(/^\s*command\s*=\s*"([^"]*)"/m)?.[1] ?? "";
+
+  it("builds through build:production, never the plain build", () => {
+    expect(productionCommand).toContain("npm run build:production");
+    expect(productionCommand.match(BUILD_SCRIPT_PATTERN) ?? []).toHaveLength(0);
+  });
+
+  it("builds exactly once", () => {
+    const productionBuilds =
+      productionCommand.match(/npm run build:production(?![\w:-])/g) ?? [];
+    expect(productionBuilds).toHaveLength(1);
+  });
+
+  it("gates the smoke suite on the build with && and binds the reuse flag to it", () => {
+    const buildThenSuite = new RegExp(
+      `npm run build:production\\s*&&\\s*${escapeForRegExp(reuseAssignment)}\\s+${escapeForRegExp(TEST_SCRIPT_INVOCATION)}`,
+    );
+    expect(productionCommand).toMatch(buildThenSuite);
+  });
+
+  it("keeps build:production out of every table except production", () => {
+    expect(NETLIFY_CONFIG.replace(PRODUCTION_TABLE, "")).not.toContain(
+      "build:production",
+    );
+  });
 });
 
 describe("Content-Security-Policy", () => {

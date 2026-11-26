@@ -1,4 +1,5 @@
 # np-sync:begin repo-specific
+npx dotenvx ext precommit
 # np-sync:end repo-specific
 
 if ! command -v gitleaks >/dev/null 2>&1; then
