@@ -3,7 +3,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { readE2ePort } from "./e2ePort.ts";
-import { loadGeneratedHeaders } from "./enforcedCsp.ts";
+import { loadServedHeaders } from "./enforcedCsp.ts";
 import { createStaticServer } from "./staticServer.ts";
 
 const DIST_DIR = resolve(process.cwd(), ".vitepress/dist");
@@ -14,7 +14,7 @@ if (!existsSync(resolve(DIST_DIR, "index.html"))) {
   process.exit(1);
 }
 
-const headers = loadGeneratedHeaders(DIST_DIR);
+const headers = loadServedHeaders(DIST_DIR);
 createStaticServer(DIST_DIR, headers).listen(PORT, "127.0.0.1", () => {
   console.log(`Serving ${DIST_DIR} on http://127.0.0.1:${PORT}`);
 });

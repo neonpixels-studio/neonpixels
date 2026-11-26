@@ -54,8 +54,8 @@ the built site (run `npm run build` first; first-time setup is
 headers (including the enforced CSP) read from the build's generated `_headers` file, fails on any
 Content-Security-Policy violation, and covers the consent banner, contact form hydration, and
 error reporting. Google Tag, Sentry ingest and the Netlify Forms POST are intercepted, so
-nothing leaves the machine unless a page triggers a CSP violation: the browser would then
-send its report to Sentry (and the run fails).
+nothing leaves the machine. The server points the policy's report endpoint at itself, so a
+CSP violation fails the run without a report reaching Sentry.
 The server listens on port 4321; set `E2E_PORT` to change it.
 
 ## Tooling config

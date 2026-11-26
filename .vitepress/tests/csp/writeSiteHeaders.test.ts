@@ -10,6 +10,7 @@ import {
   writeSiteHeaders,
 } from "../../csp/writeSiteHeaders";
 import { readGlobalHeaders } from "../../../e2e/support/enforcedCsp";
+import { SENTRY_DSN, SENTRY_INGEST_ORIGIN } from "../../sentry-dsn";
 import {
   SENTRY_SECURITY_REPORT_URL,
   securityReportEndpoint,
@@ -107,11 +108,18 @@ describe("writeSiteHeaders", () => {
 
   it("sets no header twice", async () => {
     const { headersFile } = await build({ extraHeaderLines: [NOINDEX_LINE] });
-    const names = headersFile
-      .split("\n")
-      .filter((line) => line.startsWith(" "))
-      .map((line) => line.slice(0, line.indexOf(":")).trim().toLowerCase());
-    expect(names).toEqual([...new Set(names)]);
+    // readGlobalHeaders throws when a header is set twice for /*.
+    expect(() => readGlobalHeaders(headersFile)).not.toThrow();
+  });
+
+  it("refuses to write into a _headers file that already holds the policy", async () => {
+    await build();
+    const failure = await writeSiteHeaders(outDir, {
+      environment: "production",
+      extraHeaderLines: [],
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(HeadersFileError);
+    expect((failure as HeadersFileError).code).toBe("header-already-present");
   });
 
   it("fails the build with the package's error for a page it cannot hash", async () => {
@@ -166,11 +174,13 @@ describe("securityReportEndpoint", () => {
     );
   });
 
-  it("points at this site's Sentry security endpoint over https", () => {
+  it("points at the same Sentry project as the browser DSN, over https", () => {
     const url = new URL(SENTRY_SECURITY_REPORT_URL);
+    const dsn = new URL(SENTRY_DSN);
     expect(url.protocol).toBe("https:");
-    expect(url.pathname).toMatch(/^\/api\/\d+\/security\/$/);
-    expect(url.searchParams.get("sentry_key")).toBeTruthy();
+    expect(url.origin).toBe(SENTRY_INGEST_ORIGIN);
+    expect(url.pathname).toBe(`/api${dsn.pathname}/security/`);
+    expect(url.searchParams.get("sentry_key")).toBe(dsn.username);
   });
 });
 

@@ -5,6 +5,8 @@ import { join } from "node:path";
 import {
   loadEnforcedCsp,
   loadGeneratedHeaders,
+  localizeReporting,
+  LOCAL_REPORT_PATH,
   readEnforcedCsp,
   readGlobalHeaders,
 } from "../../../e2e/support/enforcedCsp";
@@ -56,6 +58,41 @@ describe("readGlobalHeaders strictness", () => {
     expect(() => readGlobalHeaders(headersFile)).toThrow(
       /not a valid header line/,
     );
+  });
+});
+
+describe("localizeReporting", () => {
+  const generated = {
+    "Content-Security-Policy":
+      "default-src 'self'; report-uri https://o1.ingest.sentry.io/api/2/security/?sentry_key=k&sentry_environment=development; report-to csp-endpoint",
+    "Reporting-Endpoints":
+      'csp-endpoint="https://o1.ingest.sentry.io/api/2/security/?sentry_key=k"',
+    "X-Frame-Options": "DENY",
+  };
+
+  it("points both report destinations at the e2e server", () => {
+    const localized = localizeReporting(generated);
+    expect(localized["Content-Security-Policy"]).toBe(
+      `default-src 'self'; report-uri ${LOCAL_REPORT_PATH}; report-to csp-endpoint`,
+    );
+    expect(localized["Reporting-Endpoints"]).toBe(
+      `csp-endpoint="${LOCAL_REPORT_PATH}"`,
+    );
+  });
+
+  it("leaves every other header alone and never mutates its input", () => {
+    const localized = localizeReporting(generated);
+    expect(localized["X-Frame-Options"]).toBe("DENY");
+    expect(generated["Reporting-Endpoints"]).toContain("sentry.io");
+  });
+
+  it("leaves no Sentry report endpoint once localized", async () => {
+    const served = localizeReporting(
+      readGlobalHeaders(await generateFixtureHeaders()),
+    );
+    // The SDK's ingest origin stays in connect-src; only the report endpoint goes.
+    expect(JSON.stringify(served)).not.toContain("/security/");
+    expect(JSON.stringify(served)).toContain(LOCAL_REPORT_PATH);
   });
 });
 

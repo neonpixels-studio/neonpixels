@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { writeHeadersFile } from "@neon-pixels/security/netlify";
 
+import { parseHeadersFile, type HeadersFileHeader } from "./headersFile";
 import {
   EXTRA_DENIED_FEATURES,
   SITE_DIRECTIVES,
@@ -12,7 +13,6 @@ import {
 const HEADERS_FILE_NAME = "_headers";
 const HEADERS_PATH_GLOB = "/*";
 const HEADER_INDENT = "  ";
-const COMMENT_PREFIX = "#";
 // A single header comfortably under the ~8 KB limit CDNs and origins enforce; the
 // build fails loud here rather than letting Netlify truncate or reject at serve.
 const MAX_HEADER_BYTES = 8000;
@@ -75,13 +75,6 @@ function assertHeaderSizes(headersFile: string) {
   );
 }
 
-function isPathLine(line: string) {
-  const trimmed = line.trim();
-  return (
-    trimmed !== "" && !trimmed.startsWith(COMMENT_PREFIX) && !/^\s/.test(line)
-  );
-}
-
 function headerName(line: string) {
   return line.slice(0, line.indexOf(":")).trim().toLowerCase();
 }
@@ -97,15 +90,13 @@ export async function appendToPolicyBlock(outDir: string, lines: string[]) {
   }
   const headersPath = join(outDir, HEADERS_FILE_NAME);
   const existing = await readFile(headersPath, "utf8");
-  const existingLines = existing.split("\n");
-  const lastPathIndex = existingLines.map(isPathLine).lastIndexOf(true);
-  const lastBlockPath = existingLines[lastPathIndex]?.trim();
-  if (lastBlockPath !== HEADERS_PATH_GLOB) {
+  const lastBlock = parseHeadersFile(existing).at(-1);
+  if (lastBlock?.path !== HEADERS_PATH_GLOB) {
     throw new Error(
-      `${HEADERS_FILE_NAME}: expected the last block to be "${HEADERS_PATH_GLOB}" before adding ${lines.join(", ")}, found ${JSON.stringify(lastBlockPath)}`,
+      `${HEADERS_FILE_NAME}: expected the last block to be "${HEADERS_PATH_GLOB}" before adding ${lines.join(", ")}, found ${JSON.stringify(lastBlock?.path)}`,
     );
   }
-  assertNoDuplicateNames(existingLines.slice(lastPathIndex + 1), lines);
+  assertNoDuplicateNames(lastBlock.headers, lines);
   const separator = existing.endsWith("\n") ? "" : "\n";
   await appendFile(
     headersPath,
@@ -113,8 +104,11 @@ export async function appendToPolicyBlock(outDir: string, lines: string[]) {
   );
 }
 
-function assertNoDuplicateNames(blockLines: string[], newLines: string[]) {
-  const names = blockLines.filter((line) => line.trim() !== "").map(headerName);
+function assertNoDuplicateNames(
+  blockHeaders: HeadersFileHeader[],
+  newLines: string[],
+) {
+  const names = blockHeaders.map((header) => header.name.toLowerCase());
   const duplicates = newLines
     .map(headerName)
     .filter(
