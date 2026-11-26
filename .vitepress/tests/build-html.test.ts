@@ -21,6 +21,7 @@ import { build } from "vitepress";
 import config from "../config";
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
 import { runAxeOnHtml } from "./utils/axe";
+import { scanBuildOutputForSourceMaps } from "../scan-source-maps";
 
 // Asserts the tags survive `vitepress build` into the emitted HTML, not just the
 // config.head array. config.test.ts already covers the config object; this closes
@@ -403,6 +404,12 @@ beforeAll(async () => {
 
 afterAll(() => {
   finalizeBuildDir(buildOutDir, ownsBuildDir);
+});
+
+describe("built output source maps", () => {
+  it("leaves no .map file or sourceMappingURL comment in the published output", () => {
+    expect(scanBuildOutputForSourceMaps(buildOutDir)).toEqual([]);
+  });
 });
 
 describe("built index.html head", () => {

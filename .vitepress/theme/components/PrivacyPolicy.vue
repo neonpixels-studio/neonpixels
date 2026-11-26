@@ -33,6 +33,15 @@ const COLLECTED_DATA_POINTS = [
   "Standard technical details GA4 collects automatically for any hit: an approximate location derived from IP address (not the IP address itself), device/browser type, and referring site.",
   'Two first-party cookies GA4 itself sets once you accept - _ga and _ga_<container-id> - which hold a random id so repeat visits can be counted as the same visitor. Both expire automatically after about 2 years, or sooner if you decline (see "Your choice" below).',
 ];
+
+// What an error report carries. Sentry error reporting sends no user info and
+// sets no cookies (see .vitepress/theme/error-reporting.ts), so unlike GA4 it
+// needs no consent and runs for every visitor.
+const ERROR_REPORT_DATA_POINTS = [
+  "The error message and a stack trace showing which of this site's scripts failed.",
+  "The page address where it happened, with any query string and fragment removed, and the browser's name and version.",
+  "A short trail of recent activity leading up to the error: clicks, page navigations, and the addresses of network requests the page made.",
+];
 </script>
 
 <template>
@@ -77,9 +86,9 @@ const COLLECTED_DATA_POINTS = [
       </h1>
 
       <p :class="BODY_TEXT_CLASS" class="mb-8">
-        This is a small studio site with one analytics tool bolted on. This page
-        explains, in plain language, what that tool collects, why, and for how
-        long.
+        This is a small studio site with one analytics tool and one error
+        reporting tool bolted on. This page explains, in plain language, what
+        they collect, why, and for how long.
       </p>
 
       <section class="mb-10">
@@ -107,12 +116,41 @@ const COLLECTED_DATA_POINTS = [
       </section>
 
       <section class="mb-10">
+        <h2 :class="SECTION_HEADING_CLASS">Error reporting</h2>
+        <p :class="BODY_TEXT_CLASS" class="mb-4">
+          When a script on this site crashes in your browser, the error is
+          reported to Sentry so we can fix it. This does not depend on the
+          analytics banner. It sends only an error report, which contains:
+        </p>
+        <ul
+          class="text-fg-muted m-0 mb-2 flex list-none flex-col gap-2 pl-0 text-[15.5px] leading-[1.7]"
+        >
+          <li
+            v-for="dataPoint in ERROR_REPORT_DATA_POINTS"
+            :key="dataPoint"
+            class="flex gap-3"
+          >
+            <span class="text-lime">▸</span>
+            <span>{{ dataPoint }}</span>
+          </li>
+        </ul>
+        <p :class="BODY_TEXT_CLASS">
+          Nothing is sent when no error happens. Error reporting sets no
+          cookies, sends no user information, and records no sessions or screen
+          replays. Emails, tokens and similar values are scrubbed from a report
+          before it leaves your browser.
+        </p>
+      </section>
+
+      <section class="mb-10">
         <h2 :class="SECTION_HEADING_CLASS">Why</h2>
         <p :class="BODY_TEXT_CLASS">
-          To see which pages get read and which of the {{ PROJECT_COUNT }}
-          project links get clicked, so we have a rough sense of what's worth
-          spending more time on. Nothing collected here is used to advertise to
-          you, build a profile of you, or follow you across other sites.
+          Analytics tells us which pages get read and which of the
+          {{ PROJECT_COUNT }} project links get clicked, so we have a rough
+          sense of what's worth spending more time on. Error reports tell us
+          what is broken so we can fix it. Nothing collected here is used to
+          advertise to you, build a profile of you, or follow you across other
+          sites.
         </p>
       </section>
 
@@ -125,6 +163,8 @@ const COLLECTED_DATA_POINTS = [
           property itself, not something this codebase controls. The _ga and
           _ga_* cookies mentioned above expire on their own after about 2 years,
           or are cleared immediately if you decline via the consent banner.
+          Error reports are kept by Sentry for a limited time under its own
+          retention settings.
         </p>
       </section>
 
@@ -138,6 +178,13 @@ const COLLECTED_DATA_POINTS = [
             rel="noopener noreferrer"
             class="nav-link text-fg-subtle underline"
             >Google's own Privacy Policy</a
+          >. Error reports go to Sentry, who processes them as described in
+          <a
+            href="https://sentry.io/privacy/"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="nav-link text-fg-subtle underline"
+            >Sentry's Privacy Policy</a
           >. This site has no other analytics, advertising, or tracking service
           embedded in it, and we don't sell or otherwise share this data
           ourselves.
@@ -147,11 +194,11 @@ const COLLECTED_DATA_POINTS = [
       <section>
         <h2 :class="SECTION_HEADING_CLASS">Your choice</h2>
         <p :class="BODY_TEXT_CLASS" class="mb-4">
-          Nothing loads until you accept the banner, and you can change your
-          mind at any time using the "{{ MANAGE_CHOICE_LABEL }}" control that
-          stays on-screen once you've decided. If your browser sends a Do Not
-          Track or Global Privacy Control signal, analytics never loads at all
-          and you're never asked.
+          Analytics: nothing loads until you accept the banner, and you can
+          change your mind at any time using the "{{ MANAGE_CHOICE_LABEL }}"
+          control that stays on-screen once you've decided. If your browser
+          sends a Do Not Track or Global Privacy Control signal, analytics never
+          loads at all and you're never asked.
         </p>
         <p class="text-fg-dim m-0 text-[13px] leading-[1.7]">
           GA4 measurement ID: {{ GA_MEASUREMENT_ID }}

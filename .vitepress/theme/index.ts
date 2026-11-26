@@ -1,5 +1,6 @@
 import type { Theme } from "vitepress";
 import AppLayout from "./AppLayout.vue";
+import { startErrorReporting } from "./start-error-reporting";
 // Self-hosted fonts bundled by Vite, trimmed to only the weights the UI renders and
 // (since the site is lang=en-US) the latin subset only. Archivo is used solely via
 // .font-display + font-black (weight 900); JetBrains Mono is the body/mono face at
@@ -15,7 +16,17 @@ import "@fontsource/jetbrains-mono/latin-500.css";
 import "@fontsource/jetbrains-mono/latin-700.css";
 import "./style.css";
 
+// Baked in at build time from Netlify's CONTEXT (see vite.define in config.ts),
+// so a deploy preview reports as "preview", never "production".
+const SENTRY_ENVIRONMENT = import.meta.env.VITE_SENTRY_ENVIRONMENT;
+
 export default {
   Layout: AppLayout,
-  enhanceApp() {},
+  // Browser-only and production-build-only: dev and SSG never load the SDK.
+  enhanceApp({ app }) {
+    if (import.meta.env.SSR || !import.meta.env.PROD) {
+      return;
+    }
+    startErrorReporting(app, SENTRY_ENVIRONMENT);
+  },
 } satisfies Theme;

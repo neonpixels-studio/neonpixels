@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
+import { SENTRY_DSN, sentryOriginFromDsn } from "../sentry-dsn";
 
 const NETLIFY_CONFIG_PATH = resolve(process.cwd(), "netlify.toml");
 const HAND_WRITTEN_HEADERS_PATH = resolve(process.cwd(), "public/_headers");
@@ -529,6 +530,7 @@ const EXPECTED_CSP_SOURCES: Record<string, string[]> = {
     "https://*.google-analytics.com",
     "https://*.analytics.google.com",
     "https://*.googletagmanager.com",
+    sentryOriginFromDsn(SENTRY_DSN),
   ],
   "form-action": ["'self'"],
 };

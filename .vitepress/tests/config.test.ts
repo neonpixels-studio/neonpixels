@@ -11,6 +11,8 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 
+import { resolveSentryEnvironment } from "@neon-pixels/sentry";
+
 import config, { buildOrganizationJsonLd } from "../config";
 import { PROJECTS } from "@theme/data/projects";
 import type { HeadConfig, SiteConfig } from "vitepress";
@@ -589,6 +591,28 @@ describe("Organization JSON-LD links the four projects", () => {
     expect(serialized).not.toContain("</script>");
     expect(JSON.parse(serialized)["@graph"][1].description).toBe(
       hostileDescription,
+    );
+  });
+});
+
+describe("Sentry build wiring", () => {
+  it("bakes the Netlify-context environment into the bundle", () => {
+    const expected = resolveSentryEnvironment({
+      netlifyContext: process.env.CONTEXT,
+    });
+    expect(
+      config.vite?.define?.["import.meta.env.VITE_SENTRY_ENVIRONMENT"],
+    ).toBe(JSON.stringify(expected));
+  });
+
+  it("generates no source maps unless the upload variables are all set", () => {
+    const uploadConfigured = [
+      "SENTRY_AUTH_TOKEN",
+      "SENTRY_ORG",
+      "SENTRY_PROJECT",
+    ].every((name) => Boolean(process.env[name]));
+    expect(config.vite?.build?.sourcemap).toBe(
+      uploadConfigured ? "hidden" : false,
     );
   });
 });

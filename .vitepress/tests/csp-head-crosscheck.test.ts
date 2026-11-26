@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import config from "../config";
 import { GTAG_SCRIPT_URL } from "@neon-pixels/consent";
 import { stripComments } from "./utils/outlineGuard";
+import { SENTRY_DSN, sentryOriginFromDsn } from "../sentry-dsn";
 import type { HeadConfig } from "vitepress";
 
 // Cross-checks the origins the configured `head` loads against the CSP in netlify.toml
@@ -324,8 +325,15 @@ function cspExternalOrigins(directives: CspDirectives) {
 // orphaned CSP grant. Derived from the loader's own URL constant, and
 // verified below to actually be granted, so this can't silently drift into
 // excusing an origin that isn't real.
+//
+// The Sentry ingest origin is the second exception: the SDK (lazy-loaded from
+// .vitepress/theme/start-error-reporting.ts) posts error events to it with
+// fetch, and no head entry can name a runtime fetch. Derived from the same DSN
+// the SDK is configured with, and verified below to be granted by connect-src.
+const SENTRY_INGEST_ORIGIN = sentryOriginFromDsn(SENTRY_DSN);
 const DOCUMENTED_RUNTIME_INJECTED_ORIGINS = new Set([
   new URL(GTAG_SCRIPT_URL).origin,
+  SENTRY_INGEST_ORIGIN,
 ]);
 
 // The forward check: external origins a head entry loads that the CSP fails to grant.
@@ -549,6 +557,13 @@ describe("CSP and config head origin cross-check", () => {
     const gtagOrigin = new URL(GTAG_SCRIPT_URL).origin;
     expect(DOCUMENTED_RUNTIME_INJECTED_ORIGINS.has(gtagOrigin)).toBe(true);
     expect(originGranted(gtagOrigin, "script-src", cspDirectives)).toBe(true);
+  });
+
+  it("grants connect-src to the Sentry ingest origin and nothing broader", () => {
+    expect(
+      originGranted(SENTRY_INGEST_ORIGIN, "connect-src", cspDirectives),
+    ).toBe(true);
+    expect(cspDirectives.get("connect-src")).toContain(SENTRY_INGEST_ORIGIN);
   });
 
   it("keeps the runtime-injection exception anchored to a real call site", () => {
