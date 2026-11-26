@@ -4,6 +4,9 @@ import { resolve } from "node:path";
 
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
 import { SENTRY_INGEST_ORIGIN } from "../sentry-dsn";
+import { securityReportEndpoint } from "../csp/sitePolicy";
+import { readGlobalHeaders } from "../../e2e/support/enforcedCsp";
+import { generateFixtureHeaders } from "./utils/generatedHeaders";
 
 const NETLIFY_CONFIG_PATH = resolve(process.cwd(), "netlify.toml");
 const HAND_WRITTEN_HEADERS_PATH = resolve(process.cwd(), "public/_headers");
@@ -247,14 +250,29 @@ const PERMISSIONS_POLICY = DENIED_PERMISSIONS.map(
   (feature) => `${feature}=()`,
 ).join(", ");
 
-const STATIC_HEADERS = {
+// Written by the build into the publish dir's _headers (.vitepress/csp), so they
+// are asserted against the generated output below.
+const GENERATED_STATIC_HEADERS = {
   "X-Frame-Options": "DENY",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": PERMISSIONS_POLICY,
+  "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+};
+
+// The only response headers netlify.toml still sets. Every header above, the
+// Content-Security-Policy and Reporting-Endpoints belong to the build, so each
+// header is set in exactly one place.
+const NETLIFY_TOML_HEADERS = {
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-origin",
 };
+const BUILD_OWNED_HEADER_NAMES = [
+  ...Object.keys(GENERATED_STATIC_HEADERS),
+  "Content-Security-Policy",
+  "Content-Security-Policy-Report-Only",
+  "Reporting-Endpoints",
+];
 
 const HEADER_LINE = /^\s*([\w-]+)\s*=\s*"([^"]*)"/;
 
@@ -506,8 +524,9 @@ function parseHstsMaxAge(headerValue: string) {
 // exact match (not a subset), so appending a rogue origin to any directive
 // fails the suite, not just widening to a bare wildcard. Grounded in what the
 // built site actually loads: self only (fonts are self-hosted via @fontsource,
-// so no Google Fonts origins) plus the 'unsafe-inline' that VitePress's inline
-// bootstrap scripts and the components' inline style attributes require.
+// so no Google Fonts origins, and font-src falls back to default-src 'self') plus the Google Analytics and Sentry origins. The
+// per-build sha256 hashes of the inline scripts and styles are filtered out
+// before comparing (see withoutHashes); 'unsafe-inline' is never allowed.
 const EXPECTED_CSP_SOURCES: Record<string, string[]> = {
   "default-src": ["'self'"],
   "base-uri": ["'self'"],
@@ -518,13 +537,8 @@ const EXPECTED_CSP_SOURCES: Record<string, string[]> = {
     "https://*.google-analytics.com",
     "https://*.googletagmanager.com",
   ],
-  "font-src": ["'self'"],
-  "style-src": ["'self'", "'unsafe-inline'"],
-  "script-src": [
-    "'self'",
-    "'unsafe-inline'",
-    "https://www.googletagmanager.com",
-  ],
+  "style-src": ["'self'"],
+  "script-src": ["'self'", "https://www.googletagmanager.com"],
   "connect-src": [
     "'self'",
     "https://*.google-analytics.com",
@@ -533,6 +547,8 @@ const EXPECTED_CSP_SOURCES: Record<string, string[]> = {
     SENTRY_INGEST_ORIGIN,
   ],
   "form-action": ["'self'"],
+  "report-uri": [securityReportEndpoint("production")],
+  "report-to": ["csp-endpoint"],
 };
 
 // Google Analytics routes gtag.js collection through region-scoped subdomains
@@ -597,6 +613,16 @@ function parseCsp(headerValue: string) {
   return { directives, duplicates };
 }
 
+const HASH_SOURCE = /^'sha(?:256|384|512)-/i;
+
+function isHashSource(source: string) {
+  return HASH_SOURCE.test(source);
+}
+
+function withoutHashes(sources: string[]) {
+  return sources.filter((source) => !isHashSource(source));
+}
+
 function isOverlyBroadSource(source: string) {
   if (source.includes("*")) {
     return !ALLOWED_WILDCARD_SOURCES.has(source);
@@ -605,7 +631,10 @@ function isOverlyBroadSource(source: string) {
 }
 
 const headers = parseHeaders(NETLIFY_CONFIG);
-const cspHeaderValue = readHeader(headers, "Content-Security-Policy");
+const generatedHeaders = new Map(
+  Object.entries(readGlobalHeaders(await generateFixtureHeaders())),
+);
+const cspHeaderValue = readHeader(generatedHeaders, "Content-Security-Policy");
 const { directives: cspDirectives, duplicates: cspDuplicates } =
   parseCsp(cspHeaderValue);
 const redirects = parseRedirects(NETLIFY_CONFIG);
@@ -716,18 +745,54 @@ describe("shared key-assignment guard helper", () => {
   });
 });
 
-describe("netlify security headers", () => {
-  it.each(Object.entries(STATIC_HEADERS))(
+describe("netlify.toml security headers", () => {
+  it.each(Object.entries(NETLIFY_TOML_HEADERS))(
     "serves %s with the expected value",
     (name, expectedValue) => {
       expect(readHeader(headers, name)).toBe(expectedValue);
     },
   );
 
+  it("sets only the headers the build does not write", () => {
+    expect([...headers.keys()].sort()).toEqual(
+      Object.keys(NETLIFY_TOML_HEADERS).sort(),
+    );
+  });
+
+  it.each(BUILD_OWNED_HEADER_NAMES)(
+    "leaves %s to the build, so it is set in exactly one place",
+    (name) => {
+      expect(
+        countKeyDefinitions(NETLIFY_CONFIG, name, { caseInsensitive: true }),
+      ).toBe(0);
+    },
+  );
+});
+
+describe("hand-written public/_headers", () => {
+  // The build appends the policy block to this file and the package refuses to
+  // write a header the file already sets; this fails earlier, at test time.
+  it.each(BUILD_OWNED_HEADER_NAMES)(
+    "does not set %s for every path",
+    (name) => {
+      const handWritten = readFileSync(HAND_WRITTEN_HEADERS_PATH, "utf8");
+      expect(readGlobalHeaders(handWritten)).not.toHaveProperty(name);
+    },
+  );
+});
+
+describe("generated security headers", () => {
+  it.each(Object.entries(GENERATED_STATIC_HEADERS))(
+    "serves %s with the expected value",
+    (name, expectedValue) => {
+      expect(readHeader(generatedHeaders, name)).toBe(expectedValue);
+    },
+  );
+
   it.each(DENIED_PERMISSIONS)(
     "denies %s in Permissions-Policy for every origin",
     (feature) => {
-      const entries = readHeader(headers, "Permissions-Policy")
+      const entries = readHeader(generatedHeaders, "Permissions-Policy")
         .split(",")
         .map((entry) => entry.trim());
       expect(entries).toContain(`${feature}=()`);
@@ -735,21 +800,21 @@ describe("netlify security headers", () => {
   );
 
   it("does not send the removed interest-cohort token", () => {
-    expect(readHeader(headers, "Permissions-Policy")).not.toContain(
+    expect(readHeader(generatedHeaders, "Permissions-Policy")).not.toContain(
       "interest-cohort",
     );
   });
 
   it("sends an HSTS max-age of at least one year", () => {
     const maxAge = parseHstsMaxAge(
-      readHeader(headers, "Strict-Transport-Security"),
+      readHeader(generatedHeaders, "Strict-Transport-Security"),
     );
     expect(maxAge).toBeGreaterThanOrEqual(HSTS_MIN_MAX_AGE_SECONDS);
   });
 
   it("extends HSTS to all subdomains", () => {
     const directives = parseDirectives(
-      readHeader(headers, "Strict-Transport-Security"),
+      readHeader(generatedHeaders, "Strict-Transport-Security"),
     );
     expect(directives).toContain("includesubdomains");
   });
@@ -991,6 +1056,19 @@ describe("Content-Security-Policy", () => {
     },
   );
 
+  it("never allows 'unsafe-inline' or 'unsafe-eval'", () => {
+    expect(cspHeaderValue).not.toContain("unsafe-inline");
+    expect(cspHeaderValue).not.toContain("unsafe-eval");
+  });
+
+  it.each(["script-src", "style-src"])(
+    "hashes the inline content allowed by %s",
+    (directive) => {
+      const hashes = (cspDirectives.get(directive) ?? []).filter(isHashSource);
+      expect(hashes).toHaveLength(1);
+    },
+  );
+
   it("declares exactly the expected directives", () => {
     expect([...cspDirectives.keys()].sort()).toEqual(
       Object.keys(EXPECTED_CSP_SOURCES).sort(),
@@ -1000,7 +1078,7 @@ describe("Content-Security-Policy", () => {
   it.each(Object.entries(EXPECTED_CSP_SOURCES))(
     "scopes %s to exactly its expected sources",
     (directive, expectedSources) => {
-      const sources = cspDirectives.get(directive) ?? [];
+      const sources = withoutHashes(cspDirectives.get(directive) ?? []);
       expect([...sources].sort()).toEqual([...expectedSources].sort());
     },
   );
@@ -1140,10 +1218,10 @@ describe("unhashed /images asset caching", () => {
   });
 });
 
-// writeReportOnlyHeaders (.vitepress/csp) already fails loud if the build-time
-// noindex line collides with a *hand-written* header inside its own generated
-// block (see writeReportOnlyHeaders.test.ts), but that check only sees what's
-// in the publish dir's _headers at build time. Neither source file it's built
+// The header writer (.vitepress/csp) already fails loud if the build-time
+// noindex line collides with a *hand-written* header (see
+// writeSiteHeaders.test.ts), but that check only sees what's in the publish
+// dir's _headers at build time. Neither source file it's built
 // from — netlify.toml's global /* block, or the public/_headers VitePress
 // copies in verbatim — is covered by that runtime check, so both need a
 // static guard instead. Both checks are static reads of repo files, so — like
@@ -1167,8 +1245,8 @@ describe("noindex header ownership", () => {
     ).toBe(0);
   });
 
-  // public/_headers is the hand-written file writeReportOnlyHeaders treats as
-  // pre-existing content and carries forward as-is (see handWrittenHeaders) —
+  // public/_headers is the hand-written file the header writer treats as
+  // pre-existing content and appends to —
   // an X-Robots-Tag added here, e.g. alongside the /assets/* rule, ships
   // unconditionally on every context, including production, with no build
   // failure and no _headers assertion noticing.

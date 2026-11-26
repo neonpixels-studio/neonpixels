@@ -16,6 +16,7 @@ import { resolveSentryEnvironment } from "@neon-pixels/sentry";
 import config, { buildOrganizationJsonLd } from "../config";
 import { sourceMapModeFor } from "../sentry-build";
 import { PROJECTS } from "@theme/data/projects";
+import { buildGeneratedCss } from "@theme/generatedStyles";
 import type { HeadConfig, SiteConfig } from "vitepress";
 
 const PUBLIC_DIR = resolve(process.cwd(), "public");
@@ -389,13 +390,13 @@ describe("Self-hosted fonts are trimmed to the weights actually used", () => {
   });
 });
 
-// getNoindexHeaderLines and writeReportOnlyHeaders (folding the noindex line
+// getNoindexHeaderLines and writeSiteHeaders (folding the noindex line
 // into the CSP writer's block, see .vitepress/robots and .vitepress/csp) are
 // each tested in isolation, but nothing else asserts the buildEnd hook here
 // actually wires one into the other — that seam is exactly where a silent
 // regression (every deploy preview becoming indexable) could slip through
 // with both halves' own tests still green. Runs buildEnd against a real,
-// throwaway outDir with the real repo netlify.toml as the CSP source.
+// throwaway outDir.
 describe("buildEnd wires the noindex context into the generated _headers", () => {
   const HEADERS_FILE_NAME = "_headers";
   const NOINDEX_HEADER_LINE = "X-Robots-Tag: noindex";
@@ -469,6 +470,21 @@ describe("buildEnd wires the noindex context into the generated _headers", () =>
     const headers = await runBuildEnd();
 
     expect(headers).not.toContain(NOINDEX_HEADER_LINE);
+  });
+});
+
+// The enforced Content-Security-Policy has no 'unsafe-inline' for styles, so the
+// page may only carry styles the build can hash.
+describe("Styles the enforced Content-Security-Policy can allow", () => {
+  it("turns VitePress's runtime color-mode switch off", () => {
+    // useDark() injects an unhashable <style> element while toggling the dark class.
+    expect(config.appearance).toBe(false);
+  });
+
+  it("ships the generated per-value classes as one inline style in the head", () => {
+    const styles = (config.head ?? []).filter((entry) => entry[0] === "style");
+    expect(styles).toHaveLength(1);
+    expect(styles[0][2]).toBe(buildGeneratedCss());
   });
 });
 

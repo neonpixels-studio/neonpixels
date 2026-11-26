@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
 import type { Project } from "../data/projects";
-import { hexToRgba } from "../utils/color";
+import { projectStyleClass } from "../generatedStyles";
 import type { Consent } from "@neon-pixels/consent";
 import {
   createSiteConsent,
@@ -22,12 +22,6 @@ const OUTBOUND_CLICK_EVENT = "outbound_click";
 // MouseEvent.button value for the middle mouse button — a common way to open
 // a link in a new tab, which the browser reports as `auxclick`, not `click`.
 const MIDDLE_MOUSE_BUTTON = 1;
-
-// The heading glow and the filled-CTA shadows are the accent color at fixed
-// alphas; the aurora alpha lives per-project in the section data.
-const HEADING_GLOW_ALPHA = 0.6;
-const CTA_FILL_SHADOW_ALPHA = 0.35;
-const CTA_FILL_HOVER_ALPHA = 0.6;
 
 // Written as literal Tailwind class strings (not interpolated) so the JIT
 // scanner still emits them. `text-bg` is the page background ink (#08080a).
@@ -51,35 +45,20 @@ const badgeClass = computed(() => {
 
 const ctaClass = computed(() => {
   if (isFilled.value) {
-    return `${CTA_FILL} ${CTA_BASE} ${props.project.accent.bg}`;
+    const fillClass = projectStyleClass(props.project.id, "cta-fill");
+    return `${CTA_FILL} ${CTA_BASE} ${props.project.accent.bg} ${fillClass}`;
   }
-  return `${CTA_OUTLINE} ${CTA_BASE} ${props.project.accent.text} ${props.project.accent.border}`;
-});
-
-const ctaStyle = computed(() => {
-  // Every CTA exposes --accent so the global :focus-visible ring tracks the
-  // project color; the fill variant layers its glow shadow on top.
-  const accentStyle = { "--accent": props.project.color };
-  if (!isFilled.value) {
-    return accentStyle;
-  }
-  return {
-    ...accentStyle,
-    boxShadow: `0 0 26px ${hexToRgba(props.project.color, CTA_FILL_SHADOW_ALPHA)}`,
-    "--accent-glow": hexToRgba(props.project.color, CTA_FILL_HOVER_ALPHA),
-  };
+  const accentClass = projectStyleClass(props.project.id, "accent");
+  return `${CTA_OUTLINE} ${CTA_BASE} ${props.project.accent.text} ${props.project.accent.border} ${accentClass}`;
 });
 
 const tldClass = computed(() => {
+  const glowClass = projectStyleClass(props.project.id, "heading-glow");
   if (props.project.flickerTld) {
-    return `${props.project.accent.text} animate-flicker`;
+    return `${props.project.accent.text} ${glowClass} animate-flicker`;
   }
-  return props.project.accent.text;
+  return `${props.project.accent.text} ${glowClass}`;
 });
-
-const headingGlowStyle = computed(() => ({
-  textShadow: `0 0 18px ${hexToRgba(props.project.color, HEADING_GLOW_ALPHA)}`,
-}));
 
 // Resolved once on mount (same pattern as ConsentBanner.vue's own
 // `consent`), not read fresh inside trackOutboundClick — getConsentStorage()
@@ -127,17 +106,12 @@ function handleCtaAuxClick(event: MouseEvent) {
       >
     </div>
     <h3
-      class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]"
-      style="font-size: clamp(38px, 5vw, 66px); line-height: 0.92"
+      class="font-display m-0 text-[clamp(38px,5vw,66px)] leading-[0.92] font-black tracking-[-0.03em] text-[#f2f2f4]"
     >
-      {{ project.name
-      }}<span :class="tldClass" :style="headingGlowStyle">{{
-        project.tld
-      }}</span>
+      {{ project.name }}<span :class="tldClass">{{ project.tld }}</span>
     </h3>
     <p
-      class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]"
-      style="text-wrap: pretty"
+      class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-pretty text-[#a8a8b3]"
     >
       {{ project.description }}
     </p>
@@ -146,7 +120,6 @@ function handleCtaAuxClick(event: MouseEvent) {
       target="_blank"
       rel="noopener noreferrer"
       :class="ctaClass"
-      :style="ctaStyle"
       @click="trackOutboundClick"
       @auxclick="handleCtaAuxClick"
       >visit {{ project.name }}{{ project.tld }} →</a

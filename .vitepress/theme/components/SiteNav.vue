@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue";
-import { BRAND_ACCENTS } from "../brand";
 import { PROJECTS } from "../data/projects";
 
 const NAV_LINKS = [
@@ -9,7 +8,6 @@ const NAV_LINKS = [
   { href: "#contact", label: "contact" },
 ];
 
-const NAV_DOT_GLOW = `0 0 8px ${BRAND_ACCENTS.lime}`;
 const MOBILE_MENU_ID = "mobile-menu";
 // Mirrors Tailwind's `md` breakpoint, where the desktop nav takes over. Kept in
 // sync with the md: utilities below so an open mobile panel can't linger on a
@@ -67,8 +65,7 @@ onBeforeUnmount(() => {
     >
     <span class="text-lime hidden items-center gap-[7px] md:flex">
       <span
-        class="bg-lime animate-pulse-dot status-dot h-[7px] w-[7px] rounded-full"
-        :style="{ boxShadow: NAV_DOT_GLOW }"
+        class="bg-lime animate-pulse-dot status-dot nav-dot-glow h-[7px] w-[7px] rounded-full"
       />{{ PROJECTS.length }} projects
     </span>
 
@@ -100,8 +97,7 @@ onBeforeUnmount(() => {
       </ul>
       <span class="text-lime flex items-center gap-[7px] pt-3">
         <span
-          class="bg-lime animate-pulse-dot status-dot h-[7px] w-[7px] rounded-full"
-          :style="{ boxShadow: NAV_DOT_GLOW }"
+          class="bg-lime animate-pulse-dot status-dot nav-dot-glow h-[7px] w-[7px] rounded-full"
         />{{ PROJECTS.length }} projects
       </span>
     </div>

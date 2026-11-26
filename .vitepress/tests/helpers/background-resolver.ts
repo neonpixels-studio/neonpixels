@@ -2,6 +2,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { relativeLuminance } from "@theme/utils/color";
+import {
+  buildGeneratedRules,
+  formatDeclarations,
+} from "@theme/generatedStyles";
 
 // --- Background resolution -------------------------------------------------
 //
@@ -9,7 +13,8 @@ import { relativeLuminance } from "@theme/utils/color";
 // opaque background. Resolving it lets wcag-text-contrast.test.ts assert every
 // hardcoded `text-[#hex]` label against the surface it actually renders on,
 // instead of a hand-written allowlist. The resolver reads the opaque-background
-// idioms this codebase uses in `class`/`style` (utilities, inline fills), and
+// idioms this codebase uses in `class`/`style` (utilities, inline fills, and the
+// per-value classes generated in generatedStyles.ts, read as if inline), and
 // fails loud on an unconditional painted surface it can't read (a new
 // rgb()/variable form) rather than silently asserting against the wrong color —
 // that failure is the signal to teach it the new form. Out of scope, since they
@@ -98,10 +103,36 @@ const NON_COLOR_TEXT_VALUE =
   /^-?[\d.]+(?:px|rem|em|%|vw|vh|vmin|vmax|ch|ex)?$|^(?:calc|clamp|min|max)\(/i;
 const OPAQUE_TEXT_HEX = /^#[0-9a-fA-F]{6}$/;
 
+// The declarations of every generated class (see buildGeneratedRules), keyed by
+// class name. A generated class is unlayered, so it beats a Tailwind utility the
+// way an inline style would: its declarations are read in the same pass as the
+// inline `style` attribute.
+const GENERATED_DECLARATIONS = new Map<string, string>(
+  Object.entries(buildGeneratedRules()).map(([className, declarations]) => [
+    className,
+    formatDeclarations(declarations),
+  ]),
+);
+
+function generatedDeclarationsFor(classes: string): string {
+  return classes
+    .split(/\s+/)
+    .map((className) => GENERATED_DECLARATIONS.get(className))
+    .filter(
+      (declarations): declarations is string => declarations !== undefined,
+    )
+    .join(";");
+}
+
 // Opaque `bg-[#rrggbb]` fill. Tail-anchored so an opacity modifier
 // (`bg-[#150610]/60`) isn't read as opaque, unprefixed so a responsive
 // `md:bg-[...]` (conditional above a breakpoint) isn't asserted unconditionally.
 const OPAQUE_BACKGROUND_CLASS = classTokenPattern("bg-\\[(#[0-9a-fA-F]{6})\\]");
+
+// A translucent `bg-[#rrggbbaa]` fill: the base color and its alpha channel.
+const ALPHA_BACKGROUND_CLASS = classTokenPattern(
+  "bg-\\[(#[0-9a-fA-F]{6})([0-9a-fA-F]{2})\\]",
+);
 
 // A theme-token fill: `bg-panel`, `bg-bg`, … → the `--color-<name>` variable.
 // Unprefixed and bracket/slash-free so arbitrary and opacity-modified fills fall
@@ -349,9 +380,10 @@ function readLayerBackground(element: Element): ResolvedLayer {
   if (CLIPS_TO_TEXT.test(classes)) {
     return null;
   }
-  // Inline styles win the cascade, so an inline background decides this layer.
+  // Inline styles win the cascade, then generated classes, so either decides
+  // this layer before any Tailwind utility is read.
   const inlineBackground = lastBackgroundValue(
-    element.getAttribute("style") ?? "",
+    `${generatedDeclarationsFor(classes)};${element.getAttribute("style") ?? ""}`,
   );
   if (inlineBackground) {
     return layerFromValue(inlineBackground);
@@ -359,6 +391,10 @@ function readLayerBackground(element: Element): ResolvedLayer {
   const opaqueClass = classes.match(OPAQUE_BACKGROUND_CLASS);
   if (opaqueClass) {
     return opaqueClass[1];
+  }
+  const alphaClass = classes.match(ALPHA_BACKGROUND_CLASS);
+  if (alphaClass) {
+    return { base: alphaClass[1], alpha: parseInt(alphaClass[2], 16) / 255 };
   }
   return classBackground(classes);
 }

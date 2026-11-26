@@ -6,16 +6,17 @@ import config from "../config";
 import { GTAG_SCRIPT_URL } from "@neon-pixels/consent";
 import { stripComments } from "./utils/outlineGuard";
 import { SENTRY_INGEST_ORIGIN } from "../sentry-dsn";
+import { readGlobalHeaders } from "../../e2e/support/enforcedCsp";
+import { generateFixtureHeaders } from "./utils/generatedHeaders";
 import type { HeadConfig } from "vitepress";
 
-// Cross-checks the origins the configured `head` loads against the CSP in netlify.toml
+// Cross-checks the origins the configured `head` loads against the CSP the build generates
 // in both directions: every external origin a head entry fetches must be granted by the
 // matching CSP directive, and every external origin the CSP grants must be referenced by
 // a head entry (bar a documented baseline). Scope note: only `config.head` is inspected —
 // resources reached via a theme layout, `transformHead`, or a CSS `@import` are invisible
 // here (the theme-CSS surface is covered separately by config.test.ts).
 
-const NETLIFY_CONFIG_PATH = resolve(process.cwd(), "netlify.toml");
 const CONSENT_BANNER_PATH = resolve(
   process.cwd(),
   ".vitepress/theme/components/ConsentBanner.vue",
@@ -213,28 +214,18 @@ function externalHeadOrigins(head: readonly HeadConfig[]) {
     .filter((entry): entry is HeadOrigin => entry !== null);
 }
 
-const HEADER_LINE = /^\s*([\w-]+)\s*=\s*"([^"]*)"/;
+const CSP_HEADER_NAME = "Content-Security-Policy";
 
-// Pure so the missing/empty-header paths are testable without touching the filesystem.
-function extractCspHeader(netlifyConfig: string) {
-  for (const line of netlifyConfig.split("\n")) {
-    const match = line.match(HEADER_LINE);
-    if (!match || match[1].toLowerCase() !== "content-security-policy") {
-      continue;
-    }
-    const value = match[2].trim();
-    if (!value) {
-      throw new Error(
-        "Content-Security-Policy in netlify.toml is empty or not a single-line double-quoted value",
-      );
-    }
-    return value;
+// Pure so the missing path is testable without touching the filesystem. Reads the
+// `/*` block of a generated `_headers` file.
+function extractCspHeader(headersFile: string) {
+  const value = readGlobalHeaders(headersFile)[CSP_HEADER_NAME];
+  if (!value) {
+    throw new Error(
+      `Missing ${CSP_HEADER_NAME} header in the generated _headers file`,
+    );
   }
-  throw new Error("Missing Content-Security-Policy header in netlify.toml");
-}
-
-function readCspHeader() {
-  return extractCspHeader(readFileSync(NETLIFY_CONFIG_PATH, "utf8"));
+  return value;
 }
 
 // Parse the CSP into directive -> sources. First occurrence wins, mirroring how a
@@ -366,7 +357,9 @@ function unbackedCspOrigins(
   );
 }
 
-const cspDirectives = parseCsp(readCspHeader());
+const cspDirectives = parseCsp(
+  extractCspHeader(await generateFixtureHeaders()),
+);
 
 describe("external head origin extraction", () => {
   const sample: HeadConfig[] = [
@@ -489,21 +482,21 @@ describe("CSP coverage engine", () => {
 });
 
 describe("CSP header extraction", () => {
-  it("reads a single-line value case-insensitively", () => {
+  it("reads the value from the /* block", () => {
     expect(
-      extractCspHeader(`content-security-policy = "default-src 'self'"`),
+      extractCspHeader(`/*\n  Content-Security-Policy: default-src 'self'`),
     ).toBe("default-src 'self'");
   });
 
   it("throws when no CSP header is present", () => {
-    expect(() => extractCspHeader(`X-Frame-Options = "DENY"`)).toThrow(
+    expect(() => extractCspHeader(`/*\n  X-Frame-Options: DENY`)).toThrow(
       /Missing Content-Security-Policy/,
     );
   });
 
   it("throws when the CSP value is empty", () => {
-    expect(() => extractCspHeader(`Content-Security-Policy = ""`)).toThrow(
-      /empty/,
+    expect(() => extractCspHeader(`/*\n  Content-Security-Policy: `)).toThrow(
+      /not a valid header line/,
     );
   });
 });

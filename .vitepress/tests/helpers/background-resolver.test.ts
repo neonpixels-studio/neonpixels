@@ -70,6 +70,29 @@ describe("background resolver", () => {
     expect(resolvedBackgroundOf(leaf)).toBe("#08080a");
   });
 
+  it("composites a translucent bg-[#rrggbbaa] class over the surface behind", () => {
+    // Same value as the inline form above, written as an arbitrary class.
+    const leaf = fixtureLeaf(
+      '<div class="bg-panel"><header class="bg-[#08080ae6]"><span data-leaf class="text-[#f2f2f4]">x</span></header></div>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe("#08080a");
+  });
+
+  it("reads the background of a generated class as if it were inline", () => {
+    // project-grimicorn-section paints a gradient whose lightest stop is #0d1206.
+    const leaf = fixtureLeaf(
+      '<section class="bg-panel project-grimicorn-section"><span data-leaf class="text-[#f2f2f4]">x</span></section>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe("#0d1206");
+  });
+
+  it("ignores a class that is not generated", () => {
+    const leaf = fixtureLeaf(
+      '<section class="project-nonexistent-section"><span data-leaf class="text-[#f2f2f4]">x</span></section>',
+    );
+    expect(resolvedBackgroundOf(leaf)).toBe(pageBackgroundHex());
+  });
+
   it("composites a translucent overlay class over its backdrop", () => {
     // white at 50% over black is mid-grey — climbing past would report black.
     const leaf = fixtureLeaf(

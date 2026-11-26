@@ -2,7 +2,7 @@ import { defineConfig, type Plugin } from "vitepress";
 import tailwindcss from "@tailwindcss/vite";
 import { resolveSentryEnvironment } from "@neon-pixels/sentry";
 
-import { writeReportOnlyHeaders } from "./csp/writeReportOnlyHeaders";
+import { writeSiteHeaders } from "./csp/writeSiteHeaders";
 import { writeFontPreloadLink } from "./fonts/writeFontPreloadLink";
 import { getNoindexHeaderLines } from "./robots/getNoindexHeaderLines";
 import { buildNotFoundHead, buildPageSeoHead } from "./seo/buildPageSeoHead";
@@ -14,6 +14,7 @@ import {
   sourceMapModeFor,
 } from "./sentry-build";
 import { PROJECTS, type Project } from "./theme/data/projects";
+import { buildGeneratedCss } from "./theme/generatedStyles";
 
 const SITE_URL = "https://neonpixels.dev";
 // Netlify's CONTEXT exists only at build time, so the Sentry environment is
@@ -103,11 +104,18 @@ export function buildOrganizationJsonLd(projects: ProjectJsonLdSource[]) {
 }
 
 const JSON_LD = buildOrganizationJsonLd(PROJECTS);
+const GENERATED_CSS = buildGeneratedCss();
 
 export default defineConfig({
   title: "Neon Pixels",
   description: DESCRIPTION,
   lang: "en-US",
+  // The site is dark-only (see the color-scheme meta tag and style.css), so there
+  // is no light/dark switch. With the default `appearance: true`, VitePress's
+  // useData() builds a color-mode ref that injects a runtime <style> element (a
+  // transition reset) on every start, which the enforced Content-Security-Policy
+  // blocks: no hash can cover it because it is created after the page is hashed.
+  appearance: false,
   // Repo docs, scratch files and the original design export are not site routes.
   srcExclude: ["README.md", "_claude-*.md", "_scratch.md", "export/**"],
   sitemap: {
@@ -140,6 +148,10 @@ export default defineConfig({
     ["meta", { name: "twitter:image:alt", content: OG_IMAGE_ALT }],
     // Structured data
     ["script", { type: "application/ld+json" }, JSON_LD],
+    // Per-value classes generated from the theme data (accents, glows, gradients).
+    // They live here, as one hashed <style> element, because a style attribute
+    // would need 'unsafe-inline' — see .vitepress/theme/generatedStyles.ts.
+    ["style", {}, GENERATED_CSS],
     // Favicon
     [
       "link",
@@ -212,15 +224,15 @@ export default defineConfig({
   // <link> carries no inline script for it to hash, but ordering it any other
   // way would make that an accident rather than a guarantee.
   //
-  // Then hashes the inline bootstrap scripts VitePress emits and publishes them
-  // in a Content-Security-Policy-Report-Only header (Netlify `_headers`).
-  // Derived from the real build output so the hashes can never drift silently.
-  // The enforcing CSP in netlify.toml keeps 'unsafe-inline' until this
-  // Report-Only rollout confirms no violations — see the @todo there.
+  // Then hashes the inline scripts and styles in the built pages and writes the
+  // enforced Content-Security-Policy and the other security headers to the
+  // publish dir's `_headers` (see ./csp). Derived from the real build output so
+  // the hashes can never drift silently, and the build fails on markup no hash
+  // can cover, such as a style attribute. Violations are reported to Sentry.
   //
   // Also noindexes deploy-preview/branch-deploy builds (see .vitepress/robots)
   // since Netlify headers can't be scoped by context in netlify.toml itself;
-  // the noindex line rides in the same `/*` block this hook already writes.
+  // the noindex line rides in the same `/*` block the policy is written to.
   async buildEnd(siteConfig) {
     if (!UPLOAD_SOURCE_MAPS) {
       console.log(UPLOAD_SKIPPED_MESSAGE);
@@ -230,14 +242,10 @@ export default defineConfig({
       siteConfig.site.base,
       siteConfig.assetsDir,
     );
-    // The skipped `undefined` is netlifyConfigPath, a test-only override seam
-    // (see writeReportOnlyHeaders.test.ts) — production always wants its
-    // default, so it has to be named here to reach extraGlobalHeaderLines.
-    await writeReportOnlyHeaders(
-      siteConfig.outDir,
-      undefined,
-      getNoindexHeaderLines(),
-    );
+    await writeSiteHeaders(siteConfig.outDir, {
+      environment: SENTRY_ENVIRONMENT,
+      extraHeaderLines: getNoindexHeaderLines(),
+    });
     // The upload plugin deletes uploaded maps; fail if any survive (see scan-source-maps.ts).
     assertBuildOutputHasNoSourceMaps(siteConfig.outDir);
   },

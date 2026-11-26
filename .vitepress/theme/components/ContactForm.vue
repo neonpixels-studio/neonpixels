@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from "vue";
-import { WORDMARK_GRADIENT } from "../brand";
 import { submitNetlifyForm } from "../forms/submitNetlifyForm";
 
 // Netlify's build-time bot registers a form by statically parsing the built
@@ -275,8 +274,7 @@ async function handleSubmit() {
           <button
             type="submit"
             :disabled="status === 'submitting'"
-            class="text-bg animate-sweep rounded-none px-5 py-[9px] text-[13px] font-bold disabled:opacity-60"
-            :style="{ backgroundImage: WORDMARK_GRADIENT }"
+            class="text-bg animate-sweep wordmark-gradient rounded-none px-5 py-[9px] text-[13px] font-bold disabled:opacity-60"
           >
             {{ status === "submitting" ? "sending…" : "send message" }}
           </button>

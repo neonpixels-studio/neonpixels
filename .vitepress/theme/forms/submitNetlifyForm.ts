@@ -25,11 +25,9 @@ export interface NetlifyFormSubmission {
 // because `RequestInit` is a lib.dom.d.ts *type*, not a runtime global, and
 // this repo's ESLint config runs the base (non-type-aware) `no-undef` rule,
 // which can't tell a type position from a value reference and flags it as an
-// undefined global — see the identical note on `FetchInit` in
-// netlify/functions/lib/githubFailureNotifier.ts. Parameter names are
-// prefixed `_` (matching BlobWriter in cspReportStore.ts) since they exist
-// only to document the shape, and the same base `no-unused-vars` rule would
-// otherwise flag them as unused bindings.
+// undefined global. Parameter names are prefixed `_` since they exist only to
+// document the shape, and the same base `no-unused-vars` rule would otherwise
+// flag them as unused bindings.
 export type FetchLike = (
   _input: string,
   _init: NonNullable<Parameters<typeof fetch>[1]>,

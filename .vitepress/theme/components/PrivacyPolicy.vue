@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { WORDMARK_GRADIENT } from "../brand";
 import { MAIN_CONTENT_ID } from "../a11y";
 import { GA_MEASUREMENT_ID } from "../analytics/loadGoogleAnalytics";
 import { MANAGE_CHOICE_LABEL } from "../analytics/analyticsConsent";
@@ -7,9 +6,7 @@ import { PROJECTS } from "../data/projects";
 
 // Shared across every section heading/body paragraph below so the five
 // sections read consistently and a font-size/color tweak only has one place
-// to land — mirrors how NeonPixelsPage.vue composes its own repeated inline
-// style objects (auroraGlow, cardGlow) from one definition instead of
-// restating each section's markup by hand.
+// to land, instead of restating each section's markup by hand.
 const SECTION_HEADING_CLASS =
   "font-display m-0 mb-4 text-[20px] font-black tracking-[-0.015em] text-[#f2f2f4]";
 const BODY_TEXT_CLASS = "text-fg-muted m-0 text-[15.5px] leading-[1.8]";
@@ -47,16 +44,13 @@ const ERROR_REPORT_DATA_POINTS = [
 <template>
   <div class="bg-bg text-fg relative font-mono">
     <header
-      class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b px-10 py-[22px] backdrop-blur-md"
-      style="background: #08080ae6"
+      class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b bg-[#08080ae6] px-10 py-[22px] backdrop-blur-md"
     >
       <a href="/" class="flex items-center gap-[11px]">
         <span
           class="font-display text-[15px] font-black tracking-[-0.01em] text-[#f2f2f4]"
         >
-          NEON<span
-            class="bg-clip-text text-transparent"
-            :style="{ backgroundImage: WORDMARK_GRADIENT }"
+          NEON<span class="wordmark-gradient bg-clip-text text-transparent"
             >PIXELS</span
           >
         </span>
@@ -79,8 +73,7 @@ const ERROR_REPORT_DATA_POINTS = [
       </div>
 
       <h1
-        class="font-display m-0 mb-8 font-black tracking-[-0.025em] text-[#f2f2f4]"
-        style="font-size: clamp(30px, 3.6vw, 46px); line-height: 1.02"
+        class="font-display m-0 mb-8 text-[clamp(30px,3.6vw,46px)] leading-[1.02] font-black tracking-[-0.025em] text-[#f2f2f4]"
       >
         Privacy Policy
       </h1>

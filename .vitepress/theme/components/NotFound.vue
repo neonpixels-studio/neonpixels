@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
-import { WORDMARK_GRADIENT } from "../brand";
 import { MAIN_CONTENT_ID } from "../a11y";
 
 const MISSING_LINES = [
@@ -34,15 +33,7 @@ onMounted(() => {
   >
     <!-- ambient glow -->
     <div
-      class="animate-aurora ambient-decoration pointer-events-none absolute top-[-200px] right-[-160px] h-[680px] w-[680px] blur-[24px]"
-      style="
-        background: radial-gradient(
-          circle,
-          rgba(34, 224, 255, 0.18),
-          rgba(255, 46, 166, 0.09) 45%,
-          transparent 70%
-        );
-      "
+      class="animate-aurora ambient-decoration not-found-glow pointer-events-none absolute top-[-200px] right-[-160px] h-[680px] w-[680px] blur-[24px]"
     />
 
     <div class="relative w-full max-w-[680px] text-center">
@@ -57,12 +48,7 @@ onMounted(() => {
 
       <!-- big neon 404 -->
       <h1
-        class="font-display animate-sweep m-0 bg-clip-text font-black tracking-[-0.04em] text-transparent select-none"
-        :style="{
-          fontSize: 'clamp(6rem, 22vw, 12rem)',
-          lineHeight: '0.9',
-          backgroundImage: WORDMARK_GRADIENT,
-        }"
+        class="font-display animate-sweep wordmark-gradient m-0 bg-clip-text text-[clamp(6rem,22vw,12rem)] leading-[0.9] font-black tracking-[-0.04em] text-transparent select-none"
       >
         404
       </h1>
@@ -85,8 +71,7 @@ onMounted(() => {
       <div class="mb-12 flex flex-wrap justify-center gap-[14px]">
         <a
           href="/"
-          class="text-bg animate-sweep rounded-none px-[22px] py-[13px] text-[13px] font-bold no-underline"
-          :style="{ backgroundImage: WORDMARK_GRADIENT }"
+          class="text-bg animate-sweep wordmark-gradient rounded-none px-[22px] py-[13px] text-[13px] font-bold no-underline"
         >
           ▸ back to home
         </a>
@@ -102,8 +87,7 @@ onMounted(() => {
 
       <!-- terminal trace -->
       <div
-        class="mx-auto max-w-[520px] overflow-hidden border border-white/[0.08] text-left text-[13px] leading-loose text-[#d4d4d8]"
-        style="background: #08080a; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4)"
+        class="mx-auto max-w-[520px] overflow-hidden border border-white/[0.08] bg-[#08080a] text-left text-[13px] leading-loose text-[#d4d4d8] shadow-[0_30px_80px_rgba(0,0,0,0.4)]"
       >
         <div
           class="flex items-center gap-[14px] border-b border-white/[0.07] bg-white/[0.015] px-[18px] py-3"

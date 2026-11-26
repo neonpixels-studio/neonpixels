@@ -3,13 +3,13 @@
 exports[`NeonPixelsPage > renders correctly 1`] = `
 "<div data-v-aa442b0f="" class="bg-bg text-fg relative font-mono">
   <!-- drifting grid backdrop -->
-  <div data-v-aa442b0f="" class="animate-drift ambient-decoration pointer-events-none fixed inset-0 z-0" style="background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 80px 80px;"></div><!-- header -->
-  <header data-v-aa442b0f="" class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b px-10 py-[22px] backdrop-blur-md" style="background: #08080ae6;"><a data-v-aa442b0f="" href="#top" class="flex items-center gap-[11px]"><svg data-v-aa442b0f="" width="20" height="20" viewBox="0 0 34 34" class="block flex-none" aria-hidden="true">
+  <div data-v-aa442b0f="" class="animate-drift ambient-decoration grid-backdrop pointer-events-none fixed inset-0 z-0"></div><!-- header -->
+  <header data-v-aa442b0f="" class="border-border sticky top-0 z-30 flex items-center justify-between gap-6 border-b bg-[#08080ae6] px-10 py-[22px] backdrop-blur-md"><a data-v-aa442b0f="" href="#top" class="flex items-center gap-[11px]"><svg data-v-aa442b0f="" width="20" height="20" viewBox="0 0 34 34" class="block flex-none" aria-hidden="true">
         <rect data-v-aa442b0f="" x="0" y="22" width="10" height="10" fill="#22e0ff"></rect>
         <rect data-v-aa442b0f="" x="12" y="11" width="10" height="10" fill="#b8ff2e"></rect>
         <rect data-v-aa442b0f="" x="24" y="0" width="10" height="10" fill="#ff2ea6"></rect>
-      </svg><span data-v-aa442b0f="" class="font-display text-[15px] font-black tracking-[-0.01em] text-[#f2f2f4]"> NEON<span data-v-aa442b0f="" class="animate-sweep bg-clip-text text-transparent" style="background-image: linear-gradient(90deg, #b8ff2e, #22e0ff, #ff2ea6, #ffc21f, #b8ff2e); --np-sweep-dur: 7s;">PIXELS</span></span></a>
-    <nav data-v-83053a23="" data-v-aa442b0f="" class="text-fg-subtle flex items-center gap-[26px] text-[12.5px]"><a data-v-83053a23="" href="#projects" class="nav-link text-fg-subtle hidden md:inline">projects</a><a data-v-83053a23="" href="#about" class="nav-link text-fg-subtle hidden md:inline">about</a><a data-v-83053a23="" href="#contact" class="nav-link text-fg-subtle hidden md:inline">contact</a><span data-v-83053a23="" class="text-lime hidden items-center gap-[7px] md:flex"><span data-v-83053a23="" class="bg-lime animate-pulse-dot status-dot h-[7px] w-[7px] rounded-full" style="box-shadow: 0 0 8px #b8ff2e;"></span>4 projects </span><button data-v-83053a23="" type="button" class="nav-link menu-toggle text-fg-subtle border-border border px-3 py-[6px] md:hidden" aria-expanded="false" aria-controls="mobile-menu">menu</button>
+      </svg><span data-v-aa442b0f="" class="font-display text-[15px] font-black tracking-[-0.01em] text-[#f2f2f4]"> NEON<span data-v-aa442b0f="" class="animate-sweep wordmark-gradient bg-clip-text text-transparent [--np-sweep-dur:7s]">PIXELS</span></span></a>
+    <nav data-v-83053a23="" data-v-aa442b0f="" class="text-fg-subtle flex items-center gap-[26px] text-[12.5px]"><a data-v-83053a23="" href="#projects" class="nav-link text-fg-subtle hidden md:inline">projects</a><a data-v-83053a23="" href="#about" class="nav-link text-fg-subtle hidden md:inline">about</a><a data-v-83053a23="" href="#contact" class="nav-link text-fg-subtle hidden md:inline">contact</a><span data-v-83053a23="" class="text-lime hidden items-center gap-[7px] md:flex"><span data-v-83053a23="" class="bg-lime animate-pulse-dot status-dot nav-dot-glow h-[7px] w-[7px] rounded-full"></span>4 projects </span><button data-v-83053a23="" type="button" class="nav-link menu-toggle text-fg-subtle border-border border px-3 py-[6px] md:hidden" aria-expanded="false" aria-controls="mobile-menu">menu</button>
       <!--v-if-->
     </nav>
   </header>
@@ -19,26 +19,26 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
   <main data-v-aa442b0f="" id="main-content" tabindex="-1">
     <!-- hero -->
     <section data-v-aa442b0f="" id="top" class="relative z-[2] overflow-hidden px-10 pt-28 pb-24">
-      <div data-v-aa442b0f="" class="animate-aurora ambient-decoration pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]" style="background: radial-gradient(circle, rgba(184, 255, 46, 0.16), transparent 62%);"></div>
-      <div data-v-aa442b0f="" class="animate-aurora-reverse ambient-decoration pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px]" style="--np-aurora-dur: 32s; background: radial-gradient(circle, rgba(255, 46, 166, 0.15), transparent 62%);"></div>
-      <div data-v-aa442b0f="" class="animate-aurora ambient-decoration pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px]" style="--np-aurora-dur: 38s; background: radial-gradient(circle, rgba(34, 224, 255, 0.13), transparent 62%);"></div>
+      <div data-v-aa442b0f="" class="animate-aurora ambient-decoration hero-aurora-lime pointer-events-none absolute top-[-30%] left-[8%] h-[640px] w-[640px] rounded-full blur-[38px]"></div>
+      <div data-v-aa442b0f="" class="animate-aurora-reverse ambient-decoration hero-aurora-pink pointer-events-none absolute top-[-14%] right-[2%] h-[560px] w-[560px] rounded-full blur-[38px] [--np-aurora-dur:32s]"></div>
+      <div data-v-aa442b0f="" class="animate-aurora ambient-decoration hero-aurora-cyan pointer-events-none absolute bottom-[-24%] left-[34%] h-[520px] w-[520px] rounded-full blur-[40px] [--np-aurora-dur:38s]"></div>
       <div data-v-aa442b0f="" class="relative mx-auto flex max-w-[1180px] flex-col gap-[34px]">
-        <div data-v-aa442b0f="" class="flex items-center gap-[14px] text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"><span data-v-aa442b0f="" class="bg-lime h-px w-[26px]" style="box-shadow: 0 0 6px #b8ff2e;"></span> a very small studio · a lot of side projects </div>
-        <h1 data-v-aa442b0f="" class="font-display m-0 font-black tracking-[-0.035em] text-[#f4f4f6]" style="line-height: 0.86; text-wrap: balance;"> WE BUILD THE<br data-v-aa442b0f=""><span data-v-aa442b0f="" class="animate-sweep bg-clip-text text-transparent" style="background-image: linear-gradient(90deg, #b8ff2e, #22e0ff, #ff2ea6, #ffc21f, #b8ff2e);">MISSING APPS</span></h1>
-        <p data-v-aa442b0f="" class="m-0 max-w-[640px] text-[15.5px] leading-[1.75] text-[#a8a8b3]" style="text-wrap: pretty;"> Neon Pixels is one human and one very caffeinated agent, shipping the tools we kept wishing existed. Every project here started as a personal annoyance and escaped into production. <span data-v-aa442b0f="" class="text-fg">You're welcome to use them.</span></p>
-        <div data-v-aa442b0f="" class="flex flex-wrap gap-[10px]"><a data-v-aa442b0f="" href="#grimicorn" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #b8ff2e; border-color: #2b3a14; background: #12180a; --pill-bg-hover: #1a2410; --accent: #b8ff2e;"><span data-v-aa442b0f="" class="pill-dot h-[6px] w-[6px]" style="background: #b8ff2e; box-shadow: 0 0 7px #b8ff2e;"></span>grimicorn.dev</a><a data-v-aa442b0f="" href="#farflung" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #22e0ff; border-color: #123340; background: #08161b; --pill-bg-hover: #0c2028; --accent: #22e0ff;"><span data-v-aa442b0f="" class="pill-dot h-[6px] w-[6px]" style="background: #22e0ff; box-shadow: 0 0 7px #22e0ff;"></span>farflung.io</a><a data-v-aa442b0f="" href="#basin" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #ffc21f; border-color: #3d2f0c; background: #1a1305; --pill-bg-hover: #241a07; --accent: #ffc21f;"><span data-v-aa442b0f="" class="pill-dot h-[6px] w-[6px]" style="background: #ffc21f; box-shadow: 0 0 7px #ffc21f;"></span>basin.fm</a><a data-v-aa442b0f="" href="#markpost" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px]" style="color: #ff2ea6; border-color: #3d1029; background: #1b0713; --pill-bg-hover: #250a1a; --accent: #ff2ea6;"><span data-v-aa442b0f="" class="pill-dot h-[6px] w-[6px]" style="background: #ff2ea6; box-shadow: 0 0 7px #ff2ea6;"></span>markpost.io</a></div>
+        <div class="flex items-center gap-[14px] text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase" data-v-aa442b0f=""><span class="bg-lime hero-rule-glow h-px w-[26px]" data-v-aa442b0f=""></span> a very small studio · a lot of side projects </div>
+        <h1 class="font-display m-0 text-[clamp(56px,9vw,132px)] leading-[0.86] font-black tracking-[-0.035em] text-balance text-[#f4f4f6]" data-v-aa442b0f=""> WE BUILD THE<br data-v-aa442b0f=""><span class="animate-sweep wordmark-gradient bg-clip-text text-transparent" data-v-aa442b0f="">MISSING APPS</span></h1>
+        <p class="m-0 max-w-[640px] text-[15.5px] leading-[1.75] text-pretty text-[#a8a8b3]" data-v-aa442b0f=""> Neon Pixels is one human and one very caffeinated agent, shipping the tools we kept wishing existed. Every project here started as a personal annoyance and escaped into production. <span class="text-fg" data-v-aa442b0f="">You're welcome to use them.</span></p>
+        <div data-v-aa442b0f="" class="flex flex-wrap gap-[10px]"><a data-v-aa442b0f="" href="#grimicorn" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px] project-grimicorn-pill"><span data-v-aa442b0f="" class="pill-dot h-[6px] w-[6px] project-grimicorn-pill-dot"></span>grimicorn.dev</a><a data-v-aa442b0f="" href="#farflung" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px] project-farflung-pill"><span data-v-aa442b0f="" class="pill-dot h-[6px] w-[6px] project-farflung-pill-dot"></span>farflung.io</a><a data-v-aa442b0f="" href="#basin" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px] project-basin-pill"><span data-v-aa442b0f="" class="pill-dot h-[6px] w-[6px] project-basin-pill-dot"></span>basin.fm</a><a data-v-aa442b0f="" href="#markpost" class="pill flex items-center gap-[9px] border px-[15px] py-[9px] text-[12.5px] project-markpost-pill"><span data-v-aa442b0f="" class="pill-dot h-[6px] w-[6px] project-markpost-pill-dot"></span>markpost.io</a></div>
       </div>
     </section><!-- about -->
     <section data-v-aa442b0f="" id="about" class="border-border bg-panel relative z-[2] border-t border-b px-10 py-20">
       <div data-v-aa442b0f="" class="mx-auto grid max-w-[1180px] items-start gap-16 md:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
         <div data-v-aa442b0f="" class="flex flex-col gap-[18px]">
           <div data-v-aa442b0f="" class="flex items-center gap-3 text-[11.5px] tracking-[0.24em] text-[#7a7a85] uppercase"><span data-v-aa442b0f="" class="h-px w-[22px] bg-[#7a7a85]"></span> about </div>
-          <h2 data-v-aa442b0f="" class="font-display m-0 font-black tracking-[-0.025em] text-[#f2f2f4]" style="line-height: 1.02;"> A studio of<br data-v-aa442b0f="">two, sort of. </h2>
+          <h2 data-v-aa442b0f="" class="font-display m-0 text-[clamp(30px,3.6vw,46px)] leading-[1.02] font-black tracking-[-0.025em] text-[#f2f2f4]"> A studio of<br data-v-aa442b0f="">two, sort of. </h2>
         </div>
         <div data-v-aa442b0f="" class="flex flex-col gap-[26px]">
-          <p data-v-aa442b0f="" class="m-0 text-[15.5px] leading-[1.8] text-[#b4b4bf]" style="text-wrap: pretty;"> Neon Pixels is me and Grimicorn — my agent, my co-worker, and the reason commits show up at 3am. Everything under this roof solves a problem <em data-v-aa442b0f="" class="text-fg not-italic">I personally had</em>, and then kept going because it turns out other people had it too. </p>
-          <p data-v-aa442b0f="" class="m-0 text-[15.5px] leading-[1.8] text-[#b4b4bf]" style="text-wrap: pretty;"> It's also a playground. Each project doubles as an experiment in how far automated, agent-driven development can actually go when you let it off the leash. Some of it works beautifully. Some of it is on fire. Both are the point. </p>
-          <div data-v-aa442b0f="" class="border-border bg-border grid gap-px border" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+          <p data-v-aa442b0f="" class="m-0 text-[15.5px] leading-[1.8] text-pretty text-[#b4b4bf]"> Neon Pixels is me and Grimicorn — my agent, my co-worker, and the reason commits show up at 3am. Everything under this roof solves a problem <em data-v-aa442b0f="" class="text-fg not-italic">I personally had</em>, and then kept going because it turns out other people had it too. </p>
+          <p data-v-aa442b0f="" class="m-0 text-[15.5px] leading-[1.8] text-pretty text-[#b4b4bf]"> It's also a playground. Each project doubles as an experiment in how far automated, agent-driven development can actually go when you let it off the leash. Some of it works beautifully. Some of it is on fire. Both are the point. </p>
+          <div data-v-aa442b0f="" class="border-border bg-border grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-px border">
             <div data-v-aa442b0f="" class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]"><span data-v-aa442b0f="" class="font-display text-lime text-[30px] leading-none font-black">4</span><span data-v-aa442b0f="" class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase">projects live-ish</span></div>
             <div class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]" data-v-aa442b0f=""><span class="font-display text-cyan text-[30px] leading-none font-black" data-v-aa442b0f="">2</span><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase" data-v-aa442b0f="">team members</span></div>
             <div class="bg-panel flex flex-col gap-[7px] px-4 py-[18px]" data-v-aa442b0f=""><span class="font-display text-amber text-[30px] leading-none font-black" data-v-aa442b0f="">1</span><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase" data-v-aa442b0f="">of them sleeps</span></div>
@@ -54,16 +54,16 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
     </div>
     <!-- projects: one data-driven section per PROJECTS entry; each keeps its
          bespoke visual in the #visual slot. reverse alternates the layout. -->
-    <section data-v-aa442b0f="" id="grimicorn" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(100deg, #0d1206 0%, #08080a 58%);">
-      <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(90deg, #b8ff2e, transparent 65%);"></div>
-      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora top-[-30%] left-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 28s; background: radial-gradient(circle, rgba(184, 255, 46, 0.18), transparent 62%);"></div>
+    <section data-v-aa442b0f="" id="grimicorn" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px] project-grimicorn-section">
+      <div class="absolute top-0 right-0 left-0 h-px project-grimicorn-top-line"></div>
+      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora top-[-30%] left-[-6%] h-[520px] w-[520px] project-grimicorn-aurora"></div>
       <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
         <div data-v-6057c22f="" class="flex flex-col gap-5">
           <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[3px] text-bg bg-lime">LIVE</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">01 — agent workflow</span></div>
-          <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">grimicorn<span data-v-6057c22f="" class="text-lime animate-flicker" style="text-shadow: 0 0 18px rgba(184, 255, 46, 0.6);">.dev</span></h3>
-          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]" style="text-wrap: pretty;">The chaotic coding sidekick behind everything else on this page. An automated agent workflow that builds, breaks, and ships the other Neon Pixels projects while I'm asleep.</p><a data-v-6057c22f="" href="https://grimicorn.dev" target="_blank" rel="noopener noreferrer" class="cta-fill text-bg self-start px-5 py-3 text-[13px] font-bold bg-lime" style="--accent: #b8ff2e; box-shadow: 0 0 26px rgba(184, 255, 46, 0.35); --accent-glow: rgba(184, 255, 46, 0.6);">visit grimicorn.dev →</a>
+          <h3 data-v-6057c22f="" class="font-display m-0 text-[clamp(38px,5vw,66px)] leading-[0.92] font-black tracking-[-0.03em] text-[#f2f2f4]">grimicorn<span data-v-6057c22f="" class="text-lime project-grimicorn-heading-glow animate-flicker">.dev</span></h3>
+          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-pretty text-[#a8a8b3]">The chaotic coding sidekick behind everything else on this page. An automated agent workflow that builds, breaks, and ships the other Neon Pixels projects while I'm asleep.</p><a data-v-6057c22f="" href="https://grimicorn.dev" target="_blank" rel="noopener noreferrer" class="cta-fill text-bg self-start px-5 py-3 text-[13px] font-bold bg-lime project-grimicorn-cta-fill">visit grimicorn.dev →</a>
         </div>
-        <div data-v-aa442b0f="" class="border border-[#23301a] bg-[#0a0d06]" style="box-shadow: 0 0 60px rgba(184, 255, 46, 0.1);" aria-hidden="true">
+        <div data-v-aa442b0f="" class="glow-grimicorn border border-[#23301a] bg-[#0a0d06]" aria-hidden="true">
           <div data-v-aa442b0f="" class="flex items-center gap-2 border-b border-[#23301a] px-[14px] py-[11px]"><span data-v-aa442b0f="" class="bg-pink h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="bg-amber h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="bg-lime h-[9px] w-[9px] rounded-full"></span><span data-v-aa442b0f="" class="text-fg-dim ml-2 text-[11px]">grimicorn-agent — zsh</span></div>
           <div data-v-aa442b0f="" class="text-fg-subtle px-[18px] py-[18px] text-[12.5px] leading-[2.05]">
             <div data-v-aa442b0f=""><span data-v-aa442b0f="" class="text-lime">grimicorn@dev</span> ~ % status</div>
@@ -76,11 +76,11 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
         </div>
       </div>
     </section>
-    <section data-v-aa442b0f="" id="farflung" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(260deg, #04141a 0%, #08080a 58%);">
-      <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(270deg, #22e0ff, transparent 65%);"></div>
-      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-26%] right-[-6%] h-[520px] w-[520px]" style="--np-aurora-dur: 34s; background: radial-gradient(circle, rgba(34, 224, 255, 0.16), transparent 62%);"></div>
+    <section data-v-aa442b0f="" id="farflung" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px] project-farflung-section">
+      <div class="absolute top-0 right-0 left-0 h-px project-farflung-top-line"></div>
+      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-26%] right-[-6%] h-[520px] w-[520px] project-farflung-aurora"></div>
       <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]">
-        <div data-v-aa442b0f="" class="flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]" style="box-shadow: 0 0 60px rgba(34, 224, 255, 0.1);" role="img" aria-label="FarFlung trip log: 47 of 50 US states visited, 60,000+ miles traveled across 3 countries.">
+        <div data-v-aa442b0f="" class="glow-farflung flex flex-col gap-4 border border-[#12333f] bg-[#051216] p-[22px]" role="img" aria-label="FarFlung trip log: 47 of 50 US states visited, 60,000+ miles traveled across 3 countries.">
           <div data-v-aa442b0f="" class="text-farflung-label flex justify-between text-[11px] tracking-[0.16em] uppercase"><span data-v-aa442b0f="">trip log</span><span data-v-aa442b0f="">47 / 50 states</span></div>
           <!-- 10 columns lays the 50 state cells out as a clean 10x5 block;
                  the taller card (vs. the old 3-row strip) is deliberate now that
@@ -89,97 +89,97 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
             <!-- Fill via --trip-cell-bg, not a plain \`background\`, so the
                    forced-colors override in style.css's \`.trip-cell\` rule
                    can win the cascade — see that rule for why. -->
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; --trip-cell-bg: #0e2831; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; --trip-cell-bg: #0e2831; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff88; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff55; box-shadow: none;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="true" style="aspect-ratio: 1 / 1; --trip-cell-bg: #22e0ff; box-shadow: 0 0 8px #22e0ff;"></div>
-            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell" data-visited="false" style="aspect-ratio: 1 / 1; --trip-cell-bg: #0e2831; box-shadow: none;"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-off" data-visited="false"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-off" data-visited="false"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-mid" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-low" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-on" data-visited="true"></div>
+            <div data-v-aa442b0f="" data-testid="trip-log-cell" class="trip-cell aspect-square trip-cell-off" data-visited="false"></div>
           </div>
           <div data-v-aa442b0f="" class="text-farflung-label flex gap-5 text-[11px]"><span data-v-aa442b0f="">60k+ miles</span><span data-v-aa442b0f="">47 states</span><span data-v-aa442b0f="">3 countries</span></div>
         </div>
         <div data-v-6057c22f="" class="flex flex-col gap-5">
           <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[2px] border text-cyan border-cyan">IN PROGRESS</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">02 — travel</span></div>
-          <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">farflung<span data-v-6057c22f="" class="text-cyan" style="text-shadow: 0 0 18px rgba(34, 224, 255, 0.6);">.io</span></h3>
-          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]" style="text-wrap: pretty;">A travel blog and tracker in one. Log where you've been, plot it, write about it — without gluing together four apps and a spreadsheet to do it.</p><a data-v-6057c22f="" href="https://farflung.io" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-cyan border-cyan" style="--accent: #22e0ff;">visit farflung.io →</a>
+          <h3 data-v-6057c22f="" class="font-display m-0 text-[clamp(38px,5vw,66px)] leading-[0.92] font-black tracking-[-0.03em] text-[#f2f2f4]">farflung<span data-v-6057c22f="" class="text-cyan project-farflung-heading-glow">.io</span></h3>
+          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-pretty text-[#a8a8b3]">A travel blog and tracker in one. Log where you've been, plot it, write about it — without gluing together four apps and a spreadsheet to do it.</p><a data-v-6057c22f="" href="https://farflung.io" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-cyan border-cyan project-farflung-accent">visit farflung.io →</a>
         </div>
       </div>
     </section>
-    <section data-v-aa442b0f="" id="basin" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(100deg, #170f02 0%, #08080a 58%);">
-      <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(90deg, #ffc21f, transparent 65%);"></div>
-      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora bottom-[-34%] left-[2%] h-[520px] w-[520px]" style="--np-aurora-dur: 30s; background: radial-gradient(circle, rgba(255, 194, 31, 0.15), transparent 62%);"></div>
+    <section data-v-aa442b0f="" id="basin" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px] project-basin-section">
+      <div class="absolute top-0 right-0 left-0 h-px project-basin-top-line"></div>
+      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora bottom-[-34%] left-[2%] h-[520px] w-[520px] project-basin-aurora"></div>
       <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
         <div data-v-6057c22f="" class="flex flex-col gap-5">
           <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[2px] border text-amber border-amber">IN PROGRESS</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">03 — syndication</span></div>
-          <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">basin<span data-v-6057c22f="" class="text-amber" style="text-shadow: 0 0 18px rgba(255, 194, 31, 0.6);">.fm</span></h3>
-          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]" style="text-wrap: pretty;">Everything you consume, in one stream. RSS, podcasts, YouTube and Bluesky today — Twitter, Instagram and whatever else annoys me next.</p><a data-v-6057c22f="" href="https://basin.fm" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-amber border-amber" style="--accent: #ffc21f;">visit basin.fm →</a>
+          <h3 data-v-6057c22f="" class="font-display m-0 text-[clamp(38px,5vw,66px)] leading-[0.92] font-black tracking-[-0.03em] text-[#f2f2f4]">basin<span data-v-6057c22f="" class="text-amber project-basin-heading-glow">.fm</span></h3>
+          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-pretty text-[#a8a8b3]">Everything you consume, in one stream. RSS, podcasts, YouTube and Bluesky today — Twitter, Instagram and whatever else annoys me next.</p><a data-v-6057c22f="" href="https://basin.fm" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-amber border-amber project-basin-accent">visit basin.fm →</a>
         </div>
-        <div data-v-aa442b0f="" class="flex flex-col gap-px border border-[#2e2410] bg-[#2e2410]" style="box-shadow: 0 0 60px rgba(255, 194, 31, 0.09);" aria-hidden="true">
-          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f; box-shadow: 0 0 8px #ffc21f;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #e8e8ea;">Syntax — 900: The One About Agents</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">podcast</span></div>
-          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f88; box-shadow: none;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #c4c4cd;">CSS-Tricks — Anchor positioning, finally</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">rss</span></div>
-          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f55; box-shadow: none;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #c4c4cd;">@dan.bsky.social — shipped something at 3am</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">bluesky</span></div>
-          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none" style="background: #ffc21f33; box-shadow: none;"></span><span data-v-aa442b0f="" class="flex-1 text-[13px]" style="color: #c4c4cd;">Fireship — 100 seconds of something new</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">youtube</span></div>
+        <div data-v-aa442b0f="" class="glow-basin flex flex-col gap-px border border-[#2e2410] bg-[#2e2410]" aria-hidden="true">
+          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none basin-dot-0"></span><span data-v-aa442b0f="" class="flex-1 text-[13px] text-[#e8e8ea]">Syntax — 900: The One About Agents</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">podcast</span></div>
+          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none basin-dot-1"></span><span data-v-aa442b0f="" class="flex-1 text-[13px] text-[#c4c4cd]">CSS-Tricks — Anchor positioning, finally</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">rss</span></div>
+          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none basin-dot-2"></span><span data-v-aa442b0f="" class="flex-1 text-[13px] text-[#c4c4cd]">@dan.bsky.social — shipped something at 3am</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">bluesky</span></div>
+          <div data-v-aa442b0f="" class="flex items-center gap-[14px] bg-[#120d03] px-[18px] py-[15px]"><span data-v-aa442b0f="" class="h-2 w-2 flex-none basin-dot-3"></span><span data-v-aa442b0f="" class="flex-1 text-[13px] text-[#c4c4cd]">Fireship — 100 seconds of something new</span><span data-v-aa442b0f="" class="text-fg-dim text-[11px]">youtube</span></div>
           <div data-v-aa442b0f="" class="text-fg-dim flex items-center gap-[10px] bg-[#0d0a02] px-[18px] py-[13px] text-[11px]"><span data-v-aa442b0f="" class="text-amber">+ twitter</span><span data-v-aa442b0f="" class="text-amber">+ instagram</span><span data-v-aa442b0f="" class="ml-auto">maybe someday</span></div>
         </div>
       </div>
     </section>
-    <section data-v-aa442b0f="" id="markpost" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px]" style="background: linear-gradient(260deg, #180618 0%, #08080a 58%);">
-      <div class="absolute top-0 right-0 left-0 h-px" style="background: linear-gradient(270deg, #ff2ea6, transparent 65%);"></div>
-      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-20%] right-0 h-[540px] w-[540px]" style="--np-aurora-dur: 36s; background: radial-gradient(circle, rgba(255, 46, 166, 0.16), transparent 62%);"></div>
+    <section data-v-aa442b0f="" id="markpost" class="border-border relative z-[2] overflow-hidden border-t px-10 py-[76px] project-markpost-section">
+      <div class="absolute top-0 right-0 left-0 h-px project-markpost-top-line"></div>
+      <div class="ambient-decoration pointer-events-none absolute rounded-full blur-[46px] animate-aurora-reverse top-[-20%] right-0 h-[540px] w-[540px] project-markpost-aurora"></div>
       <div class="relative mx-auto grid max-w-[1180px] items-center gap-14 md:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]">
         <div data-v-aa442b0f="" class="grid grid-cols-[1fr_auto_1fr] items-center gap-[18px]" aria-hidden="true">
           <div data-v-aa442b0f="" class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"><span data-v-aa442b0f="" class="text-markpost-label text-[10.5px] tracking-[0.16em] uppercase">in</span><span data-v-aa442b0f="" class="text-fg text-[12.5px]">POST /webhook</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">✉ notes@markpost.io</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">{ "title": "idea" }</span></div>
-          <div data-v-aa442b0f="" class="text-pink animate-flicker flex items-center justify-center text-[22px]" style="text-shadow: 0 0 14px rgba(255, 46, 166, 0.8);"> → </div>
-          <div data-v-aa442b0f="" class="flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]" style="box-shadow: 0 0 50px rgba(255, 46, 166, 0.12);"><span data-v-aa442b0f="" class="text-markpost-label text-[10.5px] tracking-[0.16em] uppercase">out</span><span data-v-aa442b0f="" class="text-pink text-[12.5px]">~/vault/idea.md</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]"># idea</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">created: 2026-08-08</span></div>
+          <div data-v-aa442b0f="" class="text-pink animate-flicker glow-markpost-arrow flex items-center justify-center text-[22px]"> → </div>
+          <div data-v-aa442b0f="" class="glow-markpost-out flex flex-col gap-[11px] border border-[#3d1029] bg-[#150610] p-[18px]"><span data-v-aa442b0f="" class="text-markpost-label text-[10.5px] tracking-[0.16em] uppercase">out</span><span data-v-aa442b0f="" class="text-pink text-[12.5px]">~/vault/idea.md</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]"># idea</span><span data-v-aa442b0f="" class="text-fg-subtle text-[12.5px]">created: 2026-08-08</span></div>
         </div>
         <div data-v-6057c22f="" class="flex flex-col gap-5">
           <div data-v-6057c22f="" class="flex items-center gap-3"><span data-v-6057c22f="" class="font-display px-2 text-[12px] font-black tracking-[0.08em] py-[2px] border text-pink border-pink">IN PROGRESS</span><span data-v-6057c22f="" class="text-fg-dim text-[11px] tracking-[0.2em] uppercase">04 — capture</span></div>
-          <h3 data-v-6057c22f="" class="font-display m-0 font-black tracking-[-0.03em] text-[#f2f2f4]" style="line-height: 0.92;">markpost<span data-v-6057c22f="" class="text-pink" style="text-shadow: 0 0 18px rgba(255, 46, 166, 0.6);">.io</span></h3>
-          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-[#a8a8b3]" style="text-wrap: pretty;">Send a webhook or an email, get a Markdown file on your own filesystem. Built for Obsidian, works with anything that reads Markdown.</p><a data-v-6057c22f="" href="https://markpost.io" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-pink border-pink" style="--accent: #ff2ea6;">visit markpost.io →</a>
+          <h3 data-v-6057c22f="" class="font-display m-0 text-[clamp(38px,5vw,66px)] leading-[0.92] font-black tracking-[-0.03em] text-[#f2f2f4]">markpost<span data-v-6057c22f="" class="text-pink project-markpost-heading-glow">.io</span></h3>
+          <p data-v-6057c22f="" class="m-0 max-w-[460px] text-[15px] leading-[1.75] text-pretty text-[#a8a8b3]">Send a webhook or an email, get a Markdown file on your own filesystem. Built for Obsidian, works with anything that reads Markdown.</p><a data-v-6057c22f="" href="https://markpost.io" target="_blank" rel="noopener noreferrer" class="cta-outline border self-start px-5 py-3 text-[13px] font-bold text-pink border-pink project-markpost-accent">visit markpost.io →</a>
         </div>
       </div>
     </section>
@@ -207,7 +207,7 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
           <div class="flex flex-col gap-[6px] sm:flex-1"><label for="contact-email" class="flex flex-col gap-[6px]"><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase">email</span><input id="contact-email" type="email" name="email" required="" autocomplete="email" class="border-border bg-bg text-fg user-invalid:border-pink aria-invalid:border-pink rounded-none border px-3 py-2 text-[13px]"></label><span id="contact-email-error" aria-live="polite" class="text-pink m-0 min-h-[1em] text-[12px]"></span></div>
         </div>
         <div class="flex flex-col gap-[6px]"><label for="contact-message" class="flex flex-col gap-[6px]"><span class="text-fg-dim text-[10.5px] tracking-[0.14em] uppercase">message</span><textarea id="contact-message" name="message" rows="3" required="" class="border-border bg-bg text-fg user-invalid:border-pink aria-invalid:border-pink rounded-none border px-3 py-2 text-[13px]"></textarea></label><span id="contact-message-error" aria-live="polite" class="text-pink m-0 min-h-[1em] text-[12px]"></span></div>
-        <div class="flex flex-wrap items-center gap-4"><button type="submit" class="text-bg animate-sweep rounded-none px-5 py-[9px] text-[13px] font-bold disabled:opacity-60" style="background-image: linear-gradient(90deg, #b8ff2e, #22e0ff, #ff2ea6, #ffc21f, #b8ff2e);">send message</button>
+        <div class="flex flex-wrap items-center gap-4"><button type="submit" class="text-bg animate-sweep wordmark-gradient rounded-none px-5 py-[9px] text-[13px] font-bold disabled:opacity-60">send message</button>
           <!-- Both regions stay mounted for the whole component lifetime and
                only their text changes: a live region inserted into the DOM at
                the same moment as the content it announces is commonly missed
@@ -226,7 +226,7 @@ exports[`NeonPixelsPage > renders correctly 1`] = `
           <rect data-v-aa442b0f="" x="12" y="11" width="10" height="10" fill="#b8ff2e"></rect>
           <rect data-v-aa442b0f="" x="24" y="0" width="10" height="10" fill="#ff2ea6"></rect>
         </svg><span data-v-aa442b0f="" class="font-display text-[13px] font-black text-[#f2f2f4]">NEON<span data-v-aa442b0f="" class="text-lime">PIXELS</span></span></div>
-      <div data-v-aa442b0f="" class="text-fg-dim flex flex-wrap gap-[22px] text-[12px]"><a data-v-aa442b0f="" href="https://grimicorn.dev" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim" style="--accent: #b8ff2e;">grimicorn.dev</a><a data-v-aa442b0f="" href="https://farflung.io" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim" style="--accent: #22e0ff;">farflung.io</a><a data-v-aa442b0f="" href="https://basin.fm" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim" style="--accent: #ffc21f;">basin.fm</a><a data-v-aa442b0f="" href="https://markpost.io" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim" style="--accent: #ff2ea6;">markpost.io</a></div><span data-v-aa442b0f="" class="text-fg-dim text-[11.5px]">© 2026 · built dark · shipped colorful</span>
+      <div data-v-aa442b0f="" class="text-fg-dim flex flex-wrap gap-[22px] text-[12px]"><a data-v-aa442b0f="" href="https://grimicorn.dev" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim project-grimicorn-accent">grimicorn.dev</a><a data-v-aa442b0f="" href="https://farflung.io" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim project-farflung-accent">farflung.io</a><a data-v-aa442b0f="" href="https://basin.fm" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim project-basin-accent">basin.fm</a><a data-v-aa442b0f="" href="https://markpost.io" target="_blank" rel="noopener noreferrer" class="footer-link text-fg-dim project-markpost-accent">markpost.io</a></div><span data-v-aa442b0f="" class="text-fg-dim text-[11.5px]">© 2026 · built dark · shipped colorful</span>
     </div>
   </footer>
 </div>"

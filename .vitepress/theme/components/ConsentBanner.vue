@@ -6,7 +6,6 @@ import {
   type ConsentService,
   type ConsentStorage,
 } from "@neon-pixels/consent";
-import { WORDMARK_GRADIENT } from "../brand";
 import { GA_MEASUREMENT_ID } from "../analytics/loadGoogleAnalytics";
 import {
   LEGACY_CONSENT_STORAGE_KEY,
@@ -157,8 +156,7 @@ function reopenBanner() {
       <button
         ref="acceptButtonRef"
         type="button"
-        class="text-bg animate-sweep rounded-none px-4 py-2 text-[13px] font-bold"
-        :style="{ backgroundImage: WORDMARK_GRADIENT }"
+        class="text-bg animate-sweep wordmark-gradient rounded-none px-4 py-2 text-[13px] font-bold"
         @click="accept"
       >
         Accept
