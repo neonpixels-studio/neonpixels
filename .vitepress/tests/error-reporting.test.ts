@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { createApp, type App } from "vue";
-import { close, getClient, type BrowserOptions } from "@sentry/vue";
+import {
+  addBreadcrumb,
+  close,
+  getClient,
+  type BrowserOptions,
+} from "@sentry/vue";
 import { scrubEvent } from "@neon-pixels/sentry";
 
 import { initErrorReporting } from "@theme/error-reporting";
@@ -203,8 +208,32 @@ describe("initErrorReporting event capture", () => {
         errorFrom("chrome-extension://abc/content.js", "from an extension"),
       ),
     );
+    // A first-party sentinel proves the transport works and the earlier event
+    // had its chance to arrive: only the sentinel may be sent.
+    window.dispatchEvent(
+      rejectionOf(errorFrom(`${ORIGIN}/assets/app.js`, "sentinel")),
+    );
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(sentEnvelopes).toEqual([]);
+    await vi.waitFor(() => expect(sentExceptions()).toHaveLength(1));
+    expect(sentExceptions()[0]).toContain("sentinel");
+    expect(sentExceptions()[0]).not.toContain("from an extension");
+  });
+
+  it("strips query strings and fragments from navigation breadcrumbs", async () => {
+    startReporting();
+    addBreadcrumb({
+      category: "navigation",
+      data: { from: "/", to: "/privacy?utm_source=secret#section-token" },
+    });
+
+    window.dispatchEvent(
+      rejectionOf(errorFrom(`${ORIGIN}/assets/app.js`, "with breadcrumb")),
+    );
+
+    await vi.waitFor(() => expect(sentEnvelopes).toHaveLength(1));
+    const sent = JSON.stringify(sentEnvelopes);
+    expect(sent).toContain("with breadcrumb");
+    expect(sent).not.toContain("utm_source=secret");
+    expect(sent).not.toContain("section-token");
   });
 });

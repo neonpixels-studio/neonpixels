@@ -3,6 +3,7 @@ import {
   UPLOAD_SKIPPED_MESSAGE,
   buildSentryVitePlugins,
   shouldUploadSourceMaps,
+  sourceMapModeFor,
 } from "../sentry-build";
 
 const UPLOAD_ENVIRONMENT = {
@@ -36,6 +37,13 @@ describe("shouldUploadSourceMaps", () => {
     expect(UPLOAD_SKIPPED_MESSAGE).toContain("SENTRY_AUTH_TOKEN");
     expect(UPLOAD_SKIPPED_MESSAGE).toContain("SENTRY_ORG");
     expect(UPLOAD_SKIPPED_MESSAGE).toContain("SENTRY_PROJECT");
+  });
+});
+
+describe("sourceMapModeFor", () => {
+  it("generates hidden maps only when the upload is configured", () => {
+    expect(sourceMapModeFor(UPLOAD_ENVIRONMENT)).toBe("hidden");
+    expect(sourceMapModeFor({})).toBe(false);
   });
 });
 

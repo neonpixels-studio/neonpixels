@@ -7,3 +7,5 @@ export const SENTRY_DSN =
 export function sentryOriginFromDsn(dsn: string) {
   return new URL(dsn).origin;
 }
+
+export const SENTRY_INGEST_ORIGIN = sentryOriginFromDsn(SENTRY_DSN);

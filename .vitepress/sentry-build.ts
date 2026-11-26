@@ -9,7 +9,7 @@ import { sentryVitePlugin } from "@sentry/vite-plugin";
 type BuildEnvironment = Record<string, string | undefined>;
 type ConfigEnvironment = { command?: string; isSsrBuild?: boolean };
 
-const UPLOAD_VARIABLES = [
+export const UPLOAD_VARIABLES = [
   "SENTRY_AUTH_TOKEN",
   "SENTRY_ORG",
   "SENTRY_PROJECT",
@@ -22,6 +22,13 @@ export const UPLOAD_SKIPPED_MESSAGE = `Sentry source map upload skipped: ${UPLOA
 
 export function shouldUploadSourceMaps(environment: BuildEnvironment) {
   return UPLOAD_VARIABLES.every((name) => Boolean(environment[name]));
+}
+
+// "hidden" emits maps for the upload without a sourceMappingURL comment; the
+// upload plugin deletes them afterwards, so they never deploy. Without the
+// variables no maps are generated at all.
+export function sourceMapModeFor(environment: BuildEnvironment) {
+  return shouldUploadSourceMaps(environment) ? "hidden" : false;
 }
 
 // VitePress runs a client and an SSR build through the same plugin list. Only

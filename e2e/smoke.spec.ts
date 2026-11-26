@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { loadEnforcedCsp } from "./support/enforcedCsp.ts";
 import { trackCspViolations } from "./support/cspViolations.ts";
 import { trackPageErrors } from "./support/pageErrors.ts";
-import { SENTRY_DSN, sentryOriginFromDsn } from "../.vitepress/sentry-dsn.ts";
+import { SENTRY_INGEST_ORIGIN } from "../.vitepress/sentry-dsn.ts";
 
 const GTAG_URL_PATTERN = "https://www.googletagmanager.com/gtag/js**";
 const CONSENT_STORAGE_KEY = "neonpixels:analytics-consent";
@@ -12,7 +12,7 @@ const DOCUMENT_404_CONSOLE_ERROR =
   "Failed to load resource: the server responded with a status of 404 (Not Found)";
 const GTAG_STUB = "window.__gtagStubLoaded = true;";
 
-const SENTRY_INGEST_PATTERN = `${sentryOriginFromDsn(SENTRY_DSN)}/**`;
+const SENTRY_INGEST_PATTERN = `${SENTRY_INGEST_ORIGIN}/**`;
 // How long a started SDK gets to send something it should not.
 const SENTRY_SETTLE_MS = 1000;
 const SENTRY_THROW_SCRIPT_PATH = "/e2e-sentry-throw.js";

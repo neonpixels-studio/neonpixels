@@ -30,6 +30,7 @@ import config from "../config";
 import { SMOKE_BUILD_REUSE_DIR_ENV } from "./utils/buildReuse";
 import { runAxeOnHtml } from "./utils/axe";
 import { scanBuildOutputForSourceMaps } from "../scan-source-maps";
+import { UPLOAD_VARIABLES } from "../sentry-build";
 
 // Asserts the tags survive `vitepress build` into the emitted HTML, not just the
 // config.head array. config.test.ts already covers the config object; this closes
@@ -109,12 +110,6 @@ const ABSOLUTE_URL_META: ReadonlyArray<readonly [string, string]> = [
   [OG_ATTRIBUTE, "og:url"],
   [OG_ATTRIBUTE, "og:image"],
   [TWITTER_ATTRIBUTE, "twitter:image"],
-];
-
-const SENTRY_UPLOAD_VARIABLES = [
-  "SENTRY_AUTH_TOKEN",
-  "SENTRY_ORG",
-  "SENTRY_PROJECT",
 ];
 
 let buildOutDir = "";
@@ -259,7 +254,7 @@ function resolveBuildDir() {
 async function buildInto(outDir: string) {
   // A throwaway test build must never upload source maps to the real Sentry
   // project, even when the upload variables are exported in this shell.
-  for (const name of SENTRY_UPLOAD_VARIABLES) {
+  for (const name of UPLOAD_VARIABLES) {
     vi.stubEnv(name, "");
   }
   try {

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import config from "../config";
 import { GTAG_SCRIPT_URL } from "@neon-pixels/consent";
 import { stripComments } from "./utils/outlineGuard";
-import { SENTRY_DSN, sentryOriginFromDsn } from "../sentry-dsn";
+import { SENTRY_INGEST_ORIGIN } from "../sentry-dsn";
 import type { HeadConfig } from "vitepress";
 
 // Cross-checks the origins the configured `head` loads against the CSP in netlify.toml
@@ -330,7 +330,6 @@ function cspExternalOrigins(directives: CspDirectives) {
 // .vitepress/theme/start-error-reporting.ts) posts error events to it with
 // fetch, and no head entry can name a runtime fetch. Derived from the same DSN
 // the SDK is configured with, and verified below to be granted by connect-src.
-const SENTRY_INGEST_ORIGIN = sentryOriginFromDsn(SENTRY_DSN);
 const DOCUMENTED_RUNTIME_INJECTED_ORIGINS = new Set([
   new URL(GTAG_SCRIPT_URL).origin,
   SENTRY_INGEST_ORIGIN,

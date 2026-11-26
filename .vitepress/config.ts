@@ -11,6 +11,7 @@ import {
   UPLOAD_SKIPPED_MESSAGE,
   buildSentryVitePlugins,
   shouldUploadSourceMaps,
+  sourceMapModeFor,
 } from "./sentry-build";
 import { PROJECTS, type Project } from "./theme/data/projects";
 
@@ -21,9 +22,6 @@ const SENTRY_ENVIRONMENT = resolveSentryEnvironment({
   netlifyContext: process.env.CONTEXT,
 });
 const UPLOAD_SOURCE_MAPS = shouldUploadSourceMaps(process.env);
-// "hidden" emits maps for the Sentry upload without a sourceMappingURL comment;
-// the upload plugin deletes them afterwards, so they never deploy.
-const UPLOADED_SOURCE_MAP_MODE = "hidden";
 
 const DESCRIPTION =
   "A very small studio and one very caffeinated agent, shipping the tools we kept wishing existed. Grimicorn, FarFlung, Basin and Markpost — every project started as a personal annoyance and escaped into production.";
@@ -203,7 +201,7 @@ export default defineConfig({
       __SENTRY_DEBUG__: "false",
     },
     build: {
-      sourcemap: UPLOAD_SOURCE_MAPS ? UPLOADED_SOURCE_MAP_MODE : false,
+      sourcemap: sourceMapModeFor(process.env),
     },
   },
   // Preloads the self-hosted Archivo 900 face (the hero/404 wordmark, plus every
