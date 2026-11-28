@@ -48,7 +48,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.12.1",
     "eslint-plugin-vuejs-accessibility": "^2.6.3",
-    "fallow": "^3.46.0",
+    "fallow": "^3.48.0",
     "globals": "^17.14.0",
     "happy-dom": "^21.0.4",
     "husky": "^9.1.7",
